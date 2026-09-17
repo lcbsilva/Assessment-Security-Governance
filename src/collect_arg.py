@@ -16,8 +16,28 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
+from version import engine_version
+
+
+def retryable_arg_error(error: Exception) -> bool:
+    """Reconhece throttling e falhas transitórias do SDK Resource Graph."""
+    code = getattr(error, "status_code", None) or getattr(error, "status", None)
+    return code in {429, 500, 502, 503, 504}
+
+
+def query_arg_with_retry(client: object, request: object, attempts: int = 3) -> object:
+    """Repete apenas consultas ARG idempotentes; nunca repete operação de escrita."""
+    for attempt in range(attempts):
+        try:
+            return client.resources(request)
+        except Exception as error:
+            if not retryable_arg_error(error) or attempt == attempts - 1:
+                raise
+            time.sleep(min(8, 2 ** attempt))
+    raise RuntimeError("Azure Resource Graph não retornou resposta")
 
 QUERY = """
 Resources
@@ -66,6 +86,16 @@ ResourceContainers
 | order by type asc, name asc
 """.strip()
 
+# A tabela é populada pelo inventário do Azure Resource Graph quando o
+# inventário do Power Platform está habilitado no tenant. A consulta só lê
+# metadados; não acessa conteúdo de aplicativos, fórmulas, mensagens ou dados
+# dos usuários.
+POWER_PLATFORM_QUERY = """
+PowerPlatformResources
+| project id, name, type, subscriptionId, resourceGroup, location, properties
+| order by type asc, name asc
+""".strip()
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -86,6 +116,25 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def exposure_details(resource_type: str, properties: dict) -> tuple[str, str]:
+    """Classifica exposição por sinais conhecidos; desconhecido permanece revisão."""
+    resource_type = str(resource_type).lower()
+    network = str(properties.get("publicNetworkAccess", "")).lower()
+    if "publicipaddresses" in resource_type:
+        return "Public", "Azure Public IP"
+    if network == "disabled":
+        return "Private", "publicNetworkAccess=Disabled"
+    if network == "enabled":
+        return "Public network / Review", "publicNetworkAccess=Enabled"
+    if "microsoft.web/sites" in resource_type:
+        return "Public network / Review", "App Service sem publicNetworkAccess=Disabled demonstrado"
+    if "microsoft.storage/storageaccounts" in resource_type and properties.get("allowBlobPublicAccess") is True:
+        return "Public access / Review", "allowBlobPublicAccess=True"
+    if any(kind in resource_type for kind in ("microsoft.sql/servers", "microsoft.cache/redis", "microsoft.documentdb/databaseaccounts", "microsoft.keyvault/vaults")):
+        return "Review", "Propriedade de rede não retornada pelo inventário"
+    return "Private", "Nenhum sinal público conhecido"
+
+
 def resource_row(item: dict) -> dict:
     resource_id = item.get("id", "")
     resource_type = str(item.get("type", "")).lower()
@@ -98,13 +147,7 @@ def resource_row(item: dict) -> dict:
             age_days = max(0, (datetime.now(timezone.utc) - created).days)
         except ValueError:
             pass
-    exposure = "Private"
-    if "publicipaddresses" in resource_type:
-        exposure = "Public"
-    elif "microsoft.web/sites" in resource_type:
-        exposure = "Public" if str(properties.get("publicNetworkAccess", "Enabled")).lower() != "disabled" else "Private"
-    elif "microsoft.sql/servers" in resource_type:
-        exposure = "Public network / Review"
+    exposure, exposure_reason = exposure_details(resource_type, properties)
     posture = []
     if exposure.lower().startswith("public") or "review" in exposure.lower():
         posture.append("Exposição de rede")
@@ -121,6 +164,7 @@ def resource_row(item: dict) -> dict:
         "resource_group": item.get("resourceGroup", "—"),
         "region": item.get("location", "—"),
         "exposure": exposure,
+        "exposure_reason": exposure_reason,
         "owner": (item.get("tags") or {}).get("owner", "A definir"),
         "tags": ", ".join(sorted((item.get("tags") or {}).keys())) or "Nenhuma",
         "resource_id": resource_id,
@@ -147,6 +191,22 @@ def policy_row(item: dict) -> dict:
     }
 
 
+def summarize_policy_compliance(rows: list[dict]) -> list[dict]:
+    """Agrupa compliance por policy, assignment e subscription para gestão."""
+    grouped: dict[tuple[str, str, str], dict] = {}
+    for row in rows:
+        key = (str(row.get("policy", "—")), str(row.get("assignment", "—")), str(row.get("subscription", "—")))
+        item = grouped.setdefault(key, {"policy": key[0], "assignment": key[1], "subscription": key[2], "evaluated": 0, "non_compliant": 0, "exemptions": 0})
+        item["evaluated"] += 1
+        item["non_compliant"] += int(row.get("non_compliant", 0) or 0)
+        item["exemptions"] += int(row.get("exemptions", 0) or 0)
+    for item in grouped.values():
+        item["compliant"] = item["evaluated"] - item["non_compliant"]
+        item["compliance_rate"] = round(item["compliant"] / item["evaluated"] * 100, 1) if item["evaluated"] else 0
+        item["risk_signal"] = "Crítico" if item["compliance_rate"] < 50 else ("Atenção" if item["non_compliant"] else "Controlado")
+    return sorted(grouped.values(), key=lambda item: (item["risk_signal"] != "Crítico", item["compliance_rate"]))
+
+
 def orphan_row(item: dict) -> dict:
     return {
         "name": item.get("name") or "—",
@@ -160,8 +220,6 @@ def orphan_row(item: dict) -> dict:
         "recommended_action": "Validar dependência, owner e custo antes de qualquer ação",
         "resource_id": item.get("resourceId") or "—",
     }
-
-
 def advisor_row(item: dict) -> dict:
     """Normaliza recomendação do Advisor sem coletar dados de configuração."""
     return {
@@ -176,6 +234,83 @@ def advisor_row(item: dict) -> dict:
         "last_updated": item.get("lastUpdated") or "—",
         "status": item.get("recommendationStatus") or "New",
         "recommendation_type": item.get("recommendationTypeId") or "—",
+    }
+
+
+def power_platform_row(item: dict) -> dict:
+    """Normaliza inventário de Power Platform sem conteúdo funcional ou PII extra."""
+    properties = item.get("properties") or {}
+    if not isinstance(properties, dict):
+        properties = {}
+    resource_type = str(item.get("type") or properties.get("resourceType") or "—")
+    connectors = properties.get("powerPlatformConnectors") or properties.get("connectors") or []
+    if isinstance(connectors, dict):
+        connectors = list(connectors.values())
+    connector_names = []
+    premium = 0
+    for connector in connectors if isinstance(connectors, list) else []:
+        if isinstance(connector, dict):
+            connector_names.append(str(connector.get("id") or connector.get("name") or "—"))
+            tier = str(connector.get("tier") or connector.get("connectorTier") or "").lower()
+            premium += int("premium" in tier)
+        else:
+            connector_names.append(str(connector))
+    owner = (properties.get("owner") or properties.get("createdBy") or
+             properties.get("ownerEmail") or "A definir")
+    created = properties.get("createdTime") or properties.get("createdDateTime") or "—"
+    modified = properties.get("lastModifiedTime") or properties.get("modifiedTime") or "—"
+    state = str(properties.get("state") or properties.get("status") or "Unknown")
+    kind = str(properties.get("kind") or resource_type.rsplit("/", 1)[-1] or "—")
+    signals = []
+    if owner in {None, "", "A definir"}:
+        signals.append("Sem owner demonstrado")
+    if not connectors and kind.lower() in {"flow", "powerautomate", "powerapps", "app"}:
+        signals.append("Sem conectores demonstrados")
+    if premium:
+        signals.append("Conector premium")
+    if state.lower() in {"disabled", "deleted", "orphaned"}:
+        signals.append(f"Estado: {state}")
+    return {
+        "name": item.get("name") or properties.get("displayName") or "—",
+        "type": resource_type,
+        "kind": kind,
+        "environment": properties.get("environmentName") or properties.get("environmentId") or "—",
+        "subscription": item.get("subscriptionId") or "—",
+        "resource_group": item.get("resourceGroup") or "—",
+        "region": item.get("location") or properties.get("region") or "—",
+        "owner": owner,
+        "state": state,
+        "created_at": created,
+        "modified_at": modified,
+        "connector_count": len(connectors) if isinstance(connectors, list) else 0,
+        "premium_connectors": premium,
+        "connectors": ", ".join(connector_names) or "Nenhum demonstrado",
+        "governance_signal": "Atenção" if signals else "Sem sinal básico",
+        "posture_signals": "; ".join(signals) or "Nenhum sinal básico",
+        "resource_id": item.get("id") or "—",
+    }
+
+
+def summarize_power_platform(rows: list[dict]) -> dict:
+    """Produz somente contagens agregadas para a camada executiva/IA."""
+    kinds: dict[str, int] = {}
+    environments: dict[str, int] = {}
+    for row in rows:
+        kind = str(row.get("kind") or "Unknown")
+        environment = str(row.get("environment") or "Unknown")
+        kinds[kind] = kinds.get(kind, 0) + 1
+        environments[environment] = environments.get(environment, 0) + 1
+    no_owner = sum(1 for row in rows if row.get("owner") in {None, "", "A definir"})
+    premium = sum(int(row.get("premium_connectors", 0) or 0) for row in rows)
+    return {
+        "resources": len(rows),
+        "apps": sum(1 for row in rows if str(row.get("kind", "")).lower() in {"app", "powerapps"}),
+        "flows": sum(1 for row in rows if str(row.get("kind", "")).lower() in {"flow", "powerautomate"}),
+        "environments": len({key for key in environments if key != "Unknown"}),
+        "without_owner": no_owner,
+        "premium_connectors": premium,
+        "by_kind": dict(sorted(kinds.items())),
+        "by_environment": dict(sorted(environments.items(), key=lambda item: (-item[1], item[0]))),
     }
 
 
@@ -198,6 +333,7 @@ def collect(subscription_ids: list[str]) -> dict:
     retirement_rows: list[dict] = []
     advisor_rows: list[dict] = []
     container_rows: list[dict] = []
+    power_platform_rows: list[dict] = []
     skip_token: str | None = None
 
     while True:
@@ -211,7 +347,7 @@ def collect(subscription_ids: list[str]) -> dict:
             query=QUERY,
             options=options,
         )
-        response = client.resources(request)
+        response = query_arg_with_retry(client, request)
         rows.extend(resource_row(item) for item in (response.data or []))
         skip_token = getattr(response, "skip_token", None)
         if not skip_token:
@@ -305,9 +441,22 @@ def collect(subscription_ids: list[str]) -> dict:
         retirement_status = "not_available"
         retirement_note = f"Service Health indisponível: {type(exc).__name__}: {exc}"
 
-    return {
+    try:
+        power_platform_response = query_arg_with_retry(client, QueryRequest(
+            subscriptions=subscription_ids,
+            query=POWER_PLATFORM_QUERY,
+            options=QueryRequestOptions(result_format="objectArray", top=5000),
+        ))
+        power_platform_rows = [power_platform_row(item) for item in (power_platform_response.data or [])]
+        power_platform_status = "success" if power_platform_rows else "partial"
+        power_platform_note = "PowerPlatformResources via Azure Resource Graph; inventário pode exigir habilitação no tenant."
+    except Exception as exc:
+        power_platform_status = "not_available"
+        power_platform_note = f"Inventário Power Platform indisponível: {type(exc).__name__}: {exc}"
+
+    payload = {
         "metadata": {
-            "engine_version": "0.1.8",
+            "engine_version": engine_version(),
             "run_id": f"arg-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}",
             "collected_at": started,
             "scope": {"subscriptions": len(subscription_ids), "resources_assessed": len(rows)},
@@ -326,6 +475,8 @@ def collect(subscription_ids: list[str]) -> dict:
                 "service_retirements": retirement_rows,
                 "resource_age": age_rows,
             },
+            "power_platform": power_platform_rows,
+            "power_platform_summary": summarize_power_platform(power_platform_rows),
             "collection_log": [{
                 "module": "Azure inventory",
                 "source": "Azure Resource Graph",
@@ -362,9 +513,17 @@ def collect(subscription_ids: list[str]) -> dict:
                 "status": retirement_status,
                 "records": len(retirement_rows),
                 "note": retirement_note,
+            }, {
+                "module": "Power Platform inventory",
+                "source": "PowerPlatformResources / Azure Resource Graph",
+                "status": power_platform_status,
+                "records": len(power_platform_rows),
+                "note": power_platform_note,
             }],
         },
     }
+    payload["discovery"]["policy_summary"] = summarize_policy_compliance(policy_rows)
+    return payload
 
 
 def main() -> None:
@@ -376,7 +535,7 @@ def main() -> None:
         payload = collect(subscription_ids)
     except Exception as exc:  # falha controlada para o runner registrar o motivo
         payload = {
-            "metadata": {"engine_version": "0.1.8", "collected_at": utc_now(), "modules": {"governance": "error"}},
+            "metadata": {"engine_version": engine_version(), "collected_at": utc_now(), "modules": {"governance": "error"}},
             "controls": [],
             "findings": [],
             "discovery": {"resources": [], "collection_log": [{

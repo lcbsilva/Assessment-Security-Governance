@@ -47,6 +47,11 @@ def build(data: dict) -> dict:
         "finding_count": len(findings),
         "financial_aggregates": {"cost_rows": len(cost_rows), "cost_total_period": round(total_cost, 2), "advisor_recommendations": len(advisor_rows), "advisor_annual_savings_published": round(advisor_savings, 2)},
         "domain_aggregates": domains,
+        "cross_domain_insights": [{key: item.get(key) for key in ("id", "domain", "severity", "risk", "affected", "title")} for item in data.get("discovery", {}).get("cross_domain_insights", [])],
+        "ecosystem_aggregates": {
+            "power_platform": data.get("discovery", {}).get("power_platform_summary", {}),
+            "azure_devops": data.get("discovery", {}).get("azure_devops_summary", {}),
+        },
         "limitations": ["Use only aggregated metrics. Do not infer individual identity, blame or incident occurrence from these values."],
     }
 

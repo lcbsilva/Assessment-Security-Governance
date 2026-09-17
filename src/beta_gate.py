@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""Gate reproduzível para declarar uma execução pronta para beta."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def run_gate(data_path: Path, include_tests: bool = True) -> dict:
+    checks: list[dict] = []
+
+    def check(name: str, command: list[str]) -> None:
+        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+        checks.append({"name": name, "status": "pass" if result.returncode == 0 else "fail", "detail": (result.stdout or result.stderr).strip()[-500:]})
+
+    check("source_compile", [sys.executable, "-m", "py_compile", *[str(path) for path in (ROOT / "src").glob("*.py")]])
+    if include_tests:
+        check("contract_and_tests", [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-q"])
+    with tempfile.TemporaryDirectory(prefix="assessment-beta-") as temporary:
+        output_dir = Path(temporary) / "artifacts"
+        html_path = Path(temporary) / "assessment.html"
+        ai_path = Path(temporary) / "ai-payload.json"
+        pilot_path = Path(temporary) / "pilot-validation.json"
+        check("html_report", [sys.executable, "src/generate_report.py", "--data", str(data_path), "--output", str(html_path)])
+        check("exports", [sys.executable, "src/export_artifacts.py", "--data", str(data_path), "--output-dir", str(output_dir)])
+        check("ai_guardrails", [sys.executable, "src/ai_payload.py", "--data", str(data_path), "--output", str(ai_path)])
+        check("pilot_validation", [sys.executable, "src/validate_pilot.py", "--data", str(data_path), "--output", str(pilot_path)])
+        for name, path in (("html_non_empty", html_path), ("xlsx_exists", output_dir / "assessment-action-plan.xlsx"), ("pptx_exists", output_dir / "assessment-executive-summary.pptx"), ("pdf_exists", output_dir / "assessment-executive-summary.pdf"), ("ai_payload_exists", ai_path)):
+            checks.append({"name": name, "status": "pass" if path.exists() and path.stat().st_size > 0 else "fail", "detail": str(path.name)})
+    passed = sum(item["status"] == "pass" for item in checks)
+    return {"status": "beta_ready" if passed == len(checks) else "blocked", "checks": checks, "passed": passed, "total": len(checks), "read_only": True, "note": "Gate executa somente mock/local; não autentica nem acessa tenant."}
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Valida prontidão do Assessment para beta")
+    parser.add_argument("--data", type=Path, default=ROOT / "mock" / "assessment.json")
+    parser.add_argument("--output", type=Path, default=ROOT / "runtime" / "beta-gate.json")
+    args = parser.parse_args()
+    result = run_gate(args.data)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"Beta gate: {result['status']} ({result['passed']}/{result['total']})")
+    if result["status"] != "beta_ready":
+        raise SystemExit(2)
+
+
+if __name__ == "__main__":
+    main()

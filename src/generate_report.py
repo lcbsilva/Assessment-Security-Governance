@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 import yaml
-from insight_engine import executive_actions
+from insight_engine import executive_actions, cross_domain_insights
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -294,6 +294,24 @@ def render_decision_layer(data: dict) -> str:
 </section>'''
 
 
+def render_executive_security_kpis(data: dict) -> str:
+    """Mostra os sinais prioritários na primeira tela, preservando o detalhe abaixo."""
+    discovery = data.get("discovery", {})
+    users = discovery.get("users", [])
+    user_summary = discovery.get("user_summary", {})
+    value = lambda label, fallback: user_summary.get(label, fallback)
+    mfa_gap = sum(1 for item in users if item.get("mfa_status") == "Not registered")
+    privileged_gap = sum(1 for item in users if item.get("privileged") and item.get("mfa_status") == "Not registered")
+    public_resources = sum(1 for item in discovery.get("resources", []) if str(item.get("exposure", "")).lower().startswith("public"))
+    policy_gap = sum(int(item.get("non_compliant", 0) or 0) for item in discovery.get("policy_compliance", []))
+    high_rbac = sum(1 for item in discovery.get("rbac", []) if item.get("access_risk") in {"Crítico", "Alto"})
+    device_summary = discovery.get("device_summary", {})
+    endpoint_gap = int(device_summary.get("non_compliant", 0) or 0) + int(device_summary.get("unmanaged", 0) or 0)
+    metrics = [("Sem MFA", value("Usuários sem MFA", mfa_gap), "Identidade"), ("Privilegiados sem MFA", value("Privilegiados sem MFA", privileged_gap), "Crítico"), ("Convidados externos", value("Convidados externos", 0), "Governança"), ("RBAC alto risco", high_rbac, "Acesso"), ("Recursos públicos", public_resources, "Exposição"), ("Não conformidades", policy_gap, "Azure Policy"), ("Endpoints em atenção", endpoint_gap, "Endpoint")]
+    cards = "".join(f'<div class="exec-kpi"><span>{esc(label)}</span><b>{esc(amount)}</b><small>{esc(context)}</small></div>' for label, amount, context in metrics)
+    return f'<section class="section exec-kpi-section"><div class="section-heading"><div><div class="eyebrow">Sinais prioritários</div><h2>Onde concentrar a atenção</h2></div><span class="section-intro">Indicadores derivados das evidências desta execução</span></div><div class="exec-kpis">{cards}</div></section>'
+
+
 def render_lifecycle(data: dict) -> str:
     """Renderiza FinOps e ciclo de vida sem executar ações destrutivas."""
     lifecycle = data.get("discovery", {}).get("lifecycle", {})
@@ -366,6 +384,7 @@ def render_discovery(data: dict) -> str:
     policies = discovery.get("conditional_access", [])
     legacy_signins = discovery.get("legacy_auth_signins", [])
     secure_score_controls = discovery.get("secure_score_controls", [])
+    secure_score_summary = discovery.get("secure_score_summary", {})
     devices = discovery.get("devices", [])
     enterprise_applications = discovery.get("enterprise_applications", [])
     app_registrations = discovery.get("app_registrations", [])
@@ -373,9 +392,14 @@ def render_discovery(data: dict) -> str:
     defender_summary = discovery.get("defender_summary", {})
     defender_alerts = discovery.get("defender_alerts", [])
     defender_vulnerabilities = discovery.get("defender_vulnerabilities", [])
+    power_platform = discovery.get("power_platform", [])
+    power_platform_summary = discovery.get("power_platform_summary", {})
+    azure_devops = discovery.get("azure_devops", {})
+    azure_devops_summary = discovery.get("azure_devops_summary", {})
     resources = discovery.get("resources", [])
     rbac = discovery.get("rbac", [])
     policy_compliance = discovery.get("policy_compliance", [])
+    policy_summary = discovery.get("policy_summary", [])
     collection_log = discovery.get("collection_log", [])
     module_status = data.get("metadata", {}).get("modules", {})
     module_names = {
@@ -384,6 +408,7 @@ def render_discovery(data: dict) -> str:
         "governance": "Governança / ARG",
         "cost": "Custo / Cost Management",
         "compliance": "Compliance / Policy Insights",
+        "power_platform": "Power Platform / ARG",
     }
     module_rows = "".join(
         f'<tr><td>{esc(module_names.get(key, key))}</td><td><span class="status {esc(value)}">{esc(value.replace("_", " ").title())}</span></td></tr>'
@@ -401,35 +426,40 @@ def render_discovery(data: dict) -> str:
   <div class="mini-grid">{user_metrics}</div>
   <div class="panel"><h3>Identidades avaliadas</h3>{render_table(users, [
       ("display_name", "Nome"), ("user_principal_name", "UPN"), ("account_type", "Tipo"),
-      ("mfa_status", "MFA"), ("privileged_roles", "Funções privilegiadas"), ("ca_coverage", "Conditional Access"), ("risk", "Risco"),
+      ("mfa_status", "MFA"), ("privileged_roles", "Funções privilegiadas"), ("ca_coverage", "Conditional Access"), ("risk", "Risco Entra"), ("posture_level", "Postura"), ("posture_signal", "Sinais"),
       ("last_sign_in", "Último sign-in")])}</div>
   <div class="panel"><h3>Funções privilegiadas do Entra ID</h3>{render_table(discovery.get("directory_roles", []), [("role", "Função"), ("role_id", "ID técnico")])}</div>
-  <div class="panel"><h3>PIM: elegível versus ativo</h3><p class="section-intro">A coleta diferencia atribuições elegíveis de ativações/atribuições ativas. O relatório não altera funções nem ativa acessos.</p>{render_table(pim_assignments, [("principal_id", "Principal"), ("role", "Função"), ("role_id", "ID da função"), ("assignment_type", "Tipo"), ("member_type", "Membro"), ("scope", "Escopo"), ("start", "Início"), ("end", "Fim")])}</div>
+  <div class="panel"><h3>PIM: elegível versus ativo</h3><p class="section-intro">A coleta diferencia atribuições elegíveis de ativações/atribuições ativas, resolve o principal quando possível e classifica o nível do escopo. O relatório não altera funções nem ativa acessos.</p>{render_table(pim_assignments, [("principal_name", "Principal"), ("principal_id", "ID do principal"), ("role", "Função"), ("role_id", "ID da função"), ("assignment_type", "Tipo"), ("member_type", "Membro"), ("scope_kind", "Nível"), ("scope", "Escopo"), ("start", "Início"), ("end", "Fim")])}</div>
   <div class="panel"><h3>Políticas de Conditional Access</h3>{render_table(policies, [
       ("display_name", "Política"), ("state", "Estado"), ("users_scope", "Usuários"),
-      ("excluded", "Exclusões"), ("grant_controls", "Controles"), ("coverage", "Cobertura")])}</div>
+      ("included", "Incluídos"), ("excluded", "Exclusões"), ("grant_controls", "Controles"), ("coverage", "Cobertura"), ("risk_signal", "Sinal")])}</div>
   <div class="panel"><h3>Visão visual das políticas</h3><p class="section-intro">Cada política é apresentada como uma unidade de revisão para facilitar a leitura com segurança, IAM e proprietários de aplicações.</p>{render_ca_summary(policies)}{render_ca_cards(policies)}</div>
   <div class="panel"><h3>Sign-ins com autenticação legada</h3><p class="section-intro">Registros limitados à janela configurada. Use-os para identificar usuário e aplicação antes de bloquear protocolos antigos.</p>{render_table(legacy_signins, [("user_display_name", "Usuário"), ("user_principal_name", "UPN"), ("client_app", "Cliente"), ("application", "Aplicação"), ("created_at", "Data"), ("result", "Resultado")])}</div>
+  <div class="panel"><h3>Microsoft Secure Score</h3>{render_table([secure_score_summary] if secure_score_summary else [], [("current", "Atual"), ("maximum", "Máximo"), ("percentage", "Percentual"), ("recommendations", "Recomendações"), ("high_impact_recommendations", "Baixo/médio esforço")])}</div>
   <div class="panel"><h3>Recomendações do Microsoft Secure Score</h3>{render_table(secure_score_controls, [("id", "Controle"), ("title", "Recomendação"), ("category", "Categoria"), ("max_score", "Score máximo"), ("implementation_cost", "Custo de implementação"), ("remediation", "Remediação")])}</div>
   <div class="panel"><h3>Postura de dispositivos e endpoints</h3><p class="section-intro">Inventário combinado de Entra ID e Intune quando disponível. Dispositivo não encontrado ou com estado desconhecido não é tratado automaticamente como conforme.</p>{render_table(devices, [("name", "Dispositivo"), ("operating_system", "Sistema"), ("os_version", "Versão"), ("trust_type", "Confiança"), ("compliant", "Conformidade"), ("managed", "Gerenciamento"), ("last_sign_in", "Última atividade"), ("user", "Usuário"), ("source", "Fonte")])}</div>
   <div class="panel"><h3>Enterprise Applications</h3>{render_table(enterprise_applications, [("name", "Aplicação"), ("app_id", "App ID"), ("enabled", "Ativa"), ("type", "Tipo"), ("assignment_required", "Exige atribuição"), ("audience", "Audiência"), ("created_at", "Criada em")])}</div>
   <div class="panel"><h3>Grupos do Entra ID / Microsoft 365</h3>{render_table(discovery.get("groups", []), [("name", "Grupo"), ("group_type", "Tipo"), ("security_enabled", "Segurança"), ("mail_enabled", "Mail"), ("visibility", "Visibilidade"), ("dynamic", "Dinâmico"), ("created_at", "Criado em")])}</div>
   <div class="panel"><h3>Licenças Microsoft 365 — visão agregada</h3><p class="section-intro">Exibe consumo e unidades habilitadas por SKU; não coleta dados individuais de atribuição.</p>{render_table(discovery.get("licenses", []), [("sku", "SKU"), ("consumed", "Consumidas"), ("enabled", "Habilitadas"), ("suspended", "Suspensas"), ("status", "Status")])}</div>
-  <div class="panel"><h3>App Registrations e credenciais</h3><p class="section-intro">Somente metadados, contagens e datas de expiração são exibidos; segredos, certificados e valores sensíveis não são coletados para a camada de IA.</p>{render_table(app_registrations, [("name", "Aplicação"), ("app_id", "App ID"), ("audience", "Audiência"), ("required_permissions", "Recursos requeridos"), ("credentials", "Credenciais"), ("password_credentials", "Secrets"), ("certificate_credentials", "Certificados"), ("credential_expirations", "Expirações"), ("created_at", "Criada em")])}</div>
+  <div class="panel"><h3>App Registrations e credenciais</h3><p class="section-intro">Somente metadados, contagens e datas de expiração são exibidos; segredos, certificados e valores sensíveis não são coletados para a camada de IA.</p>{render_table(app_registrations, [("name", "Aplicação"), ("app_id", "App ID"), ("audience", "Audiência"), ("required_permissions", "Recursos requeridos"), ("credentials", "Credenciais"), ("password_credentials", "Secrets"), ("certificate_credentials", "Certificados"), ("expired_credentials", "Expiradas"), ("expiring_30d", "Vencem em 30d"), ("credential_risk", "Risco"), ("credential_expirations", "Expirações"), ("created_at", "Criada em")])}</div>
   <div class="panel"><h3>Consentimentos OAuth e permissões delegadas</h3><p class="section-intro">Visão read-only dos consentimentos registrados. Valores de alto impacto são destacados para revisão; nenhum consentimento é alterado.</p>{render_table(discovery.get("oauth2_permission_grants", []), [("client", "Aplicação cliente"), ("resource", "API recurso"), ("consent_type", "Tipo de consentimento"), ("principal_id", "Principal"), ("scope_count", "Qtd. escopos"), ("high_impact_scopes", "Escopos de alto impacto"), ("scopes", "Escopos")])}</div>
   <div class="panel"><h3>Defender — resumo operacional</h3><p class="section-intro">O módulo é opcional e só apresenta contagens agregadas de alertas. Sem licença ou permissão, o estado aparece no manifesto como não disponível.</p>{render_table([defender_summary] if defender_summary else [], [("alerts", "Alertas"), ("high", "Alta severidade"), ("medium", "Média severidade"), ("active", "Ativos")])}</div>
   <div class="panel"><h3>Defender — alertas e vulnerabilidades</h3>{render_table(defender_alerts, [("severity", "Severidade"), ("status", "Status"), ("source", "Origem"), ("created_at", "Criado em")])}{render_table(defender_vulnerabilities, [("name", "Vulnerabilidade"), ("severity", "Severidade"), ("status", "Status"), ("created_at", "Criada em"), ("updated_at", "Atualizada em")])}</div>
+  <div class="panel"><h3>Power Platform — Apps, Automate e ambientes</h3><p class="section-intro">Inventário read-only de metadados disponíveis no Azure Resource Graph. Não são coletados fórmulas, conteúdo de fluxos, mensagens, dados de negócio ou segredos de conexões.</p>{render_table([power_platform_summary] if power_platform_summary else [], [("resources", "Recursos"), ("apps", "Power Apps"), ("flows", "Power Automate"), ("environments", "Ambientes"), ("without_owner", "Sem owner"), ("premium_connectors", "Conectores premium")])}{render_table(power_platform, [("name", "Nome"), ("kind", "Tipo"), ("environment", "Ambiente"), ("owner", "Owner"), ("state", "Estado"), ("connector_count", "Conectores"), ("premium_connectors", "Premium"), ("governance_signal", "Governança"), ("posture_signals", "Sinais"), ("modified_at", "Modificado em")])}</div>
+  <div class="panel"><h3>Azure DevOps — governança de engenharia</h3><p class="section-intro">Integração opcional read-only por organização. Mostra projetos, repositórios, visibilidade, pipelines e evidência de políticas de branch; não lê código, commits, work items, logs ou segredos.</p>{render_table([azure_devops_summary] if azure_devops_summary else [], [("projects", "Projetos"), ("repositories", "Repositórios"), ("pipelines", "Pipelines"), ("public_repositories", "Repositórios públicos"), ("repositories_without_branch_policy_evidence", "Sem política demonstrada")])}{render_table(azure_devops.get("repositories", []), [("name", "Repositório"), ("project", "Projeto"), ("default_branch", "Branch padrão"), ("visibility", "Visibilidade"), ("governance_signal", "Governança"), ("posture_signals", "Sinais")])}{render_table(azure_devops.get("pipelines", []), [("name", "Pipeline"), ("project", "Projeto"), ("type", "Tipo"), ("queue_status", "Fila")])}</div>
+  <div class="panel"><h3>Insights cruzados — segurança × governança</h3><p class="section-intro">Correlações indicativas entre fontes diferentes para priorizar revisão consultiva. Um insight não é declaração de incidente e não executa remediação.</p>{render_table(discovery.get("cross_domain_insights") or cross_domain_insights(discovery), [("severity", "Severidade"), ("domain", "Domínio"), ("title", "Insight"), ("risk", "Risco"), ("affected", "Afetados"), ("evidence", "Evidência"), ("action", "Ação recomendada")])}</div>
   <div class="panel"><h3>Inventário de recursos Azure</h3>{render_table(resources, [
       ("name", "Recurso"), ("type", "Tipo"), ("subscription", "Subscription"),
-      ("resource_group", "Resource group"), ("region", "Região"), ("exposure", "Exposição"),
+      ("resource_group", "Resource group"), ("region", "Região"), ("exposure", "Exposição"), ("exposure_reason", "Evidência de exposição"),
       ("security_signal", "Sinal de segurança"), ("governance_signal", "Sinal de governança"),
       ("posture_signals", "Sinais"), ("owner", "Owner"), ("tags", "Tags"), ("created_at", "Criado em"), ("age_days", "Idade (dias)")])}</div>
   <div class="panel"><h3>Hierarquia Azure</h3>{render_table(discovery.get("containers", []), [("name", "Nome"), ("type", "Tipo"), ("subscription", "Subscription"), ("tenant", "Tenant")])}</div>
   <div class="panel"><h3>Atribuições RBAC</h3>{render_table(rbac, [
-      ("principal", "Principal"), ("principal_type", "Tipo"), ("role", "Função"),
+      ("principal_name", "Principal"), ("principal", "ID do principal"), ("principal_account_type", "Tipo de conta"), ("principal_mfa", "MFA"), ("principal_type", "Tipo"), ("role", "Função"),
       ("scope", "Escopo"), ("scope_kind", "Nível"), ("inheritance", "Herança"),
-      ("assignment_type", "Tipo de atribuição"), ("pim", "PIM"), ("review", "Revisão")])}</div>
-  <div class="panel"><h3>Compliance Azure Policy</h3>{render_table(policy_compliance, [
+      ("assignment_type", "Tipo de atribuição"), ("pim", "PIM"), ("access_risk", "Risco"), ("review", "Revisão"), ("review_reason", "Motivo")])}</div>
+  <div class="panel"><h3>Resumo de compliance por Policy</h3>{render_table(policy_summary, [("policy", "Policy"), ("assignment", "Assignment"), ("subscription", "Subscription"), ("evaluated", "Avaliados"), ("compliant", "Conformes"), ("non_compliant", "Não conformes"), ("exemptions", "Isenções"), ("compliance_rate", "Taxa %"), ("risk_signal", "Risco")])}</div>
+  <div class="panel"><h3>Compliance Azure Policy — evidência por recurso</h3>{render_table(policy_compliance, [
       ("policy", "Policy"), ("assignment", "Assignment"), ("compliance_state", "Estado"),
       ("non_compliant", "Não conformes"), ("exemptions", "Isenções"), ("last_evaluated", "Avaliado em")])}</div>
   <div class="panel"><h3>Execução e cobertura dos coletores</h3>
@@ -491,6 +521,7 @@ def render(catalog: dict, data: dict, runbooks: dict) -> str:
     evaluated_control_count = sum(1 for item in data["controls"] if item.get("status") not in {"not_available", "error"})
     score_text = score_label(overall)
     evidence_quality = meta.get("evidence_quality", {})
+    executive_security_kpis = render_executive_security_kpis(data)
     top_findings = "".join(
         f'''<div class="insight-row"><span class="insight-rank">0{index}</span><div><b>{esc(item["title"])}</b><span>{esc(item["summary"])}</span></div><strong>{item["risk_score"]}</strong></div>'''
         for index, item in enumerate(findings[:3], start=1)
@@ -524,13 +555,15 @@ header:after{{content:"";position:absolute;width:380px;height:380px;border:1px s
  .summary-grid{{display:grid;grid-template-columns:1.15fr .85fr;gap:16px}}.executive{{background:linear-gradient(135deg,#fff,#f7f0fa);border:1px solid #ded0e8;border-radius:16px;padding:22px;box-shadow:0 10px 30px #2b163b12}}.executive h2{{color:var(--deep)}}.executive p{{font-size:16px;max-width:720px;margin:4px 0 18px}}.eyebrow{{color:var(--magenta);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1.3px}}.score-panel{{background:var(--deep);color:#fff;border-radius:16px;padding:22px;display:flex;gap:18px;align-items:center;box-shadow:0 10px 30px #2b163b20}}.score-ring{{width:132px;height:132px;border-radius:50%;background:conic-gradient(var(--pink) 0 {overall:.0f}%,#ffffff18 0);display:grid;place-items:center;flex:none;position:relative}}.score-ring:after{{content:"";position:absolute;inset:11px;border-radius:50%;background:var(--deep)}}.score-ring b,.score-ring span{{position:relative;z-index:1;text-align:center;display:block}}.score-ring b{{font-size:38px;line-height:1}}.score-ring span{{font-size:11px;color:#dccfe4}}.score-copy h3{{font-size:20px;margin:0 0 6px}}.score-copy p{{color:#dfd2e7;font-size:13px;margin:0}}.insights{{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 10px 30px #2b163b12}}.insights h3{{margin-top:0}}.insight-row{{display:grid;grid-template-columns:32px 1fr 34px;gap:10px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}}.insight-row:last-child{{border-bottom:0}}.insight-rank{{color:var(--magenta);font-weight:800}}.insight-row b,.insight-row span{{display:block}}.insight-row span{{font-size:12px;color:var(--muted);margin-top:2px}}.insight-row strong{{color:var(--red);font-size:20px;text-align:right}}.nav{{display:flex;gap:8px;flex-wrap:wrap;margin:24px 0 0}}.nav a{{color:var(--purple);text-decoration:none;border:1px solid var(--line);background:#fff;border-radius:99px;padding:7px 12px;font-size:12px;font-weight:700}}.nav a:hover{{border-color:var(--magenta);color:var(--magenta)}}.panel{{box-shadow:0 10px 30px #2b163b12}}
 .risk-stats{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}}.risk-stat{{background:#fff;border:1px solid var(--line);border-left:4px solid #aaa;border-radius:10px;padding:14px}}.risk-stat span,.risk-stat small{{display:block;color:var(--muted);font-size:11px}}.risk-stat b{{display:block;font-size:28px;line-height:1.1;margin:4px 0}}.risk-stat.critical,.risk-stat.high{{border-left-color:var(--red)}}.risk-stat.critical b,.risk-stat.high b{{color:var(--red)}}.risk-stat.medium{{border-left-color:var(--orange)}}.risk-stat.medium b{{color:var(--orange)}}.risk-stat.low{{border-left-color:var(--green)}}.risk-stat.low b{{color:var(--green)}}.analysis-grid{{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;margin-bottom:16px}}
 .value-strip{{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:center;gap:14px;background:linear-gradient(110deg,#251332,#5b2a86);color:#fff;border-radius:16px;padding:18px 22px;box-shadow:0 10px 30px #2b163b20}}.value-strip div{{display:flex;flex-direction:column;gap:2px}}.value-strip b{{font-size:16px;color:#fff}}.value-strip span{{font-size:12px;color:#e5d9eb}}.value-strip i{{font-style:normal;color:#ff8fc5;font-size:22px}}
-@media(max-width:800px){{.grid,.domains,.finding-list,.dashboard,.mini-grid,.summary-grid,.analysis-grid,.risk-stats,.ca-grid{{grid-template-columns:1fr}}.value-strip{{grid-template-columns:1fr;padding:16px}}.value-strip i{{transform:rotate(90deg);justify-self:center}}.wrap{{padding:16px}}header h1{{font-size:28px}}.score-panel{{align-items:flex-start;flex-direction:column}}table{{font-size:12px}}}}
+.exec-kpi-section{{margin-top:24px}}.section-heading{{display:flex;justify-content:space-between;align-items:end;gap:16px;margin-bottom:12px}}.section-heading h2{{margin:2px 0 0}}.exec-kpis{{display:grid;grid-template-columns:repeat(7,1fr);gap:9px}}.exec-kpi{{background:#fff;border:1px solid var(--line);border-radius:11px;padding:12px;border-top:3px solid var(--magenta)}}.exec-kpi span,.exec-kpi small{{display:block;color:var(--muted);font-size:10px;line-height:1.25}}.exec-kpi b{{display:block;color:var(--purple);font-size:25px;line-height:1.2;margin:5px 0}}
+@media(max-width:800px){{.grid,.domains,.finding-list,.dashboard,.mini-grid,.summary-grid,.analysis-grid,.risk-stats,.ca-grid,.exec-kpis{{grid-template-columns:1fr}}.section-heading{{display:block}}.value-strip{{grid-template-columns:1fr;padding:16px}}.value-strip i{{transform:rotate(90deg);justify-self:center}}.wrap{{padding:16px}}header h1{{font-size:28px}}.score-panel{{align-items:flex-start;flex-direction:column}}table{{font-size:12px}}}}
 </style><style>.hero-pillars{{display:flex;gap:8px;flex-wrap:wrap;margin-top:24px}}.hero-pillars span{{border:1px solid #ffffff38;background:#ffffff14;border-radius:99px;padding:7px 12px;font-size:12px;color:#fff}}.hero-pillars b{{color:#ff9aca}}</style></head><body>
 <header><div class="wrap hero"><div class="brand"><span class="brand-mark">SWO</span><span class="brand-name">Software<em>One</em></span><span>·</span><span>SECURITY & GOVERNANCE</span></div><div class="hero-label">Assessment de postura · relatório confidencial</div><h1>Visibilidade para decidir. Evidência para agir.</h1><p>Assessment Executivo de Segurança e Governança</p><div class="hero-pillars"><span><b>Descobrir</b> exposição</span><span><b>Governar</b> identidades e recursos</span><span><b>Otimizar</b> risco e investimento</span></div><div class="hero-meta"><span>{esc(meta["customer_name"])}</span><span>Execução: {esc(meta["collected_at"])} UTC</span><span>Run ID: {esc(meta["run_id"])}</span><span>Uso interno · consultivo</span></div></div></header>
 <main class="wrap">
 {coverage_notice}
 <nav class="nav"><a href="#executive-summary">Resumo executivo</a><a href="#risks">Riscos prioritários</a><a href="#decision-layer">Decisões</a><a href="#analysis">Análise e plano</a><a href="#discovery">Discovery técnico</a><a href="#lifecycle">FinOps e ciclo de vida</a><a href="#runbooks">Runbooks</a><a href="#controls">Controles</a><a href="#transparency">Integridade e limitações</a></nav>
 <section class="section summary-grid" id="executive-summary"><div class="executive"><div class="eyebrow">Leitura executiva</div><h2>O que este resultado significa</h2><p>A postura atual apresenta <b>{score_text.lower()}</b>, com maior necessidade de atenção em <b>Governança Azure</b>. O assessment identificou <b>{len(findings)} riscos priorizados</b> e <b>{len(quick_wins)} ações de baixo esforço</b> que podem iniciar a evolução imediatamente.</p><p><b>Ponto forte:</b> {esc(strengths_text)}.</p><div class="notice"><b>Mensagem para liderança:</b> o maior risco está na combinação entre identidades sem proteção adequada, privilégios amplos e recursos Azure com exposição ou governança incompleta.</div></div><div class="score-panel"><div class="score-ring"><div><b>{overall:.0f}</b><span>/ 100</span></div></div><div class="score-copy"><h3>{score_text}</h3><p>Score ponderado pelos controles disponíveis. A interpretação deve considerar cobertura, licenças e limitações desta execução.</p></div></div></section>
+{executive_security_kpis}
 <section class="section value-strip"><div><b>Avaliar</b><span>evidências do tenant</span></div><i>→</i><div><b>Priorizar</b><span>risco, esforço e impacto</span></div><i>→</i><div><b>Otimizar</b><span>roadmap para decisão</span></div></section>
 <section class="section"><div class="grid"><div class="card"><div class="metric-label">Controles avaliados</div><div class="metric">{coverage:.0f}<small>%</small></div><span class="metric-note">{evaluated_control_count} de {len(catalog["controls"])} controles com evidência</span></div><div class="card"><div class="metric-label">Módulos executados</div><div class="metric">{executed_modules}<small>/{total_modules}</small></div><span class="metric-note">Módulos success ou partial</span></div><div class="card"><div class="metric-label">Achados priorizados</div><div class="metric">{len(findings)}</div><span class="metric-note">Ordenados por risco</span></div><div class="card"><div class="metric-label">Quick wins</div><div class="metric">{len(quick_wins)}</div><span class="metric-note">Alto impacto e baixo esforço</span></div><div class="card"><div class="metric-label">Qualidade da evidência</div><div class="metric">{esc(evidence_quality.get("score", "N/D"))}<small>/100</small></div><span class="metric-note">Permissões, licenças e execução</span></div></div></section>
 <section class="section dashboard"><div class="panel"><h2>Score por domínio</h2><div class="domains">{domain_cards}</div><div class="notice" style="margin-top:16px"><b>Confiança:</b> alta para os módulos executados. Custo e lifecycle estão parciais nesta demonstração.</div></div><div class="panel radar"><h2>Radar de maturidade</h2>{radar_svg(domain_scores)}</div></section>

@@ -14,6 +14,7 @@ from collect_arg import collect as collect_arg
 from collect_graph import collect as collect_graph
 from collect_cost import collect as collect_cost
 from collect_rbac import collect as collect_rbac
+from collect_azure_devops import collect as collect_azure_devops
 from score_normalized import derive
 from contract import validate_payload
 from readonly_guard import assert_read_only, execution_metadata
@@ -21,7 +22,8 @@ from generate_report import calculate
 from history import record
 from compare_runs import compare
 from evidence_quality import classify, summarize
-from insight_engine import risk_intersections, control_evidence
+from insight_engine import risk_intersections, control_evidence, enrich_rbac_identity, cross_domain_insights
+from version import engine_version
 
 
 def args() -> argparse.Namespace:
@@ -55,7 +57,7 @@ def main() -> None:
     assert_read_only(config)
     subscription_ids = [item.strip() for item in options.subscriptions.split(",") if item.strip()]
     payload = {
-        "metadata": {"engine_version": "0.1.8", "run_id": f"assessment-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}", "collected_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "scope": {}, "modules": {}, "execution": execution_metadata(), "profile": options.profile, **account_context()},
+        "metadata": {"engine_version": engine_version(), "run_id": f"assessment-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}", "collected_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "scope": {}, "modules": {}, "execution": execution_metadata(), "profile": options.profile, **account_context()},
         "controls": [], "findings": [], "discovery": {"collection_log": []},
     }
 
@@ -75,8 +77,12 @@ def main() -> None:
         rbac = collect_rbac(subscription_ids) if options.profile in {"governance", "full"} else skipped_module("governance", "AuthorizationResources")
     except Exception as exc:
         rbac = {"metadata": {"modules": {"governance": "error"}}, "discovery": {"collection_log": [{"module": "RBAC", "source": "AuthorizationResources / Azure Resource Graph", "status": "error", "records": 0, "note": f"{type(exc).__name__}: {exc}"}]}}
+    try:
+        devops = collect_azure_devops()
+    except Exception as exc:
+        devops = {"metadata": {"modules": {"azure_devops": "error"}}, "discovery": {"collection_log": [{"module": "Azure DevOps", "source": "Azure DevOps REST API", "status": "error", "records": 0, "note": f"{type(exc).__name__}: {exc}"}]}}
 
-    for module in (arg, graph, cost, rbac):
+    for module in (arg, graph, cost, rbac, devops):
         payload["metadata"]["modules"].update(module.get("metadata", {}).get("modules", {}))
         payload["metadata"]["scope"].update(module.get("metadata", {}).get("scope", {}))
         payload["discovery"].update({key: value for key, value in module.get("discovery", {}).items() if key != "collection_log"})
@@ -85,13 +91,16 @@ def main() -> None:
     payload["metadata"]["modules"].setdefault("security", "not_available")
     payload["metadata"]["modules"].setdefault("compliance", "not_available")
     payload["metadata"]["modules"].setdefault("cost", "not_available")
+    payload["metadata"]["modules"].setdefault("azure_devops", "not_available")
     payload["metadata"]["evidence_quality"] = summarize(payload["discovery"]["collection_log"])
+    enrich_rbac_identity(payload["discovery"])
     for item in payload["discovery"]["collection_log"]:
         item["limitation_category"] = classify(item.get("status"), item.get("note"))
     catalog_path = Path(__file__).resolve().parents[1] / "catalog" / "controls.yaml"
     catalog = yaml.safe_load(catalog_path.read_text(encoding="utf-8"))
     payload = derive(payload, catalog)
     payload["discovery"]["risk_intersections"] = risk_intersections(payload["discovery"])
+    payload["discovery"]["cross_domain_insights"] = cross_domain_insights(payload["discovery"])
     payload["metadata"]["evidence_by_control"] = control_evidence(payload, catalog)
     _, overall_score, coverage = calculate(catalog, payload)
     payload["metadata"]["overall_score"] = round(overall_score, 2)

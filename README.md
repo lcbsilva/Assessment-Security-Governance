@@ -2,6 +2,10 @@
 
 MVP inicial para validar o formato do assessment antes da conexão com um tenant real.
 
+O repositório possui validação contínua em cada push e pull request. O pipeline
+executa compilação, testes de contrato, verificação do relatório autocontido e
+as proteções do modo somente leitura.
+
 ## O que esta versão já faz
 
 - carrega um catálogo versionado de controles;
@@ -25,6 +29,7 @@ MVP inicial para validar o formato do assessment antes da conexão com um tenant
 - registra snapshots históricos sem PII e gera comparação automática quando existe uma execução anterior;
 - classifica limitações por permissão, licença, throttling, suporte e execução, gerando um score conservador de qualidade da evidência;
 - classifica cada recurso Azure com sinais independentes de segurança, governança, exposição pública, owner e tags;
+- inventaria Power Apps, Power Automate, ambientes, conectores e owners via `PowerPlatformResources` quando o inventário do tenant estiver disponível;
 
 ## Executar
 
@@ -48,6 +53,28 @@ dist/assessment-demo.html
 ```bash
 python3 -m unittest discover -s tests -v
 python3 -m py_compile src/*.py
+```
+
+Para validar a prontidão da versão beta sem acessar nenhum tenant:
+
+```bash
+python3 src/beta_gate.py --data mock/assessment.json
+```
+
+O gate compila o código, executa os testes, gera HTML/XLSX/PPTX/PDF, valida os
+guardrails de IA e confirma o piloto em diretório temporário.
+
+No Windows, o mesmo processo pode ser executado pelo PowerShell:
+
+```powershell
+.\scripts\run-beta-gate.ps1
+```
+
+No Linux, macOS ou Azure Cloud Shell:
+
+```bash
+chmod +x scripts/run-beta-gate.sh
+./scripts/run-beta-gate.sh
 ```
 
 Para comparar uma nova execução com uma anterior:
@@ -76,6 +103,7 @@ Além do dashboard executivo, o relatório demonstrativo possui tabelas para:
 - inventário de recursos Azure, exposição, owner e tags;
 - atribuições RBAC, escopo, PIM e status de revisão;
 - compliance de Azure Policy, não conformidades e isenções;
+- inventário de Power Platform com resumo agregado e sinais por recurso;
 - status, fonte e quantidade de registros de cada coletor.
 
 As linhas são sintéticas para validar o formato. Na execução real, o mesmo contrato será preenchido pelos coletores read-only.
@@ -118,6 +146,13 @@ O runner não envia dados para IA e não executa remediação. O módulo Graph u
 as permissões descritas na matriz; endpoints indisponíveis são registrados no
 `collection_log` para que o relatório não transforme ausência de licença em
 falso sinal de conformidade.
+
+O inventário de Power Platform consulta somente metadados publicados no Azure
+Resource Graph. Fórmulas, conteúdo de fluxos, mensagens, dados de negócio e
+segredos de conexões não são coletados. Se o inventário não estiver habilitado
+ou o escopo não estiver disponível, o manifesto registra `not_available` ou
+`partial`. DevOps e Purview permanecem integrações opcionais com autenticação e
+permissões próprias, sem ampliar o token Azure por padrão.
 
 Perfis disponíveis: `security` concentra identidade, exposição e sinais de
 segurança; `governance` concentra inventário, hierarquia, RBAC e Policy; `full`

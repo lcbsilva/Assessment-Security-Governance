@@ -1,0 +1,23 @@
+# Saídas locais e dados potencialmente sensíveis do tenant
+runtime/
+dist/
+*.jsonl
+customer-data/
+tenant-data/
+
+# Segredos e credenciais
+.env
+.env.*
+*.secret
+*.token
+*.pem
+*.pfx
+
+# Artefatos Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Pacotes locais gerados
+*.zip
+tmp/

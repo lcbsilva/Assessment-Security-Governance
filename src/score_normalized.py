@@ -209,10 +209,14 @@ def derive(data: dict, catalog: dict) -> dict:
         put("SEC-002", None, "low")
     if applications or registrations:
         credentialed = sum(1 for item in registrations if int(item.get("credentials", 0) or 0) > 0)
+        expired_credentials = sum(int(item.get("expired_credentials", 0) or 0) for item in registrations)
+        expiring_credentials = sum(int(item.get("expiring_30d", 0) or 0) for item in registrations)
         app_score = round(max(0, len(applications) + len(registrations) - credentialed) / max(1, len(applications) + len(registrations)) * 100)
         put("SEC-003", app_score, "medium")
         if credentialed:
-            findings.append(finding("SEC-003", "Aplicações com credenciais que exigem inventário", "medium", 60, 3, credentialed, f"Foram identificadas {credentialed} aplicações registradas com credenciais cadastradas.", [f"Enterprise Applications: {len(applications)}", f"App registrations: {len(registrations)}", f"Registros com credenciais: {credentialed}"], "Identificar owners, revisar expiração, preferir certificados ou workload identity e remover credenciais sem uso após validação.", "Application / IAM", "Microsoft Graph applications + servicePrincipals", {"30": "Inventariar owners e datas de expiração.", "60": "Rotacionar ou remover credenciais obsoletas.", "90": "Implantar governança contínua de aplicações."}))
+            severity = "critical" if expired_credentials else ("high" if expiring_credentials else "medium")
+            risk = 86 if expired_credentials else (74 if expiring_credentials else 60)
+            findings.append(finding("SEC-003", "Aplicações com credenciais que exigem inventário", severity, risk, 3, credentialed, f"Foram identificadas {credentialed} aplicações registradas com credenciais cadastradas; {expired_credentials} possuem credenciais expiradas e {expiring_credentials} vencem em até 30 dias.", [f"Enterprise Applications: {len(applications)}", f"App registrations: {len(registrations)}", f"Registros com credenciais: {credentialed}", f"Credenciais expiradas: {expired_credentials}", f"Credenciais vencendo em 30 dias: {expiring_credentials}"], "Identificar owners, revisar expiração, preferir certificados ou workload identity e remover credenciais sem uso após validação.", "Application / IAM", "Microsoft Graph applications + servicePrincipals", {"30": "Inventariar owners e datas de expiração.", "60": "Rotacionar ou remover credenciais obsoletas.", "90": "Implantar governança contínua de aplicações."}))
     else:
         put("SEC-003", None, "low")
     if defender_summary and int(defender_summary.get("alerts", 0) or 0) > 0:

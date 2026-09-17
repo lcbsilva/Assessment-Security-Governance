@@ -3,6 +3,19 @@
 from __future__ import annotations
 
 
+def enrich_rbac_identity(discovery: dict) -> list[dict]:
+    """Correlaciona RBAC com identidade localmente; não altera a evidência original."""
+    users = {str(item.get("id")): item for item in discovery.get("users", []) if item.get("id")}
+    rows = discovery.get("rbac", [])
+    for row in rows:
+        user = users.get(str(row.get("principal")), {})
+        row["principal_name"] = user.get("display_name", "Principal não resolvido")
+        row["principal_account_type"] = user.get("account_type", "Não resolvido")
+        row["principal_mfa"] = user.get("mfa_status", "Não resolvido")
+        row["principal_privileged"] = "Sim" if user.get("privileged") else "Não/Não resolvido"
+    return rows
+
+
 def risk_intersections(discovery: dict) -> list[dict]:
     """Encontra combinações de sinais; não transforma correlação em incidente."""
     users = discovery.get("users", [])
@@ -17,6 +30,9 @@ def risk_intersections(discovery: dict) -> list[dict]:
     public_untagged = [item for item in resources if str(item.get("exposure", "")).lower().startswith("public") and ("Nenhuma" in str(item.get("tags", "")) or "env" not in str(item.get("tags", "")).lower())]
     if public_untagged:
         intersections.append({"id": "X-003", "title": "Exposição pública com governança de tags incompleta", "severity": "high", "risk": 84, "affected": len(public_untagged), "evidence": f"{len(public_untagged)} recursos públicos sem taxonomia mínima demonstrada", "action": "Associar owner, ambiente e criticidade ao inventário para priorizar proteção."})
+    privileged_rbac_without_mfa = [item for item in discovery.get("rbac", []) if item.get("access_risk") in {"Crítico", "Alto"} and item.get("principal_mfa") == "Not registered"]
+    if privileged_rbac_without_mfa:
+        intersections.append({"id": "X-004", "title": "Atribuição RBAC de alto risco para principal sem MFA", "severity": "critical", "risk": 94, "affected": len(privileged_rbac_without_mfa), "evidence": f"{len(privileged_rbac_without_mfa)} atribuições RBAC de alto risco associadas a principal sem MFA registrado", "action": "Validar identidade, owner, menor privilégio e proteção MFA antes de revisar o acesso."})
     return intersections
 
 
@@ -41,3 +57,48 @@ def executive_actions(findings: list[dict]) -> list[dict]:
     for item in sorted(findings, key=lambda row: row.get("risk_score", 0), reverse=True)[:5]:
         actions.append({"priority": "P1" if int(item.get("risk_score", 0)) >= 75 else "P2", "finding": item.get("title", "—"), "risk": item.get("risk_score", 0), "owner": item.get("owner", "A definir"), "outcome": outcomes.get(item.get("control_id"), "Aumentar controle e rastreabilidade")})
     return actions
+
+
+def cross_domain_insights(discovery: dict) -> list[dict]:
+    """Conecta evidências de segurança e governança em mensagens acionáveis.
+
+    A correlação é indicativa: ela prioriza revisão, mas nunca declara incidente
+    ou autoriza remediação automática.
+    """
+    users = discovery.get("users", [])
+    resources = discovery.get("resources", [])
+    rbac = discovery.get("rbac", [])
+    policies = discovery.get("conditional_access", [])
+    apps = discovery.get("app_registrations", [])
+    grants = discovery.get("oauth2_permission_grants", [])
+    insights = []
+
+    privileged_guests = [u for u in users if u.get("privileged") is True and str(u.get("account_type", "")).lower() == "guest"]
+    if privileged_guests:
+        insights.append({"id": "I-001", "domain": "Identity + Governance", "severity": "critical", "risk": 96, "affected": len(privileged_guests), "title": "Convidado externo com privilégio administrativo", "evidence": f"{len(privileged_guests)} convidados aparecem associados a privilégio administrativo.", "action": "Validar necessidade, owner, expiração e escopo antes de manter o acesso."})
+
+    stale_privileged = [u for u in users if u.get("privileged") is True and str(u.get("last_sign_in", "")).lower() in {"never", "unknown", "none"}]
+    if stale_privileged:
+        insights.append({"id": "I-002", "domain": "Identity + Lifecycle", "severity": "high", "risk": 90, "affected": len(stale_privileged), "title": "Privilégio sem atividade recente demonstrada", "evidence": f"{len(stale_privileged)} contas privilegiadas não possuem atividade recente demonstrada.", "action": "Confirmar owner e necessidade; considerar acesso elegível e revisão periódica."})
+
+    ca_without_mfa = [p for p in policies if str(p.get("state", "")).lower() == "enabled" and "mfa" not in str(p.get("grant_controls", "")).lower()]
+    if ca_without_mfa:
+        insights.append({"id": "I-003", "domain": "Identity + Conditional Access", "severity": "high", "risk": 82, "affected": len(ca_without_mfa), "title": "Conditional Access habilitado sem controle MFA explícito", "evidence": f"{len(ca_without_mfa)} políticas habilitadas não demonstram controle MFA no retorno coletado.", "action": "Validar intenção, condições, controles e exclusões da política."})
+
+    public_rbac = [r for r in rbac if r.get("access_risk") in {"Crítico", "Alto"} and str(r.get("scope_kind", "")).lower() in {"management group", "subscription"}]
+    if public_rbac:
+        insights.append({"id": "I-004", "domain": "Azure Governance + RBAC", "severity": "critical", "risk": 94, "affected": len(public_rbac), "title": "Acesso administrativo amplo em escopo Azure elevado", "evidence": f"{len(public_rbac)} atribuições de alto risco aparecem em Management Group ou Subscription.", "action": "Revisar menor privilégio, herança, owner e elegibilidade PIM."})
+
+    expired_apps = [a for a in apps if int(a.get("expired_credentials", 0) or 0) > 0]
+    if expired_apps:
+        insights.append({"id": "I-005", "domain": "Application Security", "severity": "critical", "risk": 91, "affected": len(expired_apps), "title": "Aplicações com credenciais expiradas", "evidence": f"{len(expired_apps)} registros de aplicação possuem credenciais expiradas.", "action": "Identificar owner e dependência, rotacionar de forma controlada e validar workload identity."})
+
+    high_consent = [g for g in grants if int(g.get("high_impact_count", 0) or 0) > 0 or str(g.get("high_impact_scopes", "")).strip() not in {"", "Nenhum sinal de alto impacto", "—"}]
+    if high_consent:
+        insights.append({"id": "I-006", "domain": "Application Governance", "severity": "high", "risk": 87, "affected": len(high_consent), "title": "Consentimentos OAuth de alto impacto", "evidence": f"{len(high_consent)} consentimentos demonstram escopos de alto impacto.", "action": "Validar publisher, owner, justificativa e menor privilégio do consentimento."})
+
+    public_no_owner = [r for r in resources if str(r.get("exposure", "")).lower().startswith("public") and r.get("owner") in {None, "", "A definir"}]
+    if public_no_owner:
+        insights.append({"id": "I-007", "domain": "Azure Security + Governance", "severity": "critical", "risk": 93, "affected": len(public_no_owner), "title": "Exposição pública sem responsabilização demonstrada", "evidence": f"{len(public_no_owner)} recursos públicos não demonstram owner.", "action": "Priorizar validação de criticidade, owner e necessidade de exposição."})
+
+    return sorted(insights, key=lambda row: row["risk"], reverse=True)

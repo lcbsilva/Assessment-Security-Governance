@@ -36,6 +36,18 @@ def scope_details(scope: str) -> tuple[str, str, str]:
     return "Unknown", "Desconhecido", "Herança não determinável pelo ARG"
 
 
+def access_risk(role: str, scope_kind: str) -> tuple[str, str]:
+    """Classifica risco de uma atribuição sem inferir uso efetivo da conta."""
+    name = str(role or "").lower()
+    privileged_roles = {"owner", "contributor", "user access administrator", "role based access control administrator"}
+    if name in privileged_roles:
+        level = "Crítico" if scope_kind in {"Management Group", "Subscription"} else "Alto"
+        return level, "Função com capacidade ampla; confirmar necessidade, owner e revisão/PIM"
+    if "administrator" in name or "security" in name:
+        return "Alto", "Função administrativa; validar menor privilégio e elegibilidade"
+    return "Moderado", "Validar necessidade, owner e periodicidade da revisão"
+
+
 def collect(subscription_ids: list[str]) -> dict:
     from azure.identity import DefaultAzureCredential
     from azure.mgmt.resourcegraph import ResourceGraphClient
@@ -56,10 +68,12 @@ def collect(subscription_ids: list[str]) -> dict:
     for item in assignments:
         role_id = str(item.get("roleDefinitionId", ""))
         scope_kind, scope_level, inheritance = scope_details(item.get("assignmentScope", ""))
+        role_name = role_map.get(role_id.lower(), role_map.get(role_id.rsplit("/", 1)[-1].lower(), role_id.rsplit("/", 1)[-1] or "Unknown"))
+        risk_level, review_reason = access_risk(role_name, scope_kind)
         rows.append({
             "principal": item.get("principalId", "—"),
             "principal_type": item.get("principalType", "—"),
-            "role": role_map.get(role_id.lower(), role_map.get(role_id.rsplit("/", 1)[-1].lower(), role_id.rsplit("/", 1)[-1] or "Unknown")),
+            "role": role_name,
             "scope": item.get("assignmentScope", "—"),
             "scope_kind": scope_kind,
             "scope_level": scope_level,
@@ -68,6 +82,8 @@ def collect(subscription_ids: list[str]) -> dict:
             "assignment_type": "Permanent/unknown",
             "pim": "Not collected",
             "review": "Requires review",
+            "access_risk": risk_level,
+            "review_reason": review_reason,
             "subscription": item.get("subscriptionId", "—"),
         })
     return {

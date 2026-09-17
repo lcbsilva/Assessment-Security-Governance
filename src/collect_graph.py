@@ -8,7 +8,9 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
+import time
 from datetime import datetime, timedelta, timezone
+from version import engine_version
 
 
 GRAPH = "https://graph.microsoft.com/v1.0"
@@ -16,6 +18,11 @@ GRAPH = "https://graph.microsoft.com/v1.0"
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def retryable_graph_status(code: int) -> bool:
+    """Indica falha transitória que pode ser repetida com segurança em GET."""
+    return code == 429 or code in {500, 502, 503, 504}
 
 
 def sign_in_path(start_date: str) -> str:
@@ -32,6 +39,115 @@ def permission_grant_row(item: dict, principals: dict[str, str], resources: dict
     return {"client": principals.get(item.get("clientId"), item.get("clientId", "—")), "resource": resources.get(item.get("resourceId"), item.get("resourceId", "—")), "consent_type": item.get("consentType", "—"), "principal_id": item.get("principalId") or "Delegated by admin", "scopes": " ".join(scopes) or "—", "scope_count": len(scopes), "high_impact_scopes": ", ".join(risky) or "Nenhum sinal de alto impacto"}
 
 
+def build_identity_summary(users: list[dict], permission_grants: list[dict]) -> dict:
+    """Produz indicadores agregados para decisão, sem expor identidade individual."""
+    return {
+        "Usuários avaliados": len(users),
+        "Convidados externos": sum(1 for item in users if str(item.get("account_type", "")).lower() == "guest"),
+        "Contas desabilitadas": sum(1 for item in users if item.get("account_enabled") is False),
+        "Último sign-in desconhecido": sum(1 for item in users if str(item.get("last_sign_in", "")).lower() in {"never", "unknown", "—"}),
+        "Privilegiados sem MFA": sum(1 for item in users if item.get("privileged") and item.get("mfa_status") == "Not registered"),
+        "Usuários com risco de identidade": sum(1 for item in users if str(item.get("risk", "None")).lower() not in {"none", "—", "unknown"}),
+        "Consentimentos de alto impacto": sum(1 for item in permission_grants if item.get("high_impact_scopes") != "Nenhum sinal de alto impacto"),
+    }
+
+
+def user_posture(user: dict) -> tuple[str, str]:
+    """Classifica sinais individuais sem concluir incidente ou intenção."""
+    signals = []
+    if user.get("privileged") and user.get("mfa_status") == "Not registered":
+        signals.append("Privilegiado sem MFA")
+    if user.get("account_type", "").lower() == "guest":
+        signals.append("Convidado externo")
+    if user.get("account_enabled") is False:
+        signals.append("Conta desabilitada")
+    if str(user.get("last_sign_in", "")).lower() in {"never", "none", "unknown", "—"}:
+        signals.append("Sem sign-in conhecido")
+    if str(user.get("risk", "None")).lower() in {"high", "medium"}:
+        signals.append(f"Risco de identidade {str(user.get('risk')).lower()}")
+    if any(signal == "Privilegiado sem MFA" for signal in signals) or any("Risco de identidade high" in signal for signal in signals):
+        return "Crítico", "; ".join(signals)
+    if signals:
+        return "Atenção", "; ".join(signals)
+    return "Sem sinal básico", "Nenhum sinal básico"
+
+
+def conditional_access_row(item: dict) -> dict:
+    """Normaliza uma política e explicita sinais de cobertura incompleta."""
+    conditions = item.get("conditions") or {}
+    users = conditions.get("users") or {}
+    included = users.get("includeUsers", [])
+    excluded = users.get("excludeUsers", []) + users.get("excludeGroups", []) + users.get("excludeRoles", [])
+    controls = (item.get("grantControls") or {}).get("builtInControls", [])
+    state = str(item.get("state", "—"))
+    control_text = ", ".join(controls) or "—"
+    signals = []
+    if state.lower() != "enabled":
+        signals.append("Não aplicada")
+    if state.lower() == "enabled" and not any("mfa" in str(control).lower() or "authenticationstrength" in str(control).lower() for control in controls):
+        signals.append("Sem MFA explícito")
+    if excluded:
+        signals.append(f"{len(excluded)} exclusões")
+    return {
+        "display_name": item.get("displayName", "—"),
+        "state": state,
+        "users_scope": "Todos os usuários" if "All" in included else f"{len(included)} escopo(s) configurado(s)" if included else "Não informado",
+        "included": len(included),
+        "excluded": len(excluded),
+        "grant_controls": control_text,
+        "coverage": "Atenção" if signals else "Sinal básico OK",
+        "risk_signal": "; ".join(signals) or "Nenhum sinal básico",
+    }
+
+
+def credential_posture(credentials: list[dict], now: datetime | None = None) -> dict:
+    """Conta credenciais expiradas e próximas do vencimento sem ler seus valores."""
+    reference = now or datetime.now(timezone.utc)
+    expired = 0
+    expiring_30d = 0
+    for credential in credentials:
+        value = credential.get("endDateTime")
+        if not value:
+            continue
+        try:
+            expiry = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if expiry < reference:
+            expired += 1
+        elif expiry <= reference + timedelta(days=30):
+            expiring_30d += 1
+    return {"expired": expired, "expiring_30d": expiring_30d}
+
+
+def secure_score_summary(scores: list[dict], controls: list[dict]) -> dict:
+    """Normaliza a postura do Secure Score sem enviar detalhes sensíveis à IA."""
+    latest = scores[0] if scores else {}
+    current = float(latest.get("currentScore", 0) or 0)
+    maximum = float(latest.get("maxScore", 0) or 0)
+    return {
+        "current": current,
+        "maximum": maximum,
+        "percentage": round(current / maximum * 100, 1) if maximum else None,
+        "recommendations": len(controls),
+        "high_impact_recommendations": sum(1 for item in controls if str(item.get("implementationCost", "")).lower() in {"low", "medium"} and float(item.get("maxScore", 0) or 0) > 0),
+    }
+
+
+def enrich_pim_rows(rows: list[dict], users: list[dict]) -> list[dict]:
+    """Resolve o principal e classifica o escopo sem consultar novos dados."""
+    names = {str(item.get("id")): item.get("display_name", "—") for item in users if item.get("id")}
+    for row in rows:
+        scope = str(row.get("scope", "—"))
+        row["principal_name"] = names.get(str(row.get("principal_id")), "Principal não resolvido")
+        row["scope_kind"] = (
+            "Tenant" if scope in {"/", "—"} else
+            "Administrative unit" if scope.lower().startswith("/administrativeunits/") else
+            "Directory scope"
+        )
+    return rows
+
+
 def collect() -> dict:
     started = utc_now()
     from azure.identity import DefaultAzureCredential
@@ -45,11 +161,25 @@ def collect() -> dict:
         rows: list[dict] = []
         url = f"{GRAPH}{path}"
         pages = 0
+        attempts = 0
         try:
             while url:
                 request = urllib.request.Request(url, headers=headers, method="GET")
-                with urllib.request.urlopen(request, timeout=60) as response:
-                    payload = json.load(response)
+                try:
+                    with urllib.request.urlopen(request, timeout=60) as response:
+                        payload = json.load(response)
+                except urllib.error.HTTPError as exc:
+                    if retryable_graph_status(exc.code) and attempts < 3:
+                        retry_after = exc.headers.get("Retry-After", "1") if exc.headers else "1"
+                        try:
+                            delay = min(8, max(1, int(retry_after)))
+                        except ValueError:
+                            delay = 1
+                        attempts += 1
+                        time.sleep(delay)
+                        continue
+                    raise
+                attempts = 0
                 rows.extend(payload.get("value", []))
                 pages += 1
                 if max_pages and pages >= max_pages:
@@ -62,8 +192,8 @@ def collect() -> dict:
             logs.append({"module": module, "source": "Microsoft Graph", "status": "success", "records": len(rows), "note": permission_hint})
             return rows
         except urllib.error.HTTPError as exc:
-            note = f"HTTP {exc.code}; verifique consentimento/licença: {permission_hint}"
-            logs.append({"module": module, "source": "Microsoft Graph", "status": "not_available", "records": 0, "note": note})
+            note = f"HTTP {exc.code}; verifique consentimento/licença ou throttling: {permission_hint}"
+            logs.append({"module": module, "source": "Microsoft Graph", "status": "partial" if rows else "not_available", "records": len(rows), "note": note})
             return []
         except Exception as exc:
             logs.append({"module": module, "source": "Microsoft Graph", "status": "error", "records": 0, "note": f"{type(exc).__name__}: {exc}"})
@@ -131,7 +261,10 @@ def collect() -> dict:
         upn = item.get("userPrincipalName", "")
         registration = registration_by_upn.get(str(upn).lower(), {})
         risk = risky_by_id.get(item.get("id"), {})
+        base_user = {"privileged": bool(privileged_by_id.get(item.get("id"))), "mfa_status": "Registered" if registration.get("isMfaRegistered") else ("Not registered" if registration else "Unknown"), "account_type": item.get("userType", "Member"), "account_enabled": item.get("accountEnabled", "—"), "last_sign_in": (item.get("signInActivity") or {}).get("lastSignInDateTime", "Never"), "risk": risk.get("riskLevel", "None")}
+        posture_level, posture_signal = user_posture(base_user)
         normalized_users.append({
+            "id": item.get("id", "—"),
             "display_name": item.get("displayName", "—"),
             "user_principal_name": upn or "—",
             "account_type": item.get("userType", "Member"),
@@ -144,6 +277,8 @@ def collect() -> dict:
             "risk": risk.get("riskLevel", "None"),
             "risk_state": risk.get("riskState", "—"),
             "last_sign_in": (item.get("signInActivity") or {}).get("lastSignInDateTime", "Never"),
+            "posture_level": posture_level,
+            "posture_signal": posture_signal,
         })
 
     normalized_policies = []
@@ -151,14 +286,7 @@ def collect() -> dict:
         conditions = item.get("conditions") or {}
         users_condition = conditions.get("users") or {}
         excluded = users_condition.get("excludeUsers", []) + users_condition.get("excludeGroups", []) + users_condition.get("excludeRoles", [])
-        normalized_policies.append({
-            "display_name": item.get("displayName", "—"),
-            "state": item.get("state", "—"),
-            "users_scope": "Configured in Graph",
-            "excluded": len(excluded),
-            "grant_controls": ", ".join((item.get("grantControls") or {}).get("builtInControls", [])) or "—",
-            "coverage": "To be calculated",
-        })
+        normalized_policies.append(conditional_access_row(item))
 
     normalized_devices = []
     for item in devices:
@@ -201,15 +329,17 @@ def collect() -> dict:
     for item in applications:
         credentials = (item.get("passwordCredentials") or []) + (item.get("keyCredentials") or [])
         credential_expirations = [credential.get("endDateTime") for credential in credentials if credential.get("endDateTime")]
+        posture = credential_posture(credentials)
         registration_rows.append({
             "name": item.get("displayName", "—"), "app_id": item.get("appId", "—"),
             "audience": item.get("signInAudience", "—"), "required_permissions": len(item.get("requiredResourceAccess") or []),
             "credentials": len(credentials), "password_credentials": len(item.get("passwordCredentials") or []),
-            "certificate_credentials": len(item.get("keyCredentials") or []), "credential_expirations": ", ".join(credential_expirations) or "—", "created_at": item.get("createdDateTime", "—")
+            "certificate_credentials": len(item.get("keyCredentials") or []), "credential_expirations": ", ".join(credential_expirations) or "—", "expired_credentials": posture["expired"], "expiring_30d": posture["expiring_30d"], "credential_risk": "Crítico" if posture["expired"] else ("Alto" if posture["expiring_30d"] else ("Revisar" if credentials else "Sem credencial")), "created_at": item.get("createdDateTime", "—")
         })
     role_names = {item.get("id"): item.get("displayName", "—") for item in role_definitions}
     pim_rows = [{"principal_id": item.get("principalId", "—"), "role_id": item.get("roleDefinitionId", "—"), "role": role_names.get(item.get("roleDefinitionId"), "—"), "assignment_type": "Active", "member_type": item.get("memberType", "—"), "scope": item.get("directoryScopeId", "—"), "start": item.get("startDateTime", "—"), "end": item.get("endDateTime", "—")} for item in role_assignments]
     pim_rows.extend({"principal_id": item.get("principalId", "—"), "role_id": item.get("roleDefinitionId", "—"), "role": role_names.get(item.get("roleDefinitionId"), "—"), "assignment_type": "Eligible", "member_type": item.get("memberType", "—"), "scope": item.get("directoryScopeId", "—"), "start": item.get("startDateTime", "—"), "end": item.get("endDateTime", "—")} for item in role_eligibility)
+    pim_rows = enrich_pim_rows(pim_rows, normalized_users)
     defender_summary = {"alerts": len(defender_alerts), "high": sum(1 for item in defender_alerts if str(item.get("severity", "")).lower() == "high"), "medium": sum(1 for item in defender_alerts if str(item.get("severity", "")).lower() == "medium"), "active": sum(1 for item in defender_alerts if str(item.get("status", "")).lower() not in {"resolved", "closed"})}
     normalized_alerts = [{"severity": item.get("severity", "—"), "status": item.get("status", "—"), "source": item.get("serviceSource", "—"), "created_at": item.get("createdDateTime", "—")} for item in defender_alerts]
     normalized_vulnerabilities = [{"name": item.get("name", "—"), "severity": item.get("severity", "—"), "status": item.get("status", "—"), "created_at": item.get("createdDateTime", "—"), "updated_at": item.get("lastModifiedDateTime", "—")} for item in defender_vulnerabilities]
@@ -218,11 +348,15 @@ def collect() -> dict:
     principal_names = {item.get("id"): item.get("displayName", "—") for item in service_principals}
     principal_names.update({item.get("appId"): item.get("displayName", "—") for item in service_principals})
     normalized_permission_grants = [permission_grant_row(item, principal_names, principal_names) for item in permission_grants]
+    identity_summary = build_identity_summary(normalized_users, normalized_permission_grants)
+    score_summary = secure_score_summary(secure_scores, secure_score_controls)
 
     result = {
-        "metadata": {"engine_version": "0.1.5", "run_id": f"graph-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}", "collected_at": started, "scope": {"users_assessed": len(normalized_users), "privileged_users_identified": sum(1 for item in normalized_users if item.get("privileged")), "signins_reviewed": len(signins), "legacy_auth_signins": len(legacy_signins), "devices_assessed": len(normalized_devices), "enterprise_applications": len(app_rows), "app_registrations": len(registration_rows), "groups_assessed": len(normalized_groups), "licenses_assessed": len(normalized_skus)}, "modules": {"identity": "success" if users else "not_available", "security": "success" if secure_scores else "not_available"}},
+        "metadata": {"engine_version": engine_version(), "run_id": f"graph-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}", "collected_at": started, "scope": {"users_assessed": len(normalized_users), "privileged_users_identified": sum(1 for item in normalized_users if item.get("privileged")), "signins_reviewed": len(signins), "legacy_auth_signins": len(legacy_signins), "devices_assessed": len(normalized_devices), "enterprise_applications": len(app_rows), "app_registrations": len(registration_rows), "groups_assessed": len(normalized_groups), "licenses_assessed": len(normalized_skus)}, "modules": {"identity": "success" if users else "not_available", "security": "success" if secure_scores else "not_available"}},
         "controls": [],
         "findings": [],
         "discovery": {"users": normalized_users, "conditional_access": normalized_policies, "risky_users": risky, "groups": normalized_groups, "licenses": normalized_skus, "conditional_access": normalized_policies, "devices": normalized_devices, "device_summary": device_summary, "enterprise_applications": app_rows, "app_registrations": registration_rows, "oauth2_permission_grants": normalized_permission_grants, "pim_assignments": pim_rows, "pim_summary": {"active": len(role_assignments), "eligible": len(role_eligibility), "permanent_or_active": sum(1 for item in role_assignments if str(item.get("assignmentType", "")).lower() != "eligible")}, "defender_summary": {**defender_summary, "vulnerabilities": len(normalized_vulnerabilities), "critical_vulnerabilities": sum(1 for item in normalized_vulnerabilities if str(item.get("severity", "")).lower() == "critical")}, "defender_alerts": normalized_alerts, "defender_vulnerabilities": normalized_vulnerabilities, "secure_score": secure_scores, "secure_score_controls": [{"id": item.get("id", "—"), "title": item.get("title", "—"), "category": item.get("controlCategory", "—"), "max_score": item.get("maxScore", 0), "implementation_cost": item.get("implementationCost", "—"), "remediation": item.get("remediation", "—"), "action_url": item.get("actionUrl", "—")} for item in secure_score_controls], "legacy_auth_signins": legacy_signins, "legacy_auth_summary": {"lookback_days": lookback_days, "signins_reviewed": len(signins), "legacy_signins": len(legacy_signins), "affected_users": len({item.get("user_principal_name") for item in legacy_signins})}, "directory_roles": [{"role": item.get("displayName", "—"), "role_id": item.get("id", "—")} for item in directory_roles], "collection_log": logs},
     }
+    result["discovery"]["user_summary"] = identity_summary
+    result["discovery"]["secure_score_summary"] = score_summary
     return result
