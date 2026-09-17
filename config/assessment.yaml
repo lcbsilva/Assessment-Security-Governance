@@ -1,0 +1,36 @@
+config_version: "0.1.0"
+
+# O discovery é amplo; esta é a prioridade consultiva da oferta.
+focus:
+  primary_domains: ["security", "governance"]
+  secondary_domains: ["identity", "compliance", "cost"]
+  priority_message: "Segurança e Governança orientam o score e o plano; os demais domínios enriquecem a decisão."
+
+# Escopo padrão: explícito, auditável e sem descoberta ampla fora do pedido.
+collection:
+  azure_scope: "subscriptions"
+  graph_api_version: "v1.0"
+  sign_in_lookback_days: 30
+  sign_in_max_pages: 5
+  cost_timeframe: "BillingMonthToDate"
+  max_query_page: 5000
+  request_timeout_seconds: 60
+
+privacy:
+  pii_stays_in_tenant: true
+  ai_payload_aggregated_only: true
+  executive_report_mask_pii: false
+  retain_raw_api_payloads: false
+
+quality:
+  missing_data_status: "not_available"
+  permission_error_status: "not_available"
+  low_confidence_threshold: 60
+  stale_signin_days: 90
+
+guardrails:
+  read_only: true
+  allow_delete: false
+  allow_write: false
+  allow_remediation: false
+  require_owner_validation: true

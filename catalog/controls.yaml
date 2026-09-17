@@ -1,0 +1,130 @@
+catalog_version: "0.1.0"
+
+domains:
+  identity:
+    name: "Identidade"
+    weight: 25
+  security:
+    name: "Segurança"
+    weight: 25
+  governance:
+    name: "Governança Azure"
+    weight: 20
+  cost:
+    name: "Custo e FinOps"
+    weight: 15
+  compliance:
+    name: "Compliance"
+    weight: 15
+
+controls:
+  - id: "ID-001"
+    domain: "identity"
+    title: "Cobertura de MFA"
+    weight: 5
+    frameworks: ["CIS Microsoft 365", "NIST CSF", "Zero Trust"]
+  - id: "ID-002"
+    domain: "identity"
+    title: "MFA para administradores"
+    weight: 5
+    frameworks: ["CIS Microsoft 365", "Zero Trust"]
+  - id: "ID-003"
+    domain: "identity"
+    title: "Conditional Access"
+    weight: 4
+    frameworks: ["CIS Microsoft 365", "Zero Trust"]
+  - id: "ID-004"
+    domain: "identity"
+    title: "Exclusões de Conditional Access"
+    weight: 3
+    frameworks: ["Zero Trust"]
+  - id: "ID-005"
+    domain: "identity"
+    title: "Autenticação legada"
+    weight: 4
+    frameworks: ["CIS Microsoft 365", "Zero Trust"]
+  - id: "ID-006"
+    domain: "identity"
+    title: "Governança de convidados"
+    weight: 2
+    frameworks: ["CIS Microsoft 365"]
+  - id: "ID-007"
+    domain: "identity"
+    title: "PIM e privilégios permanentes"
+    weight: 5
+    frameworks: ["CIS Microsoft 365", "Zero Trust"]
+  - id: "ID-008"
+    domain: "identity"
+    title: "Higiene de contas, convidados e inatividade"
+    weight: 3
+    frameworks: ["CIS Microsoft 365", "Zero Trust"]
+  - id: "ID-009"
+    domain: "identity"
+    title: "Governança de acesso privilegiado com PIM"
+    weight: 5
+    frameworks: ["CIS Microsoft 365", "Zero Trust"]
+  - id: "SEC-001"
+    domain: "security"
+    title: "Microsoft Secure Score"
+    weight: 5
+    frameworks: ["Microsoft Secure Score", "NIST CSF"]
+  - id: "SEC-004"
+    domain: "security"
+    title: "Auditoria e retenção de logs"
+    weight: 4
+    frameworks: ["CIS Microsoft 365", "NIST CSF"]
+  - id: "SEC-002"
+    domain: "security"
+    title: "Postura de dispositivos e endpoints"
+    weight: 5
+    frameworks: ["CIS Microsoft 365", "Zero Trust", "NIST CSF"]
+  - id: "SEC-003"
+    domain: "security"
+    title: "Governança de aplicações e credenciais"
+    weight: 4
+    frameworks: ["CIS Microsoft 365", "NIST CSF"]
+  - id: "SEC-005"
+    domain: "security"
+    title: "Alertas e vulnerabilidades Defender"
+    weight: 5
+    frameworks: ["Microsoft Defender", "NIST CSF"]
+  - id: "GOV-001"
+    domain: "governance"
+    title: "Hierarquia Azure"
+    weight: 3
+    frameworks: ["Azure Governance", "CIS Azure"]
+  - id: "GOV-002"
+    domain: "governance"
+    title: "Padronização de tags"
+    weight: 2
+    frameworks: ["Azure Governance"]
+  - id: "GOV-003"
+    domain: "governance"
+    title: "RBAC excessivo"
+    weight: 5
+    frameworks: ["CIS Azure", "Zero Trust"]
+  - id: "GOV-004"
+    domain: "governance"
+    title: "Exposição pública de recursos"
+    weight: 5
+    frameworks: ["CIS Azure", "NIST CSF"]
+  - id: "GOV-005"
+    domain: "governance"
+    title: "Cobertura de Azure Policy"
+    weight: 4
+    frameworks: ["Azure Governance", "CIS Azure"]
+  - id: "GOV-006"
+    domain: "governance"
+    title: "Recursos não conformes"
+    weight: 5
+    frameworks: ["Azure Governance", "CIS Azure"]
+  - id: "COST-001"
+    domain: "cost"
+    title: "Recursos órfãos e desperdícios evitáveis"
+    weight: 4
+    frameworks: ["FinOps Framework", "Azure Governance"]
+  - id: "COST-002"
+    domain: "cost"
+    title: "Ciclo de vida e aposentadoria de serviços"
+    weight: 4
+    frameworks: ["FinOps Framework", "Azure Governance"]

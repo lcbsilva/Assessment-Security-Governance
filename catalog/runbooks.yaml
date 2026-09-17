@@ -1,0 +1,42 @@
+runbook_catalog_version: "0.1.0"
+
+runbooks:
+  - id: "FIN-ORPHAN-001"
+    name: "Recursos órfãos e custo potencial"
+    trigger: "Recurso sem associação, sem workload dependente ou sem uso aparente"
+    evidence: "Azure Resource Graph, Cost Management e metadados do recurso"
+    validation: "Confirmar owner, dependências, backup, criticidade e janela de mudança"
+    actions: ["Anexar", "Mover", "Reutilizar", "Descomissionar após aprovação"]
+    guardrail: "Nunca excluir automaticamente durante o assessment"
+
+  - id: "GOV-LIFECYCLE-001"
+    name: "Serviços e features em aposentadoria"
+    trigger: "Retirement ou deprecated feature associado a recurso do tenant"
+    evidence: "Azure Advisor, Service Health, Azure EOL e Azure Resource Graph"
+    validation: "Confirmar recurso impactado, data limite, alternativa e dependências"
+    actions: ["Atualizar API/runtime", "Migrar", "Testar", "Registrar exceção temporária"]
+    guardrail: "Tratar ausência de impacto detalhado como cobertura desconhecida, não como ausência de risco"
+
+  - id: "ID-MFA-001"
+    name: "Cobertura de MFA e exceções"
+    trigger: "Usuário sem registro MFA, fora do escopo ou sem política efetiva"
+    evidence: "Microsoft Graph, métodos de autenticação e Conditional Access"
+    validation: "Classificar usuário, privilégio, exceção, break-glass e último sign-in"
+    actions: ["Registrar MFA", "Aplicar Conditional Access", "Revisar exceção"]
+    guardrail: "Não bloquear ou alterar usuários no modo assessment"
+
+  - id: "GOV-RBAC-001"
+    name: "Revisão de privilégios RBAC"
+    trigger: "Owner/Contributor permanente ou escopo maior que o necessário"
+    evidence: "ARM role assignments, Azure Resource Graph e PIM"
+    validation: "Confirmar owner, justificativa, herança, PIM e data da última revisão"
+    actions: ["Reduzir escopo", "Migrar para grupo", "Tornar elegível no PIM", "Remover após aprovação"]
+    guardrail: "Nenhuma alteração de RBAC é executada pelo assessment"
+
+  - id: "GOV-POLICY-001"
+    name: "Correção de não conformidade Azure Policy"
+    trigger: "Recurso em estado non-compliant ou policy sem cobertura suficiente"
+    evidence: "Policy Insights, policy assignments, exemptions e Azure Resource Graph"
+    validation: "Confirmar impacto, exceção, modo da policy e efeito da remediação"
+    actions: ["Corrigir recurso", "Ajustar assignment", "Documentar isenção", "Criar remediação controlada"]
+    guardrail: "Validar efeito de Deny/Modify antes de qualquer mudança"

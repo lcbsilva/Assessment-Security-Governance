@@ -1,0 +1,215 @@
+{
+  "metadata": {
+    "customer_name": "Contoso Brasil — DEMO",
+    "tenant_label": "tenant-xxxx-masked",
+    "run_id": "demo-2026-09-16-001",
+    "engine_version": "0.1.0",
+    "collected_at": "2026-09-16T14:00:00Z",
+    "duration_minutes": 18,
+    "scope": {
+      "subscriptions": 2,
+      "management_groups": 1,
+      "users_assessed": 842,
+      "resources_assessed": 2480
+    },
+    "modules": {
+      "identity": "success",
+      "security": "success",
+      "governance": "success",
+      "cost": "partial",
+      "compliance": "partial"
+    }
+  },
+  "controls": [
+    {"id": "ID-001", "status": "partial", "score": 72, "confidence": "high"},
+    {"id": "ID-002", "status": "fail", "score": 55, "confidence": "high"},
+    {"id": "ID-003", "status": "partial", "score": 68, "confidence": "high"},
+    {"id": "ID-004", "status": "fail", "score": 40, "confidence": "high"},
+    {"id": "ID-005", "status": "pass", "score": 96, "confidence": "medium"},
+    {"id": "ID-006", "status": "partial", "score": 74, "confidence": "medium"},
+    {"id": "ID-007", "status": "partial", "score": 62, "confidence": "high"},
+    {"id": "SEC-001", "status": "partial", "score": 64, "confidence": "high"},
+    {"id": "SEC-004", "status": "pass", "score": 90, "confidence": "high"},
+    {"id": "GOV-001", "status": "pass", "score": 92, "confidence": "high"},
+    {"id": "GOV-002", "status": "fail", "score": 45, "confidence": "high"},
+    {"id": "GOV-003", "status": "partial", "score": 58, "confidence": "high"},
+    {"id": "GOV-004", "status": "fail", "score": 35, "confidence": "high"},
+    {"id": "GOV-005", "status": "partial", "score": 62, "confidence": "high"},
+    {"id": "GOV-006", "status": "partial", "score": 50, "confidence": "high"},
+    {"id": "COST-001", "status": "fail", "score": 42, "confidence": "high"},
+    {"id": "COST-002", "status": "fail", "score": 38, "confidence": "medium"}
+  ],
+  "findings": [
+    {
+      "id": "F-001", "control_id": "GOV-004", "title": "Recursos Azure expostos publicamente",
+      "severity": "critical", "risk_score": 90, "effort": 3, "quick_win": false, "owner": "Azure Platform / Networking", "source": "ARG + Resource Inventory", "affected": 2, "status": "Open",
+      "summary": "Foram identificados recursos com exposição pública que precisam de validação de negócio.",
+      "evidence": ["Recursos públicos identificados no inventário Azure Resource Graph."],
+      "recommendation": "Validar necessidade de exposição e priorizar Private Endpoint, firewall ou restrição de rede.",
+      "limitations": ["A necessidade de negócio de cada endpoint deve ser confirmada pelo proprietário."],
+      "action_30_60_90": {"30": "Validar responsáveis e criticidade.", "60": "Corrigir exposições não justificadas.", "90": "Implantar revisão contínua de exposição."}
+    },
+    {
+      "id": "F-002", "control_id": "ID-002", "title": "Administradores sem cobertura adequada de MFA",
+      "severity": "high", "risk_score": 80, "effort": 2, "quick_win": true, "owner": "Identity / IAM", "source": "Graph + Authentication Methods", "affected": 18, "status": "Open",
+      "summary": "Contas privilegiadas sem MFA aumentam o impacto potencial de credenciais comprometidas.",
+      "evidence": ["55% de score no controle de MFA para administradores."],
+      "recommendation": "Aplicar MFA obrigatório para todas as contas administrativas e revisar exceções.",
+      "limitations": ["Exceções break-glass devem ser avaliadas individualmente."],
+      "action_30_60_90": {"30": "Inventariar administradores e exceções.", "60": "Aplicar política-piloto.", "90": "Eliminar exceções não justificadas."}
+    },
+    {
+      "id": "F-003", "control_id": "ID-001", "title": "Cobertura insuficiente de MFA",
+      "severity": "high", "risk_score": 80, "effort": 2, "quick_win": true, "owner": "Identity / IAM", "source": "Graph MFA Registration + CA", "affected": 126, "status": "Open",
+      "summary": "15% dos usuários avaliados não possuem cobertura adequada de MFA.",
+      "evidence": ["Usuários avaliados: 842", "Usuários sem MFA: 126", "Cobertura: 85,04%"],
+      "recommendation": "Expandir MFA via Conditional Access, começando por grupos prioritários.",
+      "limitations": ["A coleta não determina sozinha se toda exceção é legítima."],
+      "action_30_60_90": {"30": "Identificar usuários sem MFA.", "60": "Aplicar política-piloto.", "90": "Expandir para todo o ambiente."}
+    },
+    {
+      "id": "F-004", "control_id": "GOV-003", "title": "Privilégios RBAC acima do necessário",
+      "severity": "high", "risk_score": 72, "effort": 3, "quick_win": false, "owner": "Cloud Platform", "source": "ARM RBAC + ARG", "affected": 37, "status": "Open",
+      "summary": "Foram observadas atribuições privilegiadas que devem ser revisadas pelo princípio do menor privilégio.",
+      "evidence": ["Atribuições Owner e Contributor identificadas em escopos amplos."],
+      "recommendation": "Migrar acessos permanentes para grupos, PIM e funções mais específicas.",
+      "limitations": ["O engine não conhece todas as responsabilidades operacionais dos usuários."],
+      "action_30_60_90": {"30": "Validar proprietários dos acessos.", "60": "Reduzir escopos excessivos.", "90": "Adotar revisão periódica e PIM."}
+    },
+    {
+      "id": "F-005", "control_id": "GOV-006", "title": "Recursos não conformes com Azure Policy",
+      "severity": "high", "risk_score": 68, "effort": 3, "quick_win": false, "owner": "Cloud Governance", "source": "Policy Insights", "affected": 416, "status": "Open",
+      "summary": "Parte dos recursos avaliados não atende às políticas atribuídas ao ambiente.",
+      "evidence": ["Estados não conformes identificados no Policy Insights."],
+      "recommendation": "Classificar as não conformidades, corrigir as prioritárias e documentar isenções.",
+      "limitations": ["A existência de uma policy não comprova que todos os controles de segurança estejam cobertos."],
+      "action_30_60_90": {"30": "Classificar não conformidades.", "60": "Corrigir recursos prioritários.", "90": "Revisar assignments e exceções."}
+    },
+    {
+      "id": "F-006", "control_id": "GOV-002", "title": "Recursos sem padronização de tags",
+      "severity": "medium", "risk_score": 48, "effort": 2, "quick_win": true, "owner": "Cloud Governance / FinOps", "source": "ARG + Azure Policy", "affected": 416, "status": "Open",
+      "summary": "A ausência de tags reduz a capacidade de governar custos, proprietários e criticidade.",
+      "evidence": ["Recursos sem tags obrigatórias de owner, ambiente e centro de custo."],
+      "recommendation": "Definir conjunto mínimo de tags e aplicar Azure Policy para auditoria ou negação.",
+      "limitations": ["Os valores corretos dependem de regras organizacionais do cliente."],
+      "action_30_60_90": {"30": "Definir taxonomia de tags.", "60": "Corrigir recursos prioritários.", "90": "Aplicar governança contínua."}
+    },
+    {
+      "id": "F-007", "control_id": "ID-004", "title": "Exclusões relevantes em Conditional Access",
+      "severity": "medium", "risk_score": 55, "effort": 2, "quick_win": true, "owner": "Identity / IAM", "source": "Graph Conditional Access", "affected": 4, "status": "Open",
+      "summary": "Exclusões amplas podem criar caminhos de acesso que não seguem a proteção esperada.",
+      "evidence": ["Políticas com grupos ou usuários excluídos do escopo de proteção."],
+      "recommendation": "Revisar todas as exclusões, documentar justificativas e reduzir o escopo quando possível.",
+      "limitations": ["Algumas exclusões podem ser necessárias para contas de emergência."],
+      "action_30_60_90": {"30": "Documentar exceções.", "60": "Reduzir exclusões desnecessárias.", "90": "Criar revisão periódica."}
+    },
+    {
+      "id": "F-008", "control_id": "COST-001", "title": "Recursos órfãos gerando custo potencial",
+      "severity": "medium", "risk_score": 62, "effort": 2, "quick_win": true, "owner": "Cloud Governance / FinOps", "source": "ARG + Cost Management", "affected": 23, "status": "Open",
+      "summary": "Foram encontrados recursos sem associação ou uso aparente que podem continuar gerando cobrança.",
+      "evidence": ["23 recursos classificados como órfãos", "Custo mensal potencial estimado: US$ 418", "Principais grupos: Managed Disks, Public IPs e App Service Plans"],
+      "recommendation": "Validar owner e dependências antes de qualquer ação. Após aprovação, anexar, mover ou descomissionar o recurso conforme o runbook.",
+      "limitations": ["A classificação é heurística e não substitui a confirmação do proprietário ou a análise de dependências."],
+      "action_30_60_90": {"30": "Validar os 23 recursos e confirmar custo real.", "60": "Corrigir ou descomissionar itens aprovados.", "90": "Criar rotina periódica de detecção e aceite de exceções."}
+    },
+    {
+      "id": "F-009", "control_id": "COST-002", "title": "Recursos afetados por aposentadoria de serviços",
+      "severity": "high", "risk_score": 76, "effort": 4, "quick_win": false, "owner": "Cloud Governance + Owners", "source": "Azure Advisor + Service Health + ARG", "affected": 17, "status": "At Risk",
+      "summary": "Serviços ou features com data de aposentadoria identificada exigem atualização, migração ou plano de exceção.",
+      "evidence": ["3 eventos de ciclo de vida identificados", "17 recursos potencialmente impactados", "1 item com janela inferior a 90 dias na demonstração"],
+      "recommendation": "Confirmar impacto por recurso, registrar plano de migração, acompanhar a data de aposentadoria e validar a alternativa suportada.",
+      "limitations": ["A cobertura de impacto por recurso depende da disponibilidade dos metadados do Advisor e do Service Health."],
+      "action_30_60_90": {"30": "Confirmar escopo e responsáveis por cada aposentadoria.", "60": "Executar atualização ou migração do item mais próximo do prazo.", "90": "Implantar acompanhamento contínuo de ciclo de vida."}
+    }
+  ],
+  "discovery": {
+    "user_summary": {
+      "Usuários avaliados": 842,
+      "Sem MFA": 126,
+      "Administradores": 18,
+      "Convidados externos": 64,
+      "Contas inativas": 37,
+      "Risco alto": 9
+    },
+    "users": [
+      {"display_name": "Ana Souza", "user_principal_name": "ana.souza@contoso.example", "account_type": "Member", "mfa_status": "Registered", "ca_coverage": "Covered", "risk": "None", "last_sign_in": "2026-09-15"},
+      {"display_name": "Bruno Lima", "user_principal_name": "bruno.lima@contoso.example", "account_type": "Member", "mfa_status": "Not registered", "ca_coverage": "Excluded", "risk": "High", "last_sign_in": "2026-09-16"},
+      {"display_name": "BreakGlass 01", "user_principal_name": "breakglass01@contoso.example", "account_type": "Emergency", "mfa_status": "Exception", "ca_coverage": "Excluded with justification", "risk": "Medium", "last_sign_in": "Never"},
+      {"display_name": "Fornecedor Contoso", "user_principal_name": "vendor@partner.example", "account_type": "Guest", "mfa_status": "Unknown", "ca_coverage": "Covered", "risk": "Low", "last_sign_in": "2026-08-22"}
+    ],
+    "devices": [
+      {"name": "NB-FIN-001", "operating_system": "Windows", "os_version": "11 24H2", "trust_type": "AzureAD", "compliant": true, "managed": true, "last_sign_in": "2026-09-16", "user": "ana.souza@contoso.example", "source": "Intune"},
+      {"name": "NB-ADM-004", "operating_system": "Windows", "os_version": "10 22H2", "trust_type": "HybridAzureAD", "compliant": false, "managed": true, "last_sign_in": "2026-09-12", "user": "bruno.lima@contoso.example", "source": "Intune"},
+      {"name": "MAC-DESIGN-02", "operating_system": "macOS", "os_version": "14.6", "trust_type": "—", "compliant": "Unknown", "managed": false, "last_sign_in": "2026-07-03", "user": "designer@contoso.example", "source": "Entra ID"}
+    ],
+    "pim_assignments": [
+      {"principal_id": "user-001", "role_id": "role-global-admin", "role": "Global Administrator", "assignment_type": "Active", "member_type": "Direct", "scope": "Directory", "start": "—", "end": "Permanent"},
+      {"principal_id": "group-002", "role_id": "role-security-admin", "role": "Security Administrator", "assignment_type": "Eligible", "member_type": "Group", "scope": "Directory", "start": "—", "end": "2026-12-31"}
+    ],
+    "pim_summary": {"active": 1, "eligible": 1, "permanent_or_active": 1},
+    "enterprise_applications": [
+      {"name": "SAP S/4HANA", "app_id": "app-sap-001", "enabled": true, "type": "Application", "assignment_required": true, "audience": "AzureADMyOrg", "created_at": "2024-04-02"},
+      {"name": "Legacy Integration", "app_id": "app-legacy-002", "enabled": true, "type": "Application", "assignment_required": false, "audience": "AzureADMultipleOrgs", "created_at": "2021-11-18"}
+    ],
+    "app_registrations": [
+      {"name": "pipeline-prod", "app_id": "app-reg-001", "audience": "AzureADMyOrg", "required_permissions": 4, "credentials": 2, "password_credentials": 1, "certificate_credentials": 1, "credential_expirations": "2027-03-01, 2028-05-12", "created_at": "2023-08-10"},
+      {"name": "old-reporting-api", "app_id": "app-reg-002", "audience": "AzureADMyOrg", "required_permissions": 2, "credentials": 1, "password_credentials": 1, "certificate_credentials": 0, "credential_expirations": "2026-10-15", "created_at": "2020-01-22"}
+    ],
+    "defender_summary": {"alerts": 12, "high": 2, "medium": 6, "active": 5},
+    "conditional_access": [
+      {"display_name": "Require MFA - All Users", "state": "Enabled", "users_scope": "All users", "excluded": "2 break-glass", "grant_controls": "MFA", "coverage": "85%"},
+      {"display_name": "Block Legacy Authentication", "state": "Enabled", "users_scope": "All users", "excluded": "None", "grant_controls": "Block", "coverage": "98%"},
+      {"display_name": "Admin Portal Protection", "state": "Report-only", "users_scope": "18 admins", "excluded": "4 users", "grant_controls": "MFA + compliant device", "coverage": "Partial"}
+    ],
+    "resources": [
+      {"name": "vm-prd-web-01", "type": "Microsoft.Compute/virtualMachines", "subscription": "sub-production", "resource_group": "rg-production", "region": "Brazil South", "exposure": "Private", "owner": "Platform", "tags": "owner, env, costcenter"},
+      {"name": "app-api-public", "type": "Microsoft.Web/sites", "subscription": "sub-production", "resource_group": "rg-app", "region": "Brazil South", "exposure": "Public", "owner": "Digital", "tags": "env only"},
+      {"name": "sql-finance", "type": "Microsoft.Sql/servers", "subscription": "sub-data", "resource_group": "rg-data", "region": "East US", "exposure": "Public network", "owner": "Data", "tags": "owner, env"},
+      {"name": "kv-shared-prod", "type": "Microsoft.KeyVault/vaults", "subscription": "sub-production", "resource_group": "rg-platform", "region": "Brazil South", "exposure": "Private Endpoint", "owner": "Security", "tags": "owner, env, criticality"}
+    ],
+    "rbac": [
+      {"principal": "Cloud Operations", "principal_type": "Group", "role": "Owner", "scope": "sub-production", "assignment_type": "Permanent", "pim": "No", "review": "Overdue"},
+      {"principal": "Lucas Admin", "principal_type": "User", "role": "Contributor", "scope": "rg-production", "assignment_type": "Eligible", "pim": "Yes", "review": "Current"},
+      {"principal": "pipeline-prod", "principal_type": "Service principal", "role": "Contributor", "scope": "sub-production", "assignment_type": "Permanent", "pim": "N/A", "review": "Not documented"}
+    ],
+    "policy_compliance": [
+      {"policy": "Require secure transfer", "assignment": "Baseline-Production", "compliance_state": "Compliant", "non_compliant": 0, "exemptions": 0, "last_evaluated": "2026-09-16"},
+      {"policy": "Require tags: owner/env", "assignment": "Baseline-All", "compliance_state": "Non-compliant", "non_compliant": 416, "exemptions": 12, "last_evaluated": "2026-09-16"},
+      {"policy": "Deny public IP", "assignment": "Sensitive-Workloads", "compliance_state": "Partial", "non_compliant": 8, "exemptions": 3, "last_evaluated": "2026-09-15"}
+    ],
+    "collection_log": [
+      {"module": "Identity", "source": "Microsoft Graph", "status": "success", "records": 842, "note": "Users, MFA registration, groups and sign-in summary"},
+      {"module": "Conditional Access", "source": "Microsoft Graph", "status": "success", "records": 27, "note": "Policies and effective scope"},
+      {"module": "Azure inventory", "source": "Azure Resource Graph", "status": "success", "records": 2480, "note": "Subscriptions, resources, regions and tags"},
+      {"module": "RBAC", "source": "Azure Resource Graph + ARM", "status": "partial", "records": 613, "note": "Some inherited permissions require validation"},
+      {"module": "Defender", "source": "Microsoft Defender APIs", "status": "not_available", "records": 0, "note": "Licença Defender P2 não detectada na demonstração"},
+      {"module": "Cost / lifecycle", "source": "ARG + Cost Management", "status": "partial", "records": 23, "note": "Orphans and lifecycle signals available; detailed billing validation pending"}
+    ],
+    "lifecycle": {
+      "summary": {
+        "Recursos órfãos": 23,
+        "Custo mensal potencial": "US$ 418",
+        "Serviços em aposentadoria": 3,
+        "Recursos impactados": 17,
+        "Recursos antigos (>365 dias)": 286
+      },
+      "orphan_resources": [
+        {"name": "disk-orphan-01", "type": "Managed Disk", "subscription": "sub-production", "resource_group": "rg-legacy", "reason": "Unattached", "monthly_cost": "US$ 72", "last_activity": "2026-05-12", "owner": "A definir", "recommended_action": "Validar dependência; excluir ou anexar"},
+        {"name": "pip-orphan-02", "type": "Public IP", "subscription": "sub-production", "resource_group": "rg-network", "reason": "Not associated", "monthly_cost": "US$ 18", "last_activity": "2026-04-03", "owner": "Network", "recommended_action": "Confirmar uso e remover se não necessário"},
+        {"name": "plan-orphan-03", "type": "App Service Plan", "subscription": "sub-development", "resource_group": "rg-old-app", "reason": "No active apps", "monthly_cost": "US$ 196", "last_activity": "2025-11-19", "owner": "A definir", "recommended_action": "Validar aplicação aposentada e descomissionar"},
+        {"name": "nic-orphan-04", "type": "Network Interface", "subscription": "sub-data", "resource_group": "rg-migration", "reason": "No VM association", "monthly_cost": "US$ 0", "last_activity": "2026-01-10", "owner": "Platform", "recommended_action": "Confirmar vínculo histórico e limpar"}
+      ],
+      "service_retirements": [
+        {"service": "Azure Feature DEMO-01", "feature": "Legacy API version", "retirement_date": "2027-03-31", "days_remaining": 196, "impacted_resources": 12, "action": "Atualizar API e validar dependências", "owner": "Application Platform", "status": "Open"},
+        {"service": "Azure Service DEMO-02", "feature": "Classic configuration", "retirement_date": "2026-12-15", "days_remaining": 90, "impacted_resources": 4, "action": "Migrar para configuração suportada", "owner": "Data Platform", "status": "Open"},
+        {"service": "Azure Component DEMO-03", "feature": "Deprecated runtime", "retirement_date": "2026-10-31", "days_remaining": 45, "impacted_resources": 1, "action": "Atualizar runtime e executar testes", "owner": "Digital", "status": "At Risk"}
+      ],
+      "resource_age": [
+        {"age_band": "0–90 dias", "resources": 84, "percentage": "3%"},
+        {"age_band": "91–365 dias", "resources": 211, "percentage": "9%"},
+        {"age_band": ">365 dias", "resources": 286, "percentage": "12%"},
+        {"age_band": "Data desconhecida", "resources": 38, "percentage": "2%"}
+      ]
+    }
+  }
+}
