@@ -11,7 +11,7 @@ collection:
   azure_scope: "subscriptions"
   graph_api_version: "v1.0"
   sign_in_lookback_days: 30
-  sign_in_max_pages: 5
+  sign_in_max_pages: 0 # 0 = paginação completa; defina ASSESSMENT_SIGNIN_MAX_PAGES para limitar conscientemente
   cost_timeframe: "BillingMonthToDate"
   max_query_page: 5000
   request_timeout_seconds: 60

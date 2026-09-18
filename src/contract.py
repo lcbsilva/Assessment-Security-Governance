@@ -7,13 +7,17 @@ coletores PowerShell, Python e ferramentas externas sem acoplamento.
 
 from __future__ import annotations
 
+from schema_contract import validate_schema
+
 
 STATUSES = {"pass", "partial", "fail", "not_available", "error"}
 CONFIDENCES = {"high", "medium", "low"}
+EVIDENCE_STATES = {"CONFORMANT", "NON_CONFORMANT", "INSUFFICIENT_EVIDENCE"}
+SCHEMA_VERSION = "1.0"
 
 
 def validate_payload(payload: dict, catalog: dict | None = None) -> list[str]:
-    errors: list[str] = []
+    errors: list[str] = validate_schema(payload) if payload.get("metadata", {}).get("schema_version") else []
     for key in ("metadata", "controls", "findings", "discovery"):
         if key not in payload:
             errors.append(f"campo obrigatório ausente: {key}")
@@ -25,6 +29,9 @@ def validate_payload(payload: dict, catalog: dict | None = None) -> list[str]:
         errors.append("findings deve ser lista")
     if not isinstance(payload.get("discovery"), dict):
         errors.append("discovery deve ser objeto")
+    metadata = payload.get("metadata", {})
+    if isinstance(metadata, dict) and metadata.get("schema_version") is not None and not isinstance(metadata.get("schema_version"), str):
+        errors.append("metadata.schema_version deve ser texto")
     control_ids = set()
     for index, item in enumerate(payload.get("controls", [])):
         if not isinstance(item, dict):
@@ -42,6 +49,15 @@ def validate_payload(payload: dict, catalog: dict | None = None) -> list[str]:
             errors.append(f"controls[{index}].confidence inválido")
         if item.get("status") not in {"not_available", "error"} and not isinstance(item.get("score"), (int, float)):
             errors.append(f"controls[{index}].score ausente para controle avaliado")
+        evidence = item.get("evidence_state")
+        if evidence is not None and evidence not in EVIDENCE_STATES:
+            errors.append(f"controls[{index}].evidence_state inválido")
+        if evidence == "CONFORMANT" and item.get("status") != "pass":
+            errors.append(f"controls[{index}] CONFORMANT exige status pass")
+        if evidence == "NON_CONFORMANT" and item.get("status") not in {"partial", "fail"}:
+            errors.append(f"controls[{index}] NON_CONFORMANT exige status partial ou fail")
+        if evidence == "INSUFFICIENT_EVIDENCE" and item.get("status") not in {"not_available", "error"}:
+            errors.append(f"controls[{index}] INSUFFICIENT_EVIDENCE exige status not_available ou error")
     finding_ids = set()
     for index, item in enumerate(payload.get("findings", [])):
         if not isinstance(item, dict):

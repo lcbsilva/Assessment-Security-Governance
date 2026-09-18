@@ -28,6 +28,13 @@ forem executados.
 | Licenças M365 | Microsoft Graph | `Organization.Read.All` | Tenant | Somente consumo agregado por SKU |
 | Dispositivos Entra ID | Microsoft Graph | `Device.Read.All` | Tenant | Inventário read-only de sistema operacional, confiança, gerenciamento e conformidade |
 | Dispositivos Intune | Microsoft Graph | `DeviceManagementManagedDevices.Read.All` | Tenant | Opcional; requer Intune/licença e pode retornar `not_available` sem quebrar o assessment |
+| Power Platform | Azure Resource Graph | `Reader` | Subscriptions/Management Group | Inventário de metadados; não lê fórmulas, conteúdo, prompts ou dados de negócio |
+| Azure DevOps | Azure DevOps REST API | PAT somente leitura ou identidade equivalente | Organização/projeto | Opcional; não lê código, commits, logs, work items ou segredos |
+| Purview / Synapse / Databricks | Azure Resource Graph | `Reader` | Subscriptions/Management Group | Inventário de recursos e existência; não representa DLP ou retenção |
+| Power BI / Fabric | Power BI Admin REST API | `Tenant.Read.All`/Fabric admin read-only | Tenant | Opcional; somente workspaces e metadados administrativos |
+| Auditoria de diretório | Microsoft Graph | `AuditLog.Read.All` | Tenant | Contagens e categorias agregadas; atores, IPs e detalhes sensíveis ficam fora da IA |
+| Purview DLP / retenção | APIs específicas do Purview | Integração/licenciamento específico | Tenant | Não é inferido pelo inventário; aparece como não executado quando não configurado |
+| Postura de domínios M365 | DNS TXT + Microsoft Graph opcional | DNS read-only; `Domain.Read.All` quando os domínios vierem do Graph | Domínios aprovados | SPF, DMARC e DKIM; não acessa caixas, mensagens ou conteúdo |
 
 ## Permissões proibidas no assessment
 

@@ -18,6 +18,28 @@ def status(score: int | None) -> str:
     return "fail"
 
 
+def evidence_state(control_status: str) -> tuple[str, str]:
+    """Estado formal da evidência; ausência não é conformidade."""
+    if control_status == "pass":
+        return "CONFORMANT", "score_at_or_above_threshold"
+    if control_status in {"partial", "fail"}:
+        return "NON_CONFORMANT", "score_below_threshold"
+    if control_status == "not_available":
+        return "INSUFFICIENT_EVIDENCE", "missing_permission_license_or_data"
+    return "INSUFFICIENT_EVIDENCE", "collector_execution_error"
+
+
+def license_gate_status(control_id: str, discovery: dict) -> str:
+    """Indica se a fonte/licença mínima do controle apareceu na coleta."""
+    if control_id == "SEC-001":
+        return "satisfied" if discovery.get("secure_score") else "not_satisfied_or_not_available"
+    if control_id == "SEC-005":
+        return "satisfied" if discovery.get("defender_summary") else "not_satisfied_or_not_available"
+    if control_id == "SEC-002":
+        return "satisfied" if discovery.get("device_summary") or discovery.get("devices") else "not_verified"
+    return "not_applicable_or_not_declared"
+
+
 def finding(control_id: str, title: str, severity: str, risk: int, effort: int, affected: int, summary: str, evidence: list[str], recommendation: str, owner: str, source: str, action: dict) -> dict:
     dependencies = {
         "ID-001": ["Comunicação e registro de MFA", "Validação de exceções"],
@@ -77,7 +99,10 @@ def derive(data: dict, catalog: dict) -> dict:
     findings: list[dict] = []
 
     def put(control_id: str, score: int | None, confidence: str = "medium") -> None:
-        controls[control_id] = {"id": control_id, "status": status(score), "score": score or 0, "confidence": confidence}
+        control_status = status(score)
+        state, reason = evidence_state(control_status)
+        definition = next((item for item in catalog.get("controls", []) if item.get("id") == control_id), {})
+        controls[control_id] = {"id": control_id, "status": control_status, "score": score or 0, "confidence": confidence, "evidence_state": state, "evidence_reason": reason, "license_gate": definition.get("license_gate", "not_required_or_not_declared"), "license_gate_status": license_gate_status(control_id, discovery)}
 
     if users:
         registered = sum(1 for item in users if item.get("mfa_status") == "Registered")

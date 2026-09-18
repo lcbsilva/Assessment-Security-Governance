@@ -37,6 +37,18 @@ def build(data: dict) -> dict:
             advisor_savings += float(row.get("annual_savings", 0) or 0)
         except (TypeError, ValueError):
             pass
+    finops = data.get("discovery", {}).get("finops_summary", {})
+    finops_aggregate = {
+        "cost_total_period": finops.get("cost_total_period", 0),
+        "currency": finops.get("currency", "—"),
+        "resource_groups_count": finops.get("resource_groups", 0),
+        "resource_types_count": finops.get("resource_types", 0),
+        "anomaly_days_count": len((finops.get("anomalies") or {}).get("anomaly_days", [])),
+        "reservations_status": finops.get("reservations", "Não quantificado"),
+        "savings_plans_status": finops.get("savings_plans", "Não quantificado"),
+        "reservation_inventory_count": (data.get("discovery", {}).get("benefits_summary", {}) or {}).get("reservations", 0),
+        "savings_plan_inventory_count": (data.get("discovery", {}).get("benefits_summary", {}) or {}).get("savings_plans", 0),
+    }
     return {
         "purpose": "Executive summary for security and governance assessment",
         "engine_version": data.get("metadata", {}).get("engine_version", "unknown"),
@@ -45,12 +57,16 @@ def build(data: dict) -> dict:
         "scope_counts": {key: value for key, value in data.get("metadata", {}).get("scope", {}).items() if isinstance(value, (int, float))},
         "severity_counts": severity,
         "finding_count": len(findings),
-        "financial_aggregates": {"cost_rows": len(cost_rows), "cost_total_period": round(total_cost, 2), "advisor_recommendations": len(advisor_rows), "advisor_annual_savings_published": round(advisor_savings, 2)},
+        "financial_aggregates": {"cost_rows": len(cost_rows), "cost_total_period": round(total_cost, 2), "advisor_recommendations": len(advisor_rows), "advisor_annual_savings_published": round(advisor_savings, 2), "finops_summary": finops_aggregate},
         "domain_aggregates": domains,
         "cross_domain_insights": [{key: item.get(key) for key in ("id", "domain", "severity", "risk", "affected", "title")} for item in data.get("discovery", {}).get("cross_domain_insights", [])],
         "ecosystem_aggregates": {
-            "power_platform": data.get("discovery", {}).get("power_platform_summary", {}),
+            "power_platform": {key: value for key, value in (data.get("discovery", {}).get("power_platform_summary", {}) or {}).items() if key not in {"by_environment", "by_kind"}},
             "azure_devops": data.get("discovery", {}).get("azure_devops_summary", {}),
+            "analytics": data.get("discovery", {}).get("analytics_summary", {}),
+            "licenses": {key: value for key, value in (data.get("discovery", {}).get("license_summary", {}) or {}).items() if key != "skus"},
+            "directory_audit": {key: value for key, value in (data.get("discovery", {}).get("directory_audit_summary", {}) or {}).items() if key != "categories"},
+            "m365_domain_posture": data.get("discovery", {}).get("m365_summary", {}),
         },
         "limitations": ["Use only aggregated metrics. Do not infer individual identity, blame or incident occurrence from these values."],
     }

@@ -11,6 +11,8 @@ import argparse
 import json
 from pathlib import Path
 
+from insight_engine import prioritize_findings
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Exporta artefatos do assessment")
@@ -32,12 +34,14 @@ def write_xlsx(data: dict, path: Path) -> None:
     book = Workbook()
     sheet = book.active
     sheet.title = "Plano de ação"
-    headers = ["ID", "Achado", "Severidade", "Impacto", "Risco", "Esforço", "Quadrante", "Frente consultiva", "Responsável", "Status", "Dependências", "30 dias", "60 dias", "90 dias"]
+    headers = ["ID", "Achado", "Severidade", "Impacto", "Risco", "Prioridade", "Score prioridade", "Confiança evidência", "Sinal financeiro", "Esforço", "Quadrante", "Frente consultiva", "Responsável", "Status", "Dependências", "30 dias", "60 dias", "90 dias"]
     sheet.append(headers)
     for cell in sheet[1]:
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor="5B2C83")
-    for item in data.get("findings", []):
+    cost_signal = data.get("discovery", {}).get("lifecycle", {}).get("summary", {}).get("Custo mensal potencial", "Não quantificado")
+    findings = prioritize_findings(data.get("findings", []), data.get("metadata", {}).get("evidence_quality", {}), cost_signal)
+    for item in findings:
         actions = item.get("action_30_60_90", {})
         severity = item.get("severity", "medium")
         impact = "Muito alto" if severity == "critical" else ("Alto" if severity == "high" else ("Médio" if severity == "medium" else "Baixo"))
@@ -47,7 +51,7 @@ def write_xlsx(data: dict, path: Path) -> None:
         workstreams = {"ID": "Identity & Access", "SEC": "Cloud & M365 Security", "GOV": "Cloud Governance", "COST": "FinOps & Cloud Optimization"}
         workstream = workstreams.get(str(item.get("control_id", "")).split("-")[0], "Risk & Compliance")
         dependencies = "; ".join(item.get("remediation_dependencies", []))
-        sheet.append([item.get("id"), item.get("title"), severity, impact, risk, effort, quadrant, workstream, item.get("owner"), item.get("status"), dependencies, actions.get("30"), actions.get("60"), actions.get("90")])
+        sheet.append([item.get("id"), item.get("title"), severity, impact, risk, item.get("priority", "P3"), item.get("priority_score", 0), item.get("evidence_confidence", "baixa"), item.get("financial_signal", "unquantified"), effort, quadrant, workstream, item.get("owner"), item.get("status"), dependencies, actions.get("30"), actions.get("60"), actions.get("90")])
     for column in sheet.columns:
         sheet.column_dimensions[column[0].column_letter].width = min(max(len(str(cell.value or "")) for cell in column) + 2, 42)
     sheet.freeze_panes = "A2"
@@ -59,7 +63,7 @@ def write_pptx(data: dict, path: Path) -> None:
     from pptx.util import Inches, Pt
 
     meta = data.get("metadata", {})
-    findings = sorted(data.get("findings", []), key=lambda item: item.get("risk_score", 0), reverse=True)
+    findings = prioritize_findings(data.get("findings", []), data.get("metadata", {}).get("evidence_quality", {}), data.get("discovery", {}).get("lifecycle", {}).get("summary", {}).get("Custo mensal potencial", "Não quantificado"))
     presentation = Presentation()
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     box = slide.shapes.add_textbox(Inches(0.7), Inches(0.8), Inches(12), Inches(1.2))

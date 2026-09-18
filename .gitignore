@@ -21,3 +21,6 @@ __pycache__/
 # Pacotes locais gerados
 *.zip
 tmp/
+node_modules/
+test-results/
+playwright-report/

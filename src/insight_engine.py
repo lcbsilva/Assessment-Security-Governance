@@ -3,6 +3,35 @@
 from __future__ import annotations
 
 
+def prioritize_findings(findings: list[dict], evidence_quality: dict | None = None, cost_signal: object = "Não quantificado") -> list[dict]:
+    """Aplica uma prioridade única e auditável aos achados.
+
+    O score de prioridade organiza trabalho; não altera o risco técnico do
+    achado. Impacto financeiro só recebe peso adicional quando há sinal
+    quantificado publicado pelo Cost Management/Advisor.
+    """
+    quality_score = int((evidence_quality or {}).get("score", 0) or 0)
+    confidence = "alta" if quality_score >= 80 else ("média" if quality_score >= 60 else "baixa")
+    result = []
+    for item in findings:
+        row = dict(item)
+        risk = int(item.get("risk_score", 0) or 0)
+        effort = max(1, min(5, int(item.get("effort", 3) or 3)))
+        prefix = str(item.get("control_id", "")).split("-")[0]
+        focus_bonus = 8 if prefix in {"SEC", "GOV"} else (5 if prefix == "ID" else 0)
+        financial_bonus = 10 if prefix == "COST" and cost_signal not in {None, "", "Não quantificado"} else 0
+        confidence_bonus = 5 if confidence == "alta" else (2 if confidence == "média" else 0)
+        priority_score = round(risk * 0.7 + (6 - effort) * 6 + focus_bonus + financial_bonus + confidence_bonus)
+        row.update({
+            "priority_score": priority_score,
+            "priority": "P1" if priority_score >= 80 else ("P2" if priority_score >= 60 else "P3"),
+            "evidence_confidence": confidence,
+            "financial_signal": "quantified" if financial_bonus else "unquantified",
+        })
+        result.append(row)
+    return sorted(result, key=lambda item: (-item.get("priority_score", 0), -item.get("risk_score", 0), str(item.get("control_id", "")), str(item.get("title", ""))))
+
+
 def enrich_rbac_identity(discovery: dict) -> list[dict]:
     """Correlaciona RBAC com identidade localmente; não altera a evidência original."""
     users = {str(item.get("id")): item for item in discovery.get("users", []) if item.get("id")}

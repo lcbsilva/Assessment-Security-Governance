@@ -9,6 +9,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import time
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from version import engine_version
 
@@ -134,6 +135,30 @@ def secure_score_summary(scores: list[dict], controls: list[dict]) -> dict:
     }
 
 
+def license_posture(skus: list[dict]) -> dict:
+    """Resume licenças por SKU sem atribuição individual ou UPN."""
+    rows = []
+    for item in skus:
+        prepaid = item.get("prepaidUnits") or {}
+        consumed = int(item.get("consumedUnits", 0) or 0)
+        enabled = int(prepaid.get("enabled", 0) or 0)
+        suspended = int(prepaid.get("suspended", 0) or 0)
+        utilization = round(consumed / enabled * 100, 1) if enabled else None
+        name = str(item.get("skuPartNumber", "—"))
+        lowered = name.lower()
+        product = "Copilot" if "copilot" in lowered else "Teams Premium" if "teams_premium" in lowered or "teams premium" in lowered else "Intune" if "intune" in lowered or "ems" in lowered else "Outro"
+        rows.append({"sku": name, "product_family": product, "consumed": consumed, "enabled": enabled, "suspended": suspended, "utilization_percent": utilization, "unused_enabled": max(0, enabled - consumed), "signal": "Subutilização potencial" if enabled and consumed / enabled < 0.5 else "Revisar" if suspended else "Sem sinal básico"})
+    return {"sku_count": len(rows), "consumed_total": sum(row["consumed"] for row in rows), "enabled_total": sum(row["enabled"] for row in rows), "suspended_total": sum(row["suspended"] for row in rows), "product_families": {family: sum(1 for row in rows if row["product_family"] == family) for family in ("Copilot", "Teams Premium", "Intune", "Outro")}, "skus": rows}
+
+
+def directory_audit_summary(events: list[dict]) -> dict:
+    """Agrega auditoria sem persistir atores, IPs, IDs ou detalhes de operação."""
+    high_risk_tokens = ("role", "permission", "consent", "application", "policy", "credential", "password")
+    categories = Counter(str(item.get("category") or item.get("loggedByService") or "Unknown") for item in events)
+    risky = sum(1 for item in events if any(token in str(item.get("activityDisplayName", "")).lower() for token in high_risk_tokens))
+    return {"events": len(events), "high_risk_operation_signals": risky, "categories": dict(categories), "pii_excluded": True}
+
+
 def enrich_pim_rows(rows: list[dict], users: list[dict]) -> list[dict]:
     """Resolve o principal e classifica o escopo sem consultar novos dados."""
     names = {str(item.get("id")): item.get("display_name", "—") for item in users if item.get("id")}
@@ -221,10 +246,15 @@ def collect() -> dict:
     role_definitions = get_all("/roleManagement/directory/roleDefinitions?$select=id,displayName,isBuiltIn&$top=999", "PIM role definitions", "RoleManagement.Read.Directory")
     defender_alerts = get_all("/security/alerts_v2?$select=severity,status,serviceSource,createdDateTime&$top=1000", "Defender alerts", "SecurityIncident.Read.All")
     defender_vulnerabilities = get_all("/security/vulnerabilities?$select=id,name,description,severity,status,createdDateTime,lastModifiedDateTime&$top=1000", "Defender vulnerabilities", "Vulnerability.Read.All")
+    directory_audits = get_all("/auditLogs/directoryAudits?$top=999", "Directory audit events", "AuditLog.Read.All")
 
     lookback_days = max(1, int(os.getenv("ASSESSMENT_SIGNIN_LOOKBACK_DAYS", "30")))
     start_date = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    signins = get_all(sign_in_path(start_date), "Sign-ins / legacy auth", "AuditLog.Read.All", max_pages=5)
+    # Zero significa sem limite artificial: a paginação do Graph segue até o
+    # fim da janela. Em tenants enormes, o cliente pode definir um limite
+    # consciente por variável de ambiente e o manifesto marcará partial.
+    sign_in_max_pages = max(0, int(os.getenv("ASSESSMENT_SIGNIN_MAX_PAGES", "0")))
+    signins = get_all(sign_in_path(start_date), "Sign-ins / legacy auth", "AuditLog.Read.All", max_pages=sign_in_max_pages or None)
     legacy_clients = {"exchange activesync", "other clients", "imap4", "pop3", "smtp"}
     legacy_signins = [{
         "user_display_name": item.get("userDisplayName", "—"),
@@ -345,6 +375,7 @@ def collect() -> dict:
     normalized_vulnerabilities = [{"name": item.get("name", "—"), "severity": item.get("severity", "—"), "status": item.get("status", "—"), "created_at": item.get("createdDateTime", "—"), "updated_at": item.get("lastModifiedDateTime", "—")} for item in defender_vulnerabilities]
     normalized_groups = [{"name": item.get("displayName", "—"), "group_type": ", ".join(item.get("groupTypes", [])) or "Security/M365", "security_enabled": item.get("securityEnabled", "—"), "mail_enabled": item.get("mailEnabled", "—"), "visibility": item.get("visibility", "—"), "created_at": item.get("createdDateTime", "—"), "dynamic": bool(item.get("membershipRule"))} for item in groups]
     normalized_skus = [{"sku": item.get("skuPartNumber", "—"), "consumed": item.get("consumedUnits", 0), "enabled": (item.get("prepaidUnits") or {}).get("enabled", 0), "suspended": (item.get("prepaidUnits") or {}).get("suspended", 0), "status": item.get("capabilityStatus", "—")} for item in subscribed_skus]
+    license_summary = license_posture(subscribed_skus)
     principal_names = {item.get("id"): item.get("displayName", "—") for item in service_principals}
     principal_names.update({item.get("appId"): item.get("displayName", "—") for item in service_principals})
     normalized_permission_grants = [permission_grant_row(item, principal_names, principal_names) for item in permission_grants]
@@ -355,7 +386,7 @@ def collect() -> dict:
         "metadata": {"engine_version": engine_version(), "run_id": f"graph-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}", "collected_at": started, "scope": {"users_assessed": len(normalized_users), "privileged_users_identified": sum(1 for item in normalized_users if item.get("privileged")), "signins_reviewed": len(signins), "legacy_auth_signins": len(legacy_signins), "devices_assessed": len(normalized_devices), "enterprise_applications": len(app_rows), "app_registrations": len(registration_rows), "groups_assessed": len(normalized_groups), "licenses_assessed": len(normalized_skus)}, "modules": {"identity": "success" if users else "not_available", "security": "success" if secure_scores else "not_available"}},
         "controls": [],
         "findings": [],
-        "discovery": {"users": normalized_users, "conditional_access": normalized_policies, "risky_users": risky, "groups": normalized_groups, "licenses": normalized_skus, "conditional_access": normalized_policies, "devices": normalized_devices, "device_summary": device_summary, "enterprise_applications": app_rows, "app_registrations": registration_rows, "oauth2_permission_grants": normalized_permission_grants, "pim_assignments": pim_rows, "pim_summary": {"active": len(role_assignments), "eligible": len(role_eligibility), "permanent_or_active": sum(1 for item in role_assignments if str(item.get("assignmentType", "")).lower() != "eligible")}, "defender_summary": {**defender_summary, "vulnerabilities": len(normalized_vulnerabilities), "critical_vulnerabilities": sum(1 for item in normalized_vulnerabilities if str(item.get("severity", "")).lower() == "critical")}, "defender_alerts": normalized_alerts, "defender_vulnerabilities": normalized_vulnerabilities, "secure_score": secure_scores, "secure_score_controls": [{"id": item.get("id", "—"), "title": item.get("title", "—"), "category": item.get("controlCategory", "—"), "max_score": item.get("maxScore", 0), "implementation_cost": item.get("implementationCost", "—"), "remediation": item.get("remediation", "—"), "action_url": item.get("actionUrl", "—")} for item in secure_score_controls], "legacy_auth_signins": legacy_signins, "legacy_auth_summary": {"lookback_days": lookback_days, "signins_reviewed": len(signins), "legacy_signins": len(legacy_signins), "affected_users": len({item.get("user_principal_name") for item in legacy_signins})}, "directory_roles": [{"role": item.get("displayName", "—"), "role_id": item.get("id", "—")} for item in directory_roles], "collection_log": logs},
+        "discovery": {"users": normalized_users, "conditional_access": normalized_policies, "risky_users": risky, "groups": normalized_groups, "licenses": normalized_skus, "license_summary": license_summary, "directory_audit_summary": directory_audit_summary(directory_audits), "conditional_access": normalized_policies, "devices": normalized_devices, "device_summary": device_summary, "enterprise_applications": app_rows, "app_registrations": registration_rows, "oauth2_permission_grants": normalized_permission_grants, "pim_assignments": pim_rows, "pim_summary": {"active": len(role_assignments), "eligible": len(role_eligibility), "permanent_or_active": sum(1 for item in role_assignments if str(item.get("assignmentType", "")).lower() != "eligible")}, "defender_summary": {**defender_summary, "vulnerabilities": len(normalized_vulnerabilities), "critical_vulnerabilities": sum(1 for item in normalized_vulnerabilities if str(item.get("severity", "")).lower() == "critical")}, "defender_alerts": normalized_alerts, "defender_vulnerabilities": normalized_vulnerabilities, "secure_score": secure_scores, "secure_score_controls": [{"id": item.get("id", "—"), "title": item.get("title", "—"), "category": item.get("controlCategory", "—"), "max_score": item.get("maxScore", 0), "implementation_cost": item.get("implementationCost", "—"), "remediation": item.get("remediation", "—"), "action_url": item.get("actionUrl", "—")} for item in secure_score_controls], "legacy_auth_signins": legacy_signins, "legacy_auth_summary": {"lookback_days": lookback_days, "max_pages": sign_in_max_pages or "unlimited", "signins_reviewed": len(signins), "legacy_signins": len(legacy_signins), "affected_users": len({item.get("user_principal_name") for item in legacy_signins})}, "directory_roles": [{"role": item.get("displayName", "—"), "role_id": item.get("id", "—")} for item in directory_roles], "collection_log": logs},
     }
     result["discovery"]["user_summary"] = identity_summary
     result["discovery"]["secure_score_summary"] = score_summary

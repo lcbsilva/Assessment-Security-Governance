@@ -10,10 +10,12 @@ import sys
 import tempfile
 from pathlib import Path
 
+from simulate_tenant import SCENARIOS, simulate
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def run_gate(data_path: Path, include_tests: bool = True) -> dict:
+def run_gate(data_path: Path, include_tests: bool = True, scenarios: tuple[str, ...] = tuple(SCENARIOS)) -> dict:
     checks: list[dict] = []
 
     def check(name: str, command: list[str]) -> None:
@@ -34,6 +36,16 @@ def run_gate(data_path: Path, include_tests: bool = True) -> dict:
         check("pilot_validation", [sys.executable, "src/validate_pilot.py", "--data", str(data_path), "--output", str(pilot_path)])
         for name, path in (("html_non_empty", html_path), ("xlsx_exists", output_dir / "assessment-action-plan.xlsx"), ("pptx_exists", output_dir / "assessment-executive-summary.pptx"), ("pdf_exists", output_dir / "assessment-executive-summary.pdf"), ("ai_payload_exists", ai_path)):
             checks.append({"name": name, "status": "pass" if path.exists() and path.stat().st_size > 0 else "fail", "detail": str(path.name)})
+        base = json.loads(data_path.read_text(encoding="utf-8"))
+        for scenario in scenarios:
+            scenario_path = Path(temporary) / f"scenario-{scenario}.json"
+            scenario_html = Path(temporary) / f"scenario-{scenario}.html"
+            try:
+                scenario_path.write_text(json.dumps(simulate(base, scenario), ensure_ascii=False), encoding="utf-8")
+                result = subprocess.run([sys.executable, "src/generate_report.py", "--data", str(scenario_path), "--output", str(scenario_html)], cwd=ROOT, capture_output=True, text=True)
+                checks.append({"name": f"scenario_{scenario}", "status": "pass" if result.returncode == 0 and scenario_html.exists() and scenario_html.stat().st_size > 0 else "fail", "detail": "Cenário sintético offline; não acessa tenant."})
+            except (OSError, ValueError) as exc:
+                checks.append({"name": f"scenario_{scenario}", "status": "fail", "detail": f"{type(exc).__name__}: {exc}"})
     passed = sum(item["status"] == "pass" for item in checks)
     return {"status": "beta_ready" if passed == len(checks) else "blocked", "checks": checks, "passed": passed, "total": len(checks), "read_only": True, "note": "Gate executa somente mock/local; não autentica nem acessa tenant."}
 
@@ -42,8 +54,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Valida prontidão do Assessment para beta")
     parser.add_argument("--data", type=Path, default=ROOT / "mock" / "assessment.json")
     parser.add_argument("--output", type=Path, default=ROOT / "runtime" / "beta-gate.json")
+    parser.add_argument("--scenarios", default=",".join(SCENARIOS), help="Cenários sintéticos separados por vírgula; use vazio para não executar")
     args = parser.parse_args()
-    result = run_gate(args.data)
+    scenarios = tuple(item.strip() for item in args.scenarios.split(",") if item.strip())
+    invalid = set(scenarios) - set(SCENARIOS)
+    if invalid:
+        parser.error(f"cenários inválidos: {', '.join(sorted(invalid))}")
+    result = run_gate(args.data, scenarios=scenarios)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Beta gate: {result['status']} ({result['passed']}/{result['total']})")

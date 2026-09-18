@@ -33,4 +33,28 @@ jobs:
           python src/generate_report.py --data mock/assessment.json --output /tmp/assessment.html
           test -s /tmp/assessment.html
           grep -q "SoftwareOne" /tmp/assessment.html
+      - name: Validate generated artifacts and AI guardrail
+        run: |
+          mkdir -p /tmp/assessment-dist /tmp/assessment-runtime
+          python src/generate_report.py --data mock/assessment.json --output /tmp/assessment-dist/assessment.html
+          python src/export_artifacts.py --data mock/assessment.json --output-dir /tmp/assessment-dist
+          python src/ai_payload.py --data mock/assessment.json --output /tmp/assessment-runtime/ai-payload.json
+          python src/validate_artifacts.py --output-dir /tmp/assessment-dist --ai-payload /tmp/assessment-runtime/ai-payload.json --output /tmp/assessment-runtime/artifact-validation.json
+      - name: Run beta release gate
+        run: python src/release_gate.py --data mock/assessment.json --output /tmp/assessment-runtime/release-gate.json
 
+  report-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install Playwright
+        run: npm install --no-audit --no-fund && npx playwright install --with-deps chromium
+      - name: Generate offline demo report
+        run: python3 src/generate_report.py --data mock/assessment.json --output dist/assessment.html
+      - name: Run report E2E
+        run: npx playwright test

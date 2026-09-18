@@ -1,5 +1,7 @@
 {
   "metadata": {
+    "schema_version": "1.0",
+    "execution": {"mode": "read-only", "tenant_mutation": false},
     "customer_name": "Contoso Brasil — DEMO",
     "tenant_label": "tenant-xxxx-masked",
     "run_id": "demo-2026-09-16-001",

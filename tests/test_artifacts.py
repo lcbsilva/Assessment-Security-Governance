@@ -1,6 +1,7 @@
 import json
 import sys
 import unittest
+import tempfile
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -11,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from ai_payload import build
+from validate_artifacts import validate, validate_payload
 
 
 class ArtifactTests(unittest.TestCase):
@@ -40,6 +42,18 @@ class ArtifactTests(unittest.TestCase):
         serialized = json.dumps(build(source), ensure_ascii=False)
         for forbidden in ("contoso.example", "Ana Souza", "Bruno Lima", "vm-prd-web-01", "resource_id"):
             self.assertNotIn(forbidden, serialized)
+
+    def test_artifact_validator_accepts_generated_package(self):
+        result = validate(ROOT / "dist", ROOT / "runtime/ai-payload.json")
+        self.assertEqual(result["status"], "valid", result["errors"])
+        self.assertTrue(result["read_only"])
+
+    def test_ai_payload_validator_rejects_identity_fields(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", encoding="utf-8") as handle:
+            json.dump({"user_principal_name": "person@example.com"}, handle)
+            handle.flush()
+            path = Path(handle.name)
+            self.assertTrue(validate_payload(path))
 
 
 if __name__ == "__main__":

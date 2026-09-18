@@ -64,10 +64,7 @@ Resources
 RETIREMENT_QUERY = """
 ServiceHealthResources
 | where type =~ 'microsoft.resourcehealth/events'
-| extend eventType=tostring(properties.EventType), title=tostring(properties.Title), status=tostring(properties.Status), impactStartTime=todatetime(properties.ImpactStartTime), lastUpdate=todatetime(properties.LastUpdateTime), trackingId=tostring(properties.TrackingId)
-| where eventType =~ 'HealthAdvisory'
-| project title, status, impactStartTime, lastUpdate, trackingId, subscriptionId
-| order by impactStartTime asc
+| project name, subscriptionId, properties
 """.strip()
 
 ADVISOR_QUERY = """
@@ -93,6 +90,13 @@ ResourceContainers
 POWER_PLATFORM_QUERY = """
 PowerPlatformResources
 | project id, name, type, subscriptionId, resourceGroup, location, properties
+| order by type asc, name asc
+""".strip()
+
+BENEFITS_QUERY = """
+Resources
+| where type has_any ('microsoft.capacity/reservation', 'microsoft.billingbenefits/reservation', 'microsoft.billingbenefits/savingsplan', 'microsoft.costmanagement/exports')
+| project id, name, type, subscriptionId, resourceGroup, location, properties, sku
 | order by type asc, name asc
 """.strip()
 
@@ -237,6 +241,24 @@ def advisor_row(item: dict) -> dict:
     }
 
 
+def retirement_row(item: dict) -> dict:
+    """Normaliza Service Health a partir do objeto properties sem KQL frágil."""
+    properties = item.get("properties") or {}
+    if not isinstance(properties, dict):
+        properties = {}
+    return {
+        "service": properties.get("Title") or properties.get("title") or item.get("name") or "Health advisory",
+        "feature": properties.get("EventType") or properties.get("eventType") or "Service Health advisory",
+        "retirement_date": properties.get("ImpactStartTime") or properties.get("impactStartTime") or "Not published",
+        "days_remaining": "Unknown",
+        "impacted_resources": "Unknown",
+        "action": "Review advisory and affected resources",
+        "owner": "A definir",
+        "status": properties.get("Status") or properties.get("status") or "Open",
+        "tracking_id": properties.get("TrackingId") or properties.get("trackingId") or "—",
+    }
+
+
 def power_platform_row(item: dict) -> dict:
     """Normaliza inventário de Power Platform sem conteúdo funcional ou PII extra."""
     properties = item.get("properties") or {}
@@ -261,6 +283,9 @@ def power_platform_row(item: dict) -> dict:
     modified = properties.get("lastModifiedTime") or properties.get("modifiedTime") or "—"
     state = str(properties.get("state") or properties.get("status") or "Unknown")
     kind = str(properties.get("kind") or resource_type.rsplit("/", 1)[-1] or "—")
+    kind_lower = kind.lower()
+    type_lower = resource_type.lower()
+    product = "Copilot Studio / Agent" if any(token in f"{kind_lower} {type_lower}" for token in ("copilot", "virtualagent", "bot", "agent")) else "Power Automate" if any(token in f"{kind_lower} {type_lower}" for token in ("flow", "powerautomate", "workflow")) else "Power Apps" if any(token in f"{kind_lower} {type_lower}" for token in ("powerapps", "powerapp", "canvasapp", "modeldriven")) else "Power Platform resource"
     signals = []
     if owner in {None, "", "A definir"}:
         signals.append("Sem owner demonstrado")
@@ -274,6 +299,8 @@ def power_platform_row(item: dict) -> dict:
         "name": item.get("name") or properties.get("displayName") or "—",
         "type": resource_type,
         "kind": kind,
+        "product": product,
+        "is_agent": product == "Copilot Studio / Agent",
         "environment": properties.get("environmentName") or properties.get("environmentId") or "—",
         "subscription": item.get("subscriptionId") or "—",
         "resource_group": item.get("resourceGroup") or "—",
@@ -309,6 +336,10 @@ def summarize_power_platform(rows: list[dict]) -> dict:
         "environments": len({key for key in environments if key != "Unknown"}),
         "without_owner": no_owner,
         "premium_connectors": premium,
+        "power_apps": sum(1 for row in rows if row.get("product") == "Power Apps"),
+        "power_automate": sum(1 for row in rows if row.get("product") == "Power Automate"),
+        "copilot_studio_agents": sum(1 for row in rows if row.get("product") == "Copilot Studio / Agent"),
+        "credit_consumption": "Não disponível via inventário ARG; requer API/admin center autorizado.",
         "by_kind": dict(sorted(kinds.items())),
         "by_environment": dict(sorted(environments.items(), key=lambda item: (-item[1], item[0]))),
     }
@@ -334,6 +365,7 @@ def collect(subscription_ids: list[str]) -> dict:
     advisor_rows: list[dict] = []
     container_rows: list[dict] = []
     power_platform_rows: list[dict] = []
+    benefit_rows: list[dict] = []
     skip_token: str | None = None
 
     while True:
@@ -424,17 +456,7 @@ def collect(subscription_ids: list[str]) -> dict:
             query=RETIREMENT_QUERY,
             options=QueryRequestOptions(result_format="objectArray", top=5000),
         ))
-        retirement_rows = [{
-            "service": item.get("title") or "Health advisory",
-            "feature": "Service Health advisory",
-            "retirement_date": item.get("impactStartTime") or "Not published",
-            "days_remaining": "Unknown",
-            "impacted_resources": "Unknown",
-            "action": "Review advisory and affected resources",
-            "owner": "A definir",
-            "status": item.get("status") or "Open",
-            "tracking_id": item.get("trackingId") or "—",
-        } for item in (retirement_response.data or [])]
+        retirement_rows = [retirement_row(item) for item in (retirement_response.data or [])]
         retirement_status = "success"
         retirement_note = "Service Health advisories via Azure Resource Graph"
     except Exception as exc:
@@ -453,6 +475,19 @@ def collect(subscription_ids: list[str]) -> dict:
     except Exception as exc:
         power_platform_status = "not_available"
         power_platform_note = f"Inventário Power Platform indisponível: {type(exc).__name__}: {exc}"
+
+    try:
+        benefits_response = query_arg_with_retry(client, QueryRequest(
+            subscriptions=subscription_ids,
+            query=BENEFITS_QUERY,
+            options=QueryRequestOptions(result_format="objectArray", top=5000),
+        ))
+        benefit_rows = [{"name": item.get("name", "—"), "type": item.get("type", "—"), "subscription": item.get("subscriptionId", "—"), "resource_group": item.get("resourceGroup", "—"), "region": item.get("location", "—"), "benefit_kind": "Savings Plan" if "savingsplan" in str(item.get("type", "")).lower() else "Reservation"} for item in (benefits_response.data or [])]
+        benefits_status = "success"
+        benefits_note = "Inventário de benefícios via Azure Resource Graph; ausência de registros não prova inexistência fora do escopo."
+    except Exception as exc:
+        benefits_status = "not_available"
+        benefits_note = f"Inventário de reservas/Savings Plans indisponível: {type(exc).__name__}: {exc}"
 
     payload = {
         "metadata": {
@@ -477,6 +512,8 @@ def collect(subscription_ids: list[str]) -> dict:
             },
             "power_platform": power_platform_rows,
             "power_platform_summary": summarize_power_platform(power_platform_rows),
+            "benefits": benefit_rows,
+            "benefits_summary": {"reservations": sum(1 for item in benefit_rows if item.get("benefit_kind") == "Reservation"), "savings_plans": sum(1 for item in benefit_rows if item.get("benefit_kind") == "Savings Plan")},
             "collection_log": [{
                 "module": "Azure inventory",
                 "source": "Azure Resource Graph",
@@ -519,6 +556,12 @@ def collect(subscription_ids: list[str]) -> dict:
                 "status": power_platform_status,
                 "records": len(power_platform_rows),
                 "note": power_platform_note,
+            }, {
+                "module": "Reservations / Savings Plans",
+                "source": "BenefitsResources / Azure Resource Graph",
+                "status": benefits_status,
+                "records": len(benefit_rows),
+                "note": benefits_note,
             }],
         },
     }

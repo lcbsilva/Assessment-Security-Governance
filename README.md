@@ -1,5 +1,7 @@
 # Assessment Automatizado de Segurança & Governança
 
+Para conhecer o produto de ponta a ponta, consulte o [Product Tour](docs/PRODUCT-TOUR.md). Para gerar uma demonstração com tenant pequeno, limitado e completo sem acessar nenhum ambiente, execute `./scripts/run-product-tour.sh`.
+
 MVP inicial para validar o formato do assessment antes da conexão com um tenant real.
 
 O repositório possui validação contínua em cada push e pull request. O pipeline
@@ -70,7 +72,36 @@ No Windows, o mesmo processo pode ser executado pelo PowerShell:
 .\scripts\run-beta-gate.ps1
 ```
 
+Para testar tenants com tamanhos e licenças diferentes sem acessar um ambiente real, use os cenários sintéticos documentados em [`docs/SIMULATION-RUNBOOK.md`](docs/SIMULATION-RUNBOOK.md). Eles são marcados como DEMO e não substituem o piloto em tenant.
+
 No Linux, macOS ou Azure Cloud Shell:
+
+Antes da coleta, o script executa o **Readiness Gate**. Ele exibe checks de Python,
+Azure CLI, sessão, acesso Reader à subscription, sessão Graph e guardrail read-only.
+
+- verde (`pass`): pré-requisito validado;
+- amarelo (`warning`): execução continua, mas o relatório registra cobertura limitada;
+- vermelho (`blocked`): execução para antes dos coletores, sem qualquer alteração no tenant.
+
+O resultado fica em `runtime/preflight.json` e também aparece no HTML final. A estimativa
+de duração é indicativa e pode variar com volume, paginação, throttling, retenção e licenças.
+
+Os coletores independentes executam com paralelismo conservador de 2 workers. Para um
+ambiente com limites de API mais restritivos, use `ASSESSMENT_MAX_WORKERS=1`; para um
+ambiente validado, o máximo suportado pelo engine é 3. O valor usado fica registrado no
+manifesto da execução.
+
+### Validação do relatório com Playwright
+
+O E2E valida o artefato local sem acessar o tenant:
+
+```bash
+./scripts/run-report-e2e.sh
+```
+
+Ele verifica conteúdo executivo, seções críticas, filtro do discovery, painéis
+compactáveis, responsividade, impressão e erros JavaScript. Se o ambiente já tiver
+Playwright instalado, também é possível executar `npx playwright test` diretamente.
 
 ```bash
 chmod +x scripts/run-beta-gate.sh
@@ -146,6 +177,11 @@ O runner não envia dados para IA e não executa remediação. O módulo Graph u
 as permissões descritas na matriz; endpoints indisponíveis são registrados no
 `collection_log` para que o relatório não transforme ausência de licença em
 falso sinal de conformidade.
+
+Por padrão, os sign-ins percorrem todas as páginas disponíveis dentro da janela
+configurada. Em tenants muito grandes, `ASSESSMENT_SIGNIN_MAX_PAGES` permite
+limitar conscientemente a duração; nesse caso o coletor registra `partial` e o
+relatório informa a limitação.
 
 O inventário de Power Platform consulta somente metadados publicados no Azure
 Resource Graph. Fórmulas, conteúdo de fluxos, mensagens, dados de negócio e

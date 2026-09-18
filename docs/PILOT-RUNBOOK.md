@@ -29,6 +29,8 @@ chmod +x scripts/run-assessment.sh
 ./scripts/run-assessment.sh "<subscription-id>"
 ```
 
+Se uma execução longa for interrompida, repita com `ASSESSMENT_RESUME=1` ou use `--resume` no runner Python. O engine reutiliza somente checkpoints cujo escopo de subscriptions e perfil coincidem; módulos incompatíveis são executados novamente. A gravação é atômica e checkpoints com erro, indisponibilidade total ou execução interrompida são ignorados. A duração e a tentativa de cada coletor ficam registradas no contrato para diagnóstico.
+
 ## Saídas
 
 - `runtime/preflight.json`: validação inicial do ambiente e sessão.

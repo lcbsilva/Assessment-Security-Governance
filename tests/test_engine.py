@@ -1,5 +1,6 @@
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -9,19 +10,29 @@ sys.path.insert(0, str(ROOT / "src"))
 import yaml
 
 from contract import validate_payload
-from score_normalized import derive
+from score_normalized import derive, evidence_state, license_gate_status
 from readonly_guard import assert_read_only, execution_metadata
 from compare_runs import compare
 from history import snapshot
-from collect_arg import resource_row, exposure_details, power_platform_row, summarize_power_platform
+from collect_arg import resource_row, exposure_details, power_platform_row, summarize_power_platform, retirement_row
 from collect_arg import summarize_policy_compliance
 from collect_arg import retryable_arg_error
-from collect_graph import sign_in_path, permission_grant_row, build_identity_summary, enrich_pim_rows, conditional_access_row, credential_posture, user_posture, retryable_graph_status, secure_score_summary
+from collect_graph import sign_in_path, permission_grant_row, build_identity_summary, enrich_pim_rows, conditional_access_row, credential_posture, user_posture, retryable_graph_status, secure_score_summary, license_posture, directory_audit_summary
 from collect_rbac import access_risk
 from collect_azure_devops import collect as collect_devops, repository_row, summarize as summarize_devops
 from evidence_quality import classify, summarize
-from insight_engine import risk_intersections, control_evidence, enrich_rbac_identity, cross_domain_insights
-from run_assessment import skipped_module
+from insight_engine import risk_intersections, control_evidence, enrich_rbac_identity, cross_domain_insights, prioritize_findings
+from run_assessment import skipped_module, safe_collect
+from preflight import estimate, check, module_readiness
+from execution_health import summarize as summarize_execution, coverage_map
+from collect_analytics import category, resource_row as analytics_resource_row, powerbi_row
+from collect_cost import anomaly_summary
+from simulate_tenant import simulate
+from beta_gate import run_gate
+from release_gate import release_checks
+from checkpoint import load as load_checkpoint, scope_key, write as write_checkpoint
+from schema_contract import load_schema, validate_schema
+from collect_m365_posture import analyze_domain, collect as collect_m365, capability_manifest
 
 
 class EngineContractTests(unittest.TestCase):
@@ -62,6 +73,78 @@ class EngineContractTests(unittest.TestCase):
         admin = next(item for item in result["controls"] if item["id"] == "ID-002")
         self.assertEqual(admin["status"], "fail")
         self.assertTrue(any(item["control_id"] == "ID-002" for item in result["findings"]))
+
+    def test_controls_have_formal_evidence_states(self):
+        result = derive({"metadata": {}, "discovery": {"users": [{"mfa_status": "Registered"}]}}, self.catalog)
+        self.assertTrue(all(item["evidence_state"] in {"CONFORMANT", "NON_CONFORMANT", "INSUFFICIENT_EVIDENCE"} for item in result["controls"]))
+        self.assertEqual(evidence_state("not_available"), ("INSUFFICIENT_EVIDENCE", "missing_permission_license_or_data"))
+        self.assertEqual(evidence_state("fail"), ("NON_CONFORMANT", "score_below_threshold"))
+        self.assertEqual(license_gate_status("SEC-001", {}), "not_satisfied_or_not_available")
+        self.assertEqual(license_gate_status("SEC-005", {"defender_summary": {"alerts": 0}}), "satisfied")
+
+    def test_contract_rejects_contradictory_evidence_state(self):
+        payload = {"metadata": {"schema_version": "1.0", "engine_version": "test", "run_id": "r1", "execution": {"mode": "read-only", "tenant_mutation": False}}, "controls": [{"id": "ID-001", "status": "pass", "score": 90, "confidence": "high", "evidence_state": "INSUFFICIENT_EVIDENCE"}], "findings": [], "discovery": {}}
+        errors = validate_payload(payload, self.catalog)
+        self.assertTrue(any("INSUFFICIENT_EVIDENCE exige" in item for item in errors))
+
+    def test_score_calculation_exposes_domain_coverage(self):
+        from generate_report import calculate
+        domains, overall, coverage = calculate(self.catalog, {"controls": [{"id": item["id"], "status": "not_available", "score": 0, "confidence": "low"} for item in self.catalog["controls"]]})
+        self.assertEqual(overall, 0)
+        self.assertEqual(coverage, 0)
+        self.assertTrue(all(item["coverage"] == 0 for item in domains.values()))
+        self.assertTrue(all(item["coverage_status"] == "insufficient" for item in domains.values()))
+
+    def test_checkpoint_resume_is_scoped_and_does_not_cross_tenants(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            key = scope_key(["sub-a"], "full")
+            write_checkpoint(root, "graph", key, {"metadata": {"modules": {"identity": "success"}}})
+            self.assertIsNotNone(load_checkpoint(root, "graph", key))
+            self.assertIsNone(load_checkpoint(root, "graph", scope_key(["sub-b"], "full")))
+
+    def test_checkpoint_does_not_reuse_failed_or_unavailable_collection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            key = scope_key(["sub-a"], "full")
+            failed = {"metadata": {"modules": {"graph": "error"}}, "discovery": {"collection_log": [{"status": "error"}]}}
+            unavailable = {"metadata": {"modules": {"graph": "not_available"}}, "discovery": {"collection_log": [{"status": "not_available"}]}}
+            write_checkpoint(root, "graph", key, failed)
+            self.assertIsNone(load_checkpoint(root, "graph", key))
+            write_checkpoint(root, "graph", key, unavailable)
+            self.assertIsNone(load_checkpoint(root, "graph", key))
+
+    def test_safe_collect_records_duration_and_attempt(self):
+        name, result = safe_collect("graph", lambda: {"metadata": {"modules": {"graph": "success"}}, "discovery": {"collection_log": [{"status": "success"}]}}, {})
+        self.assertEqual(name, "graph")
+        self.assertTrue(result["metadata"]["execution"]["attempted"])
+        self.assertGreaterEqual(result["metadata"]["execution"]["duration_seconds"], 0)
+
+    def test_versioned_schema_is_present_and_rejects_missing_execution_metadata(self):
+        schema = load_schema()
+        self.assertEqual(schema["$id"], "https://softwareone.example/schemas/assessment-1.0.json")
+        errors = validate_schema({"metadata": {"schema_version": "1.0"}, "controls": [], "findings": [], "discovery": {}})
+        self.assertTrue(any("metadata.execution" in item for item in errors))
+
+    def test_priority_sort_has_stable_tiebreakers(self):
+        rows = prioritize_findings([{"control_id": "GOV-002", "title": "B", "risk_score": 50, "effort": 3}, {"control_id": "GOV-001", "title": "A", "risk_score": 50, "effort": 3}], {"score": 80})
+        self.assertEqual([item["control_id"] for item in rows], ["GOV-001", "GOV-002"])
+
+    def test_m365_domain_posture_is_metadata_only_and_detects_dns_signals(self):
+        records = {"example.com": ["v=spf1 include:spf.example -all"], "_dmarc.example.com": ["v=DMARC1; p=quarantine"], "selector1._domainkey.example.com": ["v=DKIM1; k=rsa; p=public"], "selector2._domainkey.example.com": []}
+        row = analyze_domain("example.com", lambda name: records.get(name, []))
+        self.assertEqual(row["spf"], "present")
+        self.assertEqual(row["dmarc"], "present")
+        self.assertEqual(row["dkim_selector1"], "present")
+        self.assertEqual(row["dkim_selector2"], "not_present")
+        self.assertNotIn("public", str(row))
+
+    def test_m365_posture_fails_gracefully_without_configured_domains(self):
+        result = collect_m365(domains=[])
+        self.assertEqual(result["metadata"]["modules"]["m365"], "not_available")
+        self.assertEqual(result["discovery"]["collection_log"][0]["status"], "not_available")
+        self.assertEqual(len(capability_manifest()), 5)
+        self.assertTrue(all(item["status"] == "not_configured" for item in capability_manifest()))
 
     def test_legacy_auth_is_scored_from_aggregated_signin_evidence(self):
         payload = {"metadata": {}, "discovery": {"legacy_auth_summary": {
@@ -118,6 +201,179 @@ class EngineContractTests(unittest.TestCase):
         self.assertIn("preflight.json", preflight)
         self.assertIn("não altera o tenant", preflight)
 
+    def test_readiness_gate_distinguishes_blocking_and_optional_warning(self):
+        essential = check("reader", "Leitura", "azure", "blocked", "403", "sem evidência", "conceder Reader", True)
+        optional = check("defender", "Defender", "coverage", "warning", "licença", "módulo parcial", "validar licença")
+        self.assertTrue(essential["blocking"])
+        self.assertFalse(optional["blocking"])
+        self.assertEqual(estimate(2, "full")["low_minutes"], 36)
+        self.assertGreater(estimate(2, "full", "large")["low_minutes"], estimate(2, "full")["low_minutes"])
+
+    def test_readiness_manifest_does_not_claim_unverified_consent(self):
+        manifest = module_readiness("full")
+        self.assertGreaterEqual(len(manifest), 10)
+        self.assertIn("será confirmado", " ".join(item["detail"] for item in manifest))
+        self.assertTrue(any(item["module"] == "RBAC / PIM" and "RoleManagement" in item["expected_read_scope"] for item in manifest))
+
+    def test_execution_health_does_not_turn_unavailable_into_zero_risk(self):
+        result = summarize_execution([
+            {"module": "Identity", "status": "success", "records": 10},
+            {"module": "Defender", "status": "not_available", "records": 0, "limitation_category": "permission"},
+            {"module": "Cost", "status": "partial", "records": 2, "limitation_category": "throttling"},
+        ])
+        self.assertEqual(result["completed_modules"], 2)
+        self.assertEqual(result["coverage_percent"], 66.7)
+        self.assertEqual(result["health"], "degraded")
+        self.assertEqual(result["limitations"][0]["module"], "Defender")
+
+    def test_coverage_map_explains_unavailable_modules_without_claiming_success(self):
+        result = coverage_map(
+            [{"module": "Defender", "status": "not_available", "records": 0, "note": "HTTP 403; verifique licença"}],
+            [{"module": "Defender", "domain": "Segurança", "expected_read_scope": "SecurityIncident.Read.All", "status": "not_checked"}],
+        )
+        self.assertEqual(result[0]["status"], "not_available")
+        self.assertEqual(result[0]["evidence_confidence"], "baixa")
+        self.assertIn("HTTP 403", result[0]["limitation"])
+
+    def test_collector_failure_isolated_without_write_fallback(self):
+        name, result = safe_collect("security", lambda: (_ for _ in ()).throw(RuntimeError("temporary")), {})
+        self.assertEqual(name, "security")
+        self.assertEqual(result["metadata"]["modules"]["security"], "error")
+        self.assertEqual(result["discovery"]["collection_log"][0]["status"], "error")
+
+    def test_analytics_inventory_is_metadata_only(self):
+        self.assertEqual(category("Microsoft.Synapse/workspaces"), "Synapse")
+        row = analytics_resource_row({"name": "data", "type": "Microsoft.Databricks/workspaces", "properties": {}, "sku": {}})
+        self.assertEqual(row["category"], "Databricks")
+        self.assertNotIn("properties", row)
+        self.assertFalse(powerbi_row({"name": "workspace"})["is_on_dedicated_capacity"])
+
+    def test_finops_ai_payload_aggregates_names_away(self):
+        from ai_payload import build
+        result = build({"metadata": {}, "findings": [], "discovery": {"finops_summary": {"cost_total_period": 100, "resource_groups": 2, "cost_by_resource_group": [{"resource_group": "secret-rg", "cost": 100}], "anomalies": {"anomaly_days": [{"date": "2026-01-01"}]}}}})
+        serialized = json.dumps(result, ensure_ascii=False)
+        self.assertNotIn("secret-rg", serialized)
+        self.assertEqual(result["financial_aggregates"]["finops_summary"]["anomaly_days_count"], 1)
+
+    def test_finops_anomaly_is_conservative_and_aggregated(self):
+        result = anomaly_summary([
+            {"UsageDate": "2026-01-01", "PreTaxCost": 10},
+            {"UsageDate": "2026-01-02", "PreTaxCost": 10},
+            {"UsageDate": "2026-01-03", "PreTaxCost": 40},
+        ])
+        self.assertEqual(result["days_observed"], 3)
+        self.assertEqual(result["anomaly_days"][0]["date"], "2026-01-03")
+
+    def test_directory_audit_is_aggregated_without_pii(self):
+        events = [
+            {"category": "RoleManagement", "activityDisplayName": "Add eligible role", "initiatedBy": {"user": {"userPrincipalName": "admin@example.com"}}},
+            {"loggedByService": "Microsoft Entra ID", "activityDisplayName": "Update application policy", "targetResources": [{"id": "secret-id"}]},
+        ]
+        result = directory_audit_summary(events)
+        self.assertEqual(result["events"], 2)
+        self.assertEqual(result["high_risk_operation_signals"], 2)
+        self.assertTrue(result["pii_excluded"])
+        self.assertNotIn("admin@example.com", json.dumps(result))
+        self.assertNotIn("secret-id", json.dumps(result))
+
+    def test_directory_audit_ai_payload_excludes_categories_and_identifiers(self):
+        from ai_payload import build
+        summary = directory_audit_summary([{"category": "Microsoft Entra ID", "activityDisplayName": "Update policy"}])
+        payload = build({"metadata": {}, "findings": [], "discovery": {"directory_audit_summary": summary}})
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertIn('"events": 1', serialized)
+        self.assertNotIn("Microsoft Entra ID", serialized)
+        self.assertNotIn("categories", payload["ecosystem_aggregates"]["directory_audit"])
+
+    def test_priority_is_deterministic_and_financial_signal_is_conservative(self):
+        findings = [{"control_id": "GOV-004", "risk_score": 82, "effort": 3, "severity": "high"}, {"control_id": "COST-001", "risk_score": 62, "effort": 2, "severity": "medium"}]
+        without_cost = prioritize_findings(findings, {"score": 90}, "Não quantificado")
+        with_cost = prioritize_findings(findings, {"score": 90}, "R$ 500/mês potencial")
+        self.assertEqual(without_cost[0]["control_id"], "GOV-004")
+        self.assertEqual(without_cost[0]["evidence_confidence"], "alta")
+        self.assertEqual(without_cost[1]["financial_signal"], "unquantified")
+        self.assertEqual(with_cost[1]["financial_signal"], "quantified")
+        self.assertGreater(with_cost[1]["priority_score"], without_cost[1]["priority_score"])
+
+    def test_priority_fields_are_part_of_the_action_contract(self):
+        row = prioritize_findings([{"control_id": "SEC-001", "risk_score": 80, "effort": 2}], {"score": 70})[0]
+        self.assertEqual(set(("priority", "priority_score", "evidence_confidence", "financial_signal")) & set(row), {"priority", "priority_score", "evidence_confidence", "financial_signal"})
+
+    def test_simulation_scenarios_are_marked_and_never_touch_input(self):
+        original = json.loads(json.dumps(self.mock))
+        result = simulate(self.mock, "limited")
+        self.assertEqual(self.mock, original)
+        self.assertTrue(result["metadata"]["simulation"]["is_simulation"])
+        self.assertEqual(result["metadata"]["simulation"]["evidence_status"], "synthetic_not_customer_evidence")
+        defender = next(item for item in result["discovery"]["collection_log"] if item["module"] == "Defender")
+        self.assertEqual(defender["status"], "not_available")
+
+    def test_small_simulation_reduces_scope_without_claiming_real_tenant(self):
+        result = simulate(self.mock, "small")
+        self.assertEqual(result["metadata"]["scope"]["subscriptions"], 1)
+        self.assertLessEqual(len(result["discovery"]["users"]), 2)
+        self.assertEqual(result["metadata"]["simulation"]["scenario"], "small")
+
+    def test_large_simulation_is_deterministic_and_contains_failure_modes(self):
+        first = simulate(self.mock, "large", scale=1)
+        second = simulate(self.mock, "large", scale=1)
+        self.assertEqual(len(first["discovery"]["users"]), 2000)
+        self.assertEqual(len(first["discovery"]["resources"]), 2500)
+        self.assertEqual(first["discovery"]["users"], second["discovery"]["users"])
+        statuses = {item["status"] for item in first["discovery"]["collection_log"]}
+        self.assertTrue({"success", "partial", "not_available"}.issubset(statuses))
+        self.assertTrue(first["metadata"]["simulation"]["is_simulation"])
+
+    def test_beta_gate_runs_all_synthetic_scenarios(self):
+        result = run_gate(ROOT / "mock" / "assessment.json", include_tests=False)
+        self.assertEqual(result["status"], "beta_ready")
+        self.assertTrue(all(item["status"] == "pass" for item in result["checks"] if item["name"].startswith("scenario_")))
+
+    def test_pilot_validation_exposes_warnings_without_hiding_read_only_status(self):
+        from validate_pilot import validate as validate_pilot
+        data = {"metadata": {"contract_status": "valid", "simulation": {"is_simulation": True}, "execution": {"mode": "read-only", "tenant_mutation": False}}, "controls": [], "findings": [], "discovery": {"collection_log": []}}
+        result = validate_pilot(data, self.catalog)
+        self.assertEqual(result["status"], "ready_for_pilot_review")
+        self.assertTrue(result["warnings"])
+        self.assertTrue(result["acceptance"]["read_only"])
+
+    def test_release_gate_checks_read_only_and_beta_documents(self):
+        checks = {item["name"]: item for item in release_checks()}
+        self.assertEqual(checks["readonly_config"]["status"], "pass")
+        self.assertEqual(checks["doc_BETA-RELEASE-CHECKLIST"]["status"], "pass")
+
+    def test_compliance_manifest_does_not_claim_dlp_or_retention_collection(self):
+        manifest = module_readiness("full")
+        dlp = next(item for item in manifest if item["module"] == "Purview DLP / retention")
+        self.assertEqual(dlp["status"], "not_run")
+        self.assertIn("Integração Purview específica", dlp["expected_read_scope"])
+
+    def test_benefit_inventory_is_aggregated_for_ai(self):
+        from ai_payload import build
+        result = build({"metadata": {}, "findings": [], "discovery": {"benefits_summary": {"reservations": 2, "savings_plans": 1}}})
+        aggregate = result["financial_aggregates"]["finops_summary"]
+        self.assertEqual(aggregate["reservation_inventory_count"], 2)
+        self.assertEqual(aggregate["savings_plan_inventory_count"], 1)
+
+    def test_license_posture_detects_product_families_without_assignments(self):
+        result = license_posture([
+            {"skuPartNumber": "M365_COPILOT", "consumedUnits": 2, "prepaidUnits": {"enabled": 5, "suspended": 0}},
+            {"skuPartNumber": "TEAMS_PREMIUM", "consumedUnits": 1, "prepaidUnits": {"enabled": 1, "suspended": 0}},
+        ])
+        self.assertEqual(result["product_families"]["Copilot"], 1)
+        self.assertEqual(result["product_families"]["Teams Premium"], 1)
+        self.assertEqual(result["skus"][0]["unused_enabled"], 3)
+        self.assertNotIn("user", json.dumps(result).lower())
+
+    def test_power_platform_classifies_agents_and_keeps_ai_aggregate_safe(self):
+        rows = [power_platform_row({"name": "agent", "type": "Microsoft.PowerPlatform/bots", "properties": {"kind": "bot", "environmentName": "Sensitive Environment"}}), power_platform_row({"name": "flow", "type": "Microsoft.PowerPlatform/flows", "properties": {"kind": "flow"}})]
+        summary = summarize_power_platform(rows)
+        self.assertEqual(summary["copilot_studio_agents"], 1)
+        self.assertEqual(summary["power_automate"], 1)
+        from ai_payload import build
+        serialized = json.dumps(build({"metadata": {}, "findings": [], "discovery": {"power_platform_summary": summary}}), ensure_ascii=False)
+        self.assertNotIn("Sensitive Environment", serialized)
+
     def test_read_only_guard_blocks_write_configuration(self):
         assert_read_only({"guardrails": {"allow_write": False, "allow_delete": False}})
         with self.assertRaises(RuntimeError):
@@ -132,12 +388,15 @@ class EngineContractTests(unittest.TestCase):
         self.assertEqual(validate_pilot(data, self.catalog)["status"], "blocked")
 
     def test_run_comparison_reports_control_delta_and_findings(self):
-        previous = {"metadata": {"run_id": "old", "scope": {"users_assessed": 10}}, "controls": [{"id": "ID-001", "score": 60, "status": "partial"}], "findings": [{"control_id": "ID-001"}, {"control_id": "GOV-003"}]}
-        current = {"metadata": {"run_id": "new", "scope": {"users_assessed": 12}}, "controls": [{"id": "ID-001", "score": 80, "status": "pass"}], "findings": [{"control_id": "GOV-003"}]}
+        previous = {"metadata": {"run_id": "old", "scope": {"users_assessed": 10}, "coverage": 50}, "controls": [{"id": "ID-001", "score": 60, "status": "partial"}], "findings": [{"control_id": "ID-001"}, {"control_id": "GOV-003"}]}
+        current = {"metadata": {"run_id": "new", "scope": {"users_assessed": 12}, "coverage": 75}, "controls": [{"id": "ID-001", "score": 80, "status": "pass"}], "findings": [{"control_id": "GOV-003"}]}
         result = compare(previous, current)
         self.assertEqual(result["controls"][0]["delta"], 20)
         self.assertEqual(result["findings_resolved"], ["ID-001"])
         self.assertEqual(result["scope_delta"]["users_assessed"], 2)
+        self.assertEqual(result["comparability"]["comparable_controls"], 1)
+        self.assertEqual(result["comparability"]["average_delta_on_overlap"], 20)
+        self.assertTrue(result["comparability"]["coverage_changed"])
 
     def test_arg_resource_row_does_not_depend_on_global_rows(self):
         row = resource_row({"id": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm", "name": "vm", "type": "Microsoft.Compute/virtualMachines", "subscriptionId": "sub", "resourceGroup": "rg", "location": "brazilsouth", "tags": {"owner": "platform"}, "properties": {}})
@@ -306,6 +565,12 @@ class EngineContractTests(unittest.TestCase):
         self.assertEqual(result[0]["non_compliant"], 1)
         self.assertEqual(result[0]["compliance_rate"], 50.0)
         self.assertEqual(result[0]["risk_signal"], "Atenção")
+
+    def test_service_health_row_handles_raw_properties(self):
+        row = retirement_row({"name": "event-1", "properties": {"Title": "Retirement advisory", "EventType": "HealthAdvisory", "Status": "Active", "TrackingId": "t1"}})
+        self.assertEqual(row["service"], "Retirement advisory")
+        self.assertEqual(row["status"], "Active")
+        self.assertEqual(row["tracking_id"], "t1")
 
     def test_engine_version_is_loaded_from_single_source(self):
         from version import engine_version

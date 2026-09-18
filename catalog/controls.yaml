@@ -68,6 +68,7 @@ controls:
     title: "Microsoft Secure Score"
     weight: 5
     frameworks: ["Microsoft Secure Score", "NIST CSF"]
+    license_gate: "Microsoft 365/Defender licensing and SecurityEvents.Read.All"
   - id: "SEC-004"
     domain: "security"
     title: "Auditoria e retenção de logs"
@@ -78,6 +79,7 @@ controls:
     title: "Postura de dispositivos e endpoints"
     weight: 5
     frameworks: ["CIS Microsoft 365", "Zero Trust", "NIST CSF"]
+    license_gate: "Intune licensing for managed-device evidence"
   - id: "SEC-003"
     domain: "security"
     title: "Governança de aplicações e credenciais"
@@ -88,6 +90,7 @@ controls:
     title: "Alertas e vulnerabilidades Defender"
     weight: 5
     frameworks: ["Microsoft Defender", "NIST CSF"]
+    license_gate: "Defender entitlement and SecurityIncident.Read.All/Vulnerability.Read.All"
   - id: "GOV-001"
     domain: "governance"
     title: "Hierarquia Azure"

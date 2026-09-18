@@ -8,6 +8,8 @@
 - [x] Enterprise Applications e App Registrations.
 - [x] Defender e endpoints como módulos opcionais.
 - [x] Priorização por risco, esforço e custo potencial.
+- [x] Validar comportamento com cenários sintéticos pequeno, limitado e completo.
+- [x] Validar release gate técnico, artefatos e guardrails read-only.
 - [ ] Validar consentimento de permissões em tenant de laboratório.
 
 ## Próxima sprint — Piloto controlado
@@ -41,3 +43,50 @@
 O assessment só pode ser considerado pronto para piloto quando todos os módulos
 indisponíveis continuarem em `not_available`/`partial`, nenhum coletor usar método
 de escrita no tenant e cada recomendação tiver evidência, limitação e owner.
+
+## Estado do fechamento Beta 1.0
+
+O gate técnico local está concluído quando `scripts/run-release-gate.sh` retorna
+`beta_release_ready`. O piloto em tenant real continua sendo uma etapa operacional
+obrigatória e não é substituído por dados sintéticos.
+
+## Sprint beta.2 — Hardening de execução
+
+- [x] Checkpoints por coletor gravados atomicamente.
+- [x] Escopo de checkpoint vinculado a subscriptions e perfil.
+- [x] Checkpoints com erro ou indisponibilidade total são refeitos no resume.
+- [x] Duração e tentativa de cada coletor registradas no contrato.
+- [x] Evidência de falha preservada sem transformar ausência em conformidade.
+- [x] Regressão automatizada e Release Gate executados após a mudança.
+
+## Sprint beta.3 — Integridade do contrato
+
+- [x] Estados de evidência contraditórios são rejeitados pelo contrato.
+- [x] `CONFORMANT` exige controle `pass`.
+- [x] `NON_CONFORMANT` exige controle `partial` ou `fail`.
+- [x] `INSUFFICIENT_EVIDENCE` exige `not_available` ou `error`.
+- [x] Fixtures legadas continuam compatíveis quando não declaram estado formal.
+
+## Sprint beta.4 — Score defensável e cobertura por domínio
+
+- [x] Cobertura ponderada por domínio calculada a partir dos controles avaliados.
+- [x] Domínios sem evidência são apresentados como insuficientes, não como conformes.
+- [x] Dashboard informa cobertura geral e regra metodológica do score.
+- [x] Metodologia do score registrada no contrato para auditoria e comparação.
+- [x] Testes, artefatos e Release Gate executados após a mudança.
+
+## Sprint beta.5 — Comparação histórica honesta
+
+- [x] Controles avaliados nas duas execuções identificados explicitamente.
+- [x] Variação média calculada somente no conjunto comparável.
+- [x] Mudança de cobertura sinalizada como limitação da tendência.
+- [x] Dashboard histórico informa quantidade de controles comparáveis.
+- [x] Regressão, artefatos e Release Gate executados após a mudança.
+
+## Sprint beta.6 — Escala sintética
+
+- [x] Cenário `large` determinístico e totalmente offline.
+- [x] Volume sintético de usuários, recursos, dispositivos, apps, RBAC e Policy.
+- [x] Modos de falha 403/429 simulados sem inventar conformidade.
+- [x] Parâmetro `--scale` para stress progressivo.
+- [x] Renderer validado com 20 mil usuários e 25 mil recursos.

@@ -22,11 +22,15 @@ mkdir -p runtime dist
 JSON="runtime/assessment.json"
 
 PROFILE="${2:-full}"
-python3 src/preflight.py --subscriptions "$1" --profile "$PROFILE" --output runtime/preflight.json
+if ! python3 src/preflight.py --subscriptions "$1" --profile "$PROFILE" --output runtime/preflight.json; then
+  echo "Readiness Gate bloqueou a execução. Consulte runtime/preflight.json; nenhuma alteração foi feita no tenant." >&2
+  exit 1
+fi
 python3 src/run_assessment.py --subscriptions "$1" --profile "$PROFILE" --output "$JSON"
 python3 src/generate_report.py --data "$JSON" --output dist/assessment.html
 python3 src/export_artifacts.py --data "$JSON" --output-dir dist
 python3 src/validate_pilot.py --data "$JSON" --output runtime/pilot-validation.json
 python3 src/ai_payload.py --data "$JSON" --output runtime/ai-payload.json
+python3 src/validate_artifacts.py --output-dir dist --ai-payload runtime/ai-payload.json --output runtime/artifact-validation.json
 
 echo "Assessment concluído. Abra dist/assessment.html"
