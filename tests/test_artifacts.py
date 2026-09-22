@@ -62,7 +62,8 @@ class ArtifactTests(unittest.TestCase):
         self.assertGreaterEqual(workbook["Plano de ação"].max_row, 2)
         workbook.close()
         deck = Presentation(self.artifact_dir / "assessment-executive-summary.pptx")
-        self.assertEqual(len(deck.slides), 3)
+        self.assertEqual(len(deck.slides), 4)
+        self.assertIn("Cobertura e limitações da execução", " ".join(shape.text for shape in deck.slides[3].shapes if shape.has_text_frame))
 
     def test_action_plan_contains_cross_domain_insight_rows(self):
         source = json.loads((ROOT / "mock/assessment.json").read_text(encoding="utf-8"))
