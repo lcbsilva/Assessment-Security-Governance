@@ -25,6 +25,7 @@ test('abre o relatório e exibe as áreas críticas', async ({ page }) => {
 });
 
 test('filtro de discovery funciona sem quebrar a página', async ({ page }) => {
+  await page.locator('[data-view-target="full"]').click();
   const input = page.locator('#discoverySearch');
   await expect(input).toBeVisible();
   await input.fill('texto-que-nao-existe-no-discovery');
@@ -81,6 +82,7 @@ test('mantém requisitos básicos de acessibilidade', async ({ page }) => {
   await expect(page.locator('h1')).toHaveCount(1);
   await expect(page.locator('input#discoverySearch')).toHaveAttribute('aria-label', /.+/);
   await expect(page.locator('[data-view-target]')).toHaveCount(3);
+  await page.locator('[data-view-target="full"]').click();
   await expect(page.locator('#clearDiscovery')).toBeVisible();
   await expect(page.locator('#exportDiscovery')).toBeVisible();
   await expect(page.locator('nav a').first()).toBeVisible();
