@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
+
+from local_privacy import protect_output_directory
 
 
 def scope_key(subscription_ids: list[str], profile: str) -> str:
@@ -19,7 +22,8 @@ def checkpoint_path(root: Path, module: str) -> Path:
 
 
 def write(root: Path, module: str, key: str, result: dict) -> Path:
-    root.mkdir(parents=True, exist_ok=True)
+    protect_output_directory(root)
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
     path = checkpoint_path(root, module)
     # Escrita atômica: uma interrupção do Cloud Shell não pode deixar um JSON
     # parcialmente gravado que pareça um checkpoint válido na próxima execução.
@@ -32,7 +36,11 @@ def write(root: Path, module: str, key: str, result: dict) -> Path:
         "result": result,
     }
     temporary.write_text(json.dumps(envelope, ensure_ascii=False, indent=2), encoding="utf-8")
+    if os.name == "posix":
+        temporary.chmod(0o600)
     temporary.replace(path)
+    if os.name == "posix":
+        path.chmod(0o600)
     return path
 
 

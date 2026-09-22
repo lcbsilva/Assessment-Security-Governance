@@ -14,25 +14,35 @@ from score_normalized import derive, evidence_state, license_gate_status
 from readonly_guard import assert_read_only, execution_metadata
 from compare_runs import compare
 from history import snapshot
-from collect_arg import resource_row, exposure_details, power_platform_row, summarize_power_platform, retirement_row
-from collect_arg import summarize_policy_compliance
+from collect_arg import resource_row, exposure_details, resource_security_posture, power_platform_row, summarize_power_platform, retirement_row
+from collect_arg import policy_row, summarize_policy_compliance, summarize_security_posture, summarize_governance_posture
 from collect_arg import retryable_arg_error
 from collect_graph import sign_in_path, permission_grant_row, build_identity_summary, enrich_pim_rows, conditional_access_row, credential_posture, user_posture, retryable_graph_status, secure_score_summary, license_posture, directory_audit_summary
-from collect_rbac import access_risk
+from collect_rbac import access_risk, summarize_rbac_posture
 from collect_azure_devops import collect as collect_devops, repository_row, summarize as summarize_devops
 from evidence_quality import classify, summarize
 from insight_engine import risk_intersections, control_evidence, enrich_rbac_identity, cross_domain_insights, prioritize_findings
 from run_assessment import skipped_module, safe_collect
+from run_assessment import load_engagement
 from preflight import estimate, check, module_readiness
-from execution_health import summarize as summarize_execution, coverage_map
+from execution_health import summarize as summarize_execution, coverage_map, build_execution_manifest
 from collect_analytics import category, resource_row as analytics_resource_row, powerbi_row
-from collect_cost import anomaly_summary
+from collect_cost import anomaly_summary, is_readonly_cost_query_url, query_cost
 from simulate_tenant import simulate
 from beta_gate import run_gate
-from release_gate import release_checks
+from release_gate import read_only_source_scan, release_checks
 from checkpoint import load as load_checkpoint, scope_key, write as write_checkpoint
 from schema_contract import load_schema, validate_schema
 from collect_m365_posture import analyze_domain, collect as collect_m365, capability_manifest
+from quality_audit import audit
+from review_checklist import build as build_review_checklist
+from artifact_manifest import build as build_artifact_manifest
+from validate_manifest import validate as validate_manifest
+from pseudonymize import pseudonymize
+from summarize_lab_validation import summarize as summarize_lab_validation
+from build_demo_package import build_demo
+from doctor import diagnose
+from pilot_evidence import build as build_pilot_evidence
 
 
 class EngineContractTests(unittest.TestCase):
@@ -43,6 +53,46 @@ class EngineContractTests(unittest.TestCase):
 
     def test_mock_contract_is_valid(self):
         self.assertEqual(validate_payload(self.mock, self.catalog), [])
+
+    def test_pilot_evidence_gate_requires_confirmed_scope_and_consent(self):
+        preflight = {"status": "ready", "profile": "full", "subscriptions_requested": ["sub-1"], "summary": {"warning": 0}}
+        assessment = {"metadata": {"execution": {"mode": "read-only", "tenant_mutation": False}}}
+        pilot = {"status": "ready_for_pilot_review"}
+        approval = {"consent_status": "confirmed", "approved_profile": "full", "approved_subscriptions": ["sub-1"], "approved_read_scopes": ["Reader"]}
+        result = build_pilot_evidence(preflight, assessment, pilot, approval)
+        self.assertEqual(result["status"], "ready_for_controlled_pilot")
+        approval["consent_status"] = "not_confirmed"
+        self.assertEqual(build_pilot_evidence(preflight, assessment, pilot, approval)["status"], "blocked")
+
+    def test_pilot_evidence_gate_rejects_scope_expansion_and_secrets(self):
+        preflight = {"status": "ready", "profile": "security", "subscriptions_requested": ["sub-2"], "summary": {"warning": 0}}
+        assessment = {"metadata": {"execution": {"mode": "read-only", "tenant_mutation": False}}}
+        pilot = {"status": "ready_for_pilot_review"}
+        approval = {"consent_status": "confirmed", "approved_profile": "security", "approved_subscriptions": ["sub-1"], "approved_read_scopes": ["Contributor"], "client_secret": "do-not-include"}
+        result = build_pilot_evidence(preflight, assessment, pilot, approval)
+        self.assertEqual(result["status"], "blocked")
+        self.assertTrue(any("campo sensível" in error for error in result["errors"]))
+
+    def test_release_source_scan_enforces_read_only_path(self):
+        result = read_only_source_scan()
+        self.assertEqual(result["status"], "pass")
+
+    def test_demo_package_generates_complete_offline_outputs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            summary = build_demo(Path(temporary) / "demo", "full")
+            self.assertEqual(summary["status"], "ready_for_internal_demo")
+            self.assertTrue(summary["read_only"])
+            self.assertTrue(summary["synthetic"])
+            self.assertIn("assessment.html", summary["outputs"])
+            self.assertIn("assessment-action-plan.xlsx", summary["outputs"])
+            self.assertEqual(summary["artifact_integrity"], "valid")
+
+    def test_doctor_contract_is_read_only_and_reports_output_path(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            result = diagnose([], "full", Path(temporary) / "runtime" / "doctor.json")
+        self.assertTrue(result["read_only"])
+        self.assertEqual(result["status"], "blocked")
+        self.assertTrue(any(item["name"] == "output_path" for item in result["checks"]))
 
     def test_scoring_preserves_catalog_coverage(self):
         payload = derive({"metadata": {}, "discovery": {"users": [{"mfa_status": "Registered"}, {"mfa_status": "Not registered"}]}}, self.catalog)
@@ -87,13 +137,42 @@ class EngineContractTests(unittest.TestCase):
         errors = validate_payload(payload, self.catalog)
         self.assertTrue(any("INSUFFICIENT_EVIDENCE exige" in item for item in errors))
 
+    def test_quality_audit_detects_high_risk_quality_gaps(self):
+        data = {"metadata": {}, "controls": [{"id": "ID-001", "status": "pass", "score": 90, "confidence": "high", "evidence_state": "CONFORMANT"}], "findings": [{"control_id": "ID-001", "risk_score": 90, "title": "Risco", "limitations": []}], "discovery": {"collection_log": [{"status": "not_available"}]}}
+        result = audit(data, self.catalog)
+        codes = {item["code"] for item in result["errors"]}
+        self.assertIn("FINDING_WITHOUT_EVIDENCE", codes)
+        self.assertIn("HIGH_RISK_WITHOUT_LIMITATION", codes)
+        self.assertEqual(result["status"], "blocked")
+
     def test_score_calculation_exposes_domain_coverage(self):
         from generate_report import calculate
         domains, overall, coverage = calculate(self.catalog, {"controls": [{"id": item["id"], "status": "not_available", "score": 0, "confidence": "low"} for item in self.catalog["controls"]]})
-        self.assertEqual(overall, 0)
+        self.assertIsNone(overall)
         self.assertEqual(coverage, 0)
         self.assertTrue(all(item["coverage"] == 0 for item in domains.values()))
-        self.assertTrue(all(item["coverage_status"] == "insufficient" for item in domains.values()))
+        self.assertEqual(domains["compliance"]["coverage_status"], "insufficient")
+        self.assertTrue(all(item["coverage_status"] in {"insufficient", "not_configured"} for item in domains.values()))
+
+    def test_executive_report_shows_na_when_no_controls_have_evidence(self):
+        from generate_report import render
+        data = json.loads(json.dumps(self.mock))
+        data["controls"] = [{**item, "status": "not_available", "score": 0, "evidence_state": "INSUFFICIENT_EVIDENCE"} for item in data["controls"]]
+        data["findings"] = []
+        catalog = yaml.safe_load((ROOT / "catalog/controls.yaml").read_text(encoding="utf-8"))
+        runbooks = yaml.safe_load((ROOT / "catalog/runbooks.yaml").read_text(encoding="utf-8"))
+        report = render(catalog, data, runbooks)
+        self.assertIn("Evidência insuficiente", report)
+        self.assertIn("N/D", report)
+        self.assertIn("sem score", report)
+
+    def test_score_coverage_excludes_insufficient_evidence_even_when_status_is_fail(self):
+        from generate_report import calculate
+        controls = [{"id": item["id"], "status": "fail", "score": 0, "confidence": "low", "evidence_state": "INSUFFICIENT_EVIDENCE"} for item in self.catalog["controls"]]
+        domains, overall, coverage = calculate(self.catalog, {"controls": controls})
+        self.assertIsNone(overall)
+        self.assertEqual(coverage, 0)
+        self.assertTrue(all(item["evaluated"] == 0 for item in domains.values()))
 
     def test_checkpoint_resume_is_scoped_and_does_not_cross_tenants(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -119,6 +198,9 @@ class EngineContractTests(unittest.TestCase):
         self.assertEqual(name, "graph")
         self.assertTrue(result["metadata"]["execution"]["attempted"])
         self.assertGreaterEqual(result["metadata"]["execution"]["duration_seconds"], 0)
+        self.assertIn("started_at", result["discovery"]["collection_log"][0])
+        self.assertIn("finished_at", result["discovery"]["collection_log"][0])
+        self.assertEqual(result["discovery"]["collection_log"][0]["attempt"], 1)
 
     def test_versioned_schema_is_present_and_rejects_missing_execution_metadata(self):
         schema = load_schema()
@@ -200,6 +282,8 @@ class EngineContractTests(unittest.TestCase):
         preflight = (ROOT / "src" / "preflight.py").read_text(encoding="utf-8")
         self.assertIn("preflight.json", preflight)
         self.assertIn("não altera o tenant", preflight)
+        self.assertIn('"[0].id"', preflight)
+        self.assertNotIn('"--top", "1"', preflight)
 
     def test_readiness_gate_distinguishes_blocking_and_optional_warning(self):
         essential = check("reader", "Leitura", "azure", "blocked", "403", "sem evidência", "conceder Reader", True)
@@ -307,12 +391,39 @@ class EngineContractTests(unittest.TestCase):
         self.assertEqual(result["metadata"]["simulation"]["evidence_status"], "synthetic_not_customer_evidence")
         defender = next(item for item in result["discovery"]["collection_log"] if item["module"] == "Defender")
         self.assertEqual(defender["status"], "not_available")
+        self.assertNotIn("defender_summary", result["discovery"])
+        self.assertEqual(result["metadata"]["contract_status"], "valid")
 
     def test_small_simulation_reduces_scope_without_claiming_real_tenant(self):
         result = simulate(self.mock, "small")
         self.assertEqual(result["metadata"]["scope"]["subscriptions"], 1)
         self.assertLessEqual(len(result["discovery"]["users"]), 2)
         self.assertEqual(result["metadata"]["simulation"]["scenario"], "small")
+        self.assertEqual(result["metadata"]["scope"]["users_assessed"], len(result["discovery"]["users"]))
+
+    def test_demo_scenarios_recalculate_posture_and_coverage(self):
+        summaries = [simulate(self.mock, scenario, 10 if scenario == "large" else 1) for scenario in ("small", "limited", "full", "large")]
+        scores = {item["metadata"]["overall_score"] for item in summaries}
+        coverages = {item["metadata"]["coverage"] for item in summaries}
+        self.assertGreaterEqual(len(scores), 3)
+        self.assertGreaterEqual(len(coverages), 2)
+        self.assertTrue(all(item["metadata"]["contract_status"] == "valid" for item in summaries))
+
+    def test_readonly_cost_query_allows_only_azure_cost_query_endpoint(self):
+        allowed = "https://management.azure.com/subscriptions/12345678-1234-1234-1234-123456789abc/providers/Microsoft.CostManagement/query?api-version=2023-03-01"
+        denied = "https://management.azure.com/subscriptions/12345678-1234-1234-1234-123456789abc/providers/Microsoft.Storage/storageAccounts/listKeys/action?api-version=2023-01-01"
+        self.assertTrue(is_readonly_cost_query_url(allowed))
+        self.assertFalse(is_readonly_cost_query_url(denied))
+        rows, error = query_cost(denied, "unused", {})
+        self.assertEqual(rows, [])
+        self.assertIn("Refused", error)
+
+    def test_ai_privacy_guard_rejects_camelcase_identifiers_and_resource_paths(self):
+        from ai_payload import privacy_violations
+        payload = {"resourceId": "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/private-rg", "summary": "Owner admin@example.com"}
+        violations = privacy_violations(payload)
+        self.assertTrue(any("resourceId" in item for item in violations))
+        self.assertTrue(any("padrão identificável" in item for item in violations))
 
     def test_large_simulation_is_deterministic_and_contains_failure_modes(self):
         first = simulate(self.mock, "large", scale=1)
@@ -323,11 +434,17 @@ class EngineContractTests(unittest.TestCase):
         statuses = {item["status"] for item in first["discovery"]["collection_log"]}
         self.assertTrue({"success", "partial", "not_available"}.issubset(statuses))
         self.assertTrue(first["metadata"]["simulation"]["is_simulation"])
+        self.assertGreater(first["discovery"]["security_posture_summary"]["resources_with_explicit_signals"], 0)
+        self.assertGreater(first["discovery"]["rbac_summary"]["critical_assignments"], 0)
+        self.assertGreater(first["discovery"]["governance_summary"]["policy_evaluated"], 0)
+        self.assertEqual(first["discovery"]["governance_summary"], second["discovery"]["governance_summary"])
 
     def test_beta_gate_runs_all_synthetic_scenarios(self):
         result = run_gate(ROOT / "mock" / "assessment.json", include_tests=False)
         self.assertEqual(result["status"], "beta_ready")
         self.assertTrue(all(item["status"] == "pass" for item in result["checks"] if item["name"].startswith("scenario_")))
+        self.assertTrue(any(item["name"] == "scenario_large_scale5" for item in result["checks"]))
+        self.assertTrue(any(item["name"] == "scenario_large_determinism" for item in result["checks"]))
 
     def test_pilot_validation_exposes_warnings_without_hiding_read_only_status(self):
         from validate_pilot import validate as validate_pilot
@@ -341,6 +458,7 @@ class EngineContractTests(unittest.TestCase):
         checks = {item["name"]: item for item in release_checks()}
         self.assertEqual(checks["readonly_config"]["status"], "pass")
         self.assertEqual(checks["doc_BETA-RELEASE-CHECKLIST"]["status"], "pass")
+        self.assertEqual(checks["doc_BETA-SCOPE-REVIEW"]["status"], "pass")
 
     def test_compliance_manifest_does_not_claim_dlp_or_retention_collection(self):
         manifest = module_readiness("full")
@@ -431,6 +549,16 @@ class EngineContractTests(unittest.TestCase):
         self.assertEqual(classify("not_available", "HTTP 403; consentimento"), "permission")
         self.assertEqual(classify("error", "HTTP 429"), "throttling")
 
+    def test_evidence_quality_excludes_out_of_profile_modules(self):
+        result = summarize([
+            {"status": "success"},
+            {"status": "not_available", "note": "HTTP 403; consentimento"},
+            {"status": "not_run", "note": "Fora do perfil"},
+        ])
+        self.assertEqual(result["score"], 50)
+        self.assertEqual(result["evaluated_modules"], 2)
+        self.assertEqual(result["not_run"], 1)
+
     def test_finding_contains_decision_lineage_and_dependencies(self):
         result = derive({"metadata": {}, "discovery": {"users": [{"mfa_status": "Not registered"}]}}, self.catalog)
         finding = next(item for item in result["findings"] if item["control_id"] == "ID-001")
@@ -473,7 +601,121 @@ class EngineContractTests(unittest.TestCase):
     def test_profile_skip_is_explicit_and_read_only(self):
         result = skipped_module("cost", "Azure Cost Management API")
         self.assertEqual(result["metadata"]["modules"]["cost"], "not_run")
-        self.assertEqual(result["discovery"]["collection_log"][0]["status"], "not_available")
+        self.assertEqual(result["discovery"]["collection_log"][0]["status"], "not_run")
+        self.assertIn("fora do perfil", result["discovery"]["collection_log"][0]["note"])
+
+    def test_optional_collectors_are_not_called_in_focused_profiles(self):
+        from run_assessment import skipped_module
+        self.assertEqual(skipped_module("analytics", "Purview / Fabric") ["metadata"]["modules"]["analytics"], "not_run")
+        self.assertEqual(skipped_module("azure_devops", "Azure DevOps")["metadata"]["modules"]["azure_devops"], "not_run")
+
+    def test_execution_health_distinguishes_out_of_profile_from_unavailable(self):
+        result = summarize_execution([{"status": "success"}, {"status": "not_run"}, {"status": "not_available"}])
+        self.assertEqual(result["status_counts"]["not_run"], 1)
+        self.assertEqual(result["out_of_profile_modules"], 1)
+        self.assertEqual(result["coverage_percent"], 33.3)
+
+    def test_execution_manifest_separates_executed_unavailable_and_out_of_profile(self):
+        result = build_execution_manifest([
+            {"module": "Identity", "status": "success", "records": 10},
+            {"module": "Defender", "status": "not_available", "records": 0, "note": "Licença"},
+            {"module": "Cost", "status": "not_run", "records": 0},
+        ], "security")
+        self.assertEqual(result["totals"], {"all": 3, "executed": 1, "unavailable_or_error": 1, "out_of_profile": 1})
+        self.assertTrue(result["read_only"])
+
+    def test_report_priority_domain_is_data_driven(self):
+        from generate_report import render
+        data = json.loads(json.dumps(self.mock))
+        data["metadata"]["customer_name"] = "Tenant de teste"
+        data["controls"] = [
+            {"id": item["id"], "status": "not_available", "score": 0, "confidence": "low", "evidence_state": "INSUFFICIENT_EVIDENCE"}
+            for item in self.catalog["controls"]
+        ]
+        data["controls"][0]["status"] = "fail"
+        data["controls"][0]["score"] = 10
+        data["controls"][0]["evidence_state"] = "NON_COMPLIANT"
+        html = render(self.catalog, data, {"runbooks": []})
+        self.assertIn("maior necessidade de atenção em", html)
+        self.assertNotIn("maior necessidade de atenção em <b>Governança Azure</b>", html)
+
+    def test_license_gate_blocks_compliance_without_entitlement_evidence(self):
+        payload = derive({"metadata": {}, "discovery": {"secure_score": [{"currentScore": 80, "maxScore": 100}]}}, self.catalog)
+        controls = {item["id"]: item for item in payload["controls"]}
+        self.assertEqual(controls["SEC-001"]["status"], "pass")
+        self.assertEqual(controls["SEC-005"]["status"], "not_available")
+        self.assertEqual(controls["SEC-005"]["evidence_reason"], "license_or_entitlement_not_verified")
+        self.assertEqual(controls["SEC-005"]["evidence_state"], "INSUFFICIENT_EVIDENCE")
+
+    def test_insufficient_evidence_cannot_become_p1(self):
+        from insight_engine import prioritize_findings, executive_actions
+        finding = {"control_id": "SEC-005", "title": "Sinal condicional", "risk_score": 99, "effort": 1, "evidence_state": "INSUFFICIENT_EVIDENCE", "owner": "Security"}
+        result = prioritize_findings([finding], {"score": 100})[0]
+        self.assertNotEqual(result["priority"], "P1")
+        self.assertEqual(result["priority_eligibility"], "conditional_review")
+        self.assertTrue(executive_actions([result])[0]["priority"] != "P1")
+
+    def test_review_checklist_blocks_non_read_only_and_warns_on_limitations(self):
+        data = {"metadata": {"contract_status": "valid", "coverage": 40, "execution": {"tenant_mutation": False}, "execution_health": {"status_counts": {"not_available": 1}}}, "controls": [], "findings": [], "discovery": {"collection_log": [{"module": "Defender", "status": "not_available"}]}}
+        result = build_review_checklist(data)
+        self.assertEqual(result["status"], "warning")
+        self.assertEqual(result["blocking"], 0)
+        self.assertTrue(any(item["name"] == "coverage" and item["status"] == "warning" for item in result["checks"]))
+        data["metadata"]["execution"]["tenant_mutation"] = True
+        self.assertEqual(build_review_checklist(data)["status"], "blocked")
+
+    def test_artifact_manifest_is_read_only_and_hashes_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary) / "dist"
+            output_dir.mkdir()
+            (output_dir / "assessment.html").write_text("offline", encoding="utf-8")
+            result = build_artifact_manifest(output_dir, {"metadata": {"engine_version": "test", "schema_version": "1.0", "profile": "security", "run_id": "r1", "execution": {"tenant_mutation": False}}})
+            self.assertTrue(result["read_only"])
+            self.assertEqual(result["files"][0]["name"], "assessment.html")
+            self.assertEqual(len(result["files"][0]["sha256"]), 64)
+
+    def test_artifact_manifest_hashes_normalized_inputs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output_dir = root / "dist"
+            output_dir.mkdir()
+            assessment = root / "assessment.json"
+            ai_payload = root / "ai-payload.json"
+            assessment.write_text("{}", encoding="utf-8")
+            ai_payload.write_text('{"aggregated":true}', encoding="utf-8")
+            result = build_artifact_manifest(output_dir, {"metadata": {"execution": {"tenant_mutation": False}}}, [assessment, ai_payload])
+        self.assertEqual(result["manifest_version"], "1.1")
+        self.assertEqual([item["name"] for item in result["inputs"]], ["assessment.json", "ai-payload.json"])
+        self.assertTrue(all(len(item["sha256"]) == 64 for item in result["inputs"]))
+
+    def test_manifest_validation_detects_tampering(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output_dir = root / "dist"
+            output_dir.mkdir()
+            artifact = output_dir / "assessment.html"
+            artifact.write_text("original", encoding="utf-8")
+            manifest = build_artifact_manifest(output_dir, {"metadata": {"execution": {"tenant_mutation": False}}})
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            artifact.write_text("tampered", encoding="utf-8")
+            result = validate_manifest(manifest_path, output_dir, root)
+        self.assertEqual(result["status"], "invalid")
+        self.assertTrue(any("hash divergente" in error for error in result["errors"]))
+
+    def test_review_checklist_exposes_artifact_integrity(self):
+        data = {"metadata": {"execution": {"tenant_mutation": False}, "contract_status": "valid", "coverage": 100}, "discovery": {"collection_log": []}, "findings": []}
+        result = build_review_checklist(data, quality={"score": 100}, manifest_validation={"status": "valid", "read_only": True})
+        check = next(item for item in result["checks"] if item["name"] == "artifact_integrity")
+        self.assertEqual(check["status"], "pass")
+
+    def test_pseudonymization_does_not_mutate_input_or_leak_email(self):
+        source = {"metadata": {"customer_name": "Cliente Real"}, "discovery": {"users": [{"display_name": "Ana Souza", "mail": "ana@example.com", "mfa_status": "Registered"}]}}
+        result = pseudonymize(source, "test-salt")
+        self.assertEqual(source["metadata"]["customer_name"], "Cliente Real")
+        self.assertNotIn("ana@example.com", json.dumps(result))
+        self.assertNotIn("Ana Souza", json.dumps(result))
+        self.assertEqual(result["metadata"]["privacy_mode"], "pseudonymized")
 
     def test_identity_summary_is_aggregated_and_actionable(self):
         summary = build_identity_summary([
@@ -495,6 +737,16 @@ class EngineContractTests(unittest.TestCase):
         self.assertEqual(access_risk("Owner", "Management Group")[0], "Crítico")
         self.assertEqual(access_risk("Owner", "Resource")[0], "Alto")
         self.assertEqual(access_risk("Reader", "Subscription")[0], "Moderado")
+
+    def test_rbac_summary_exposes_blast_radius_without_claiming_inheritance(self):
+        result = summarize_rbac_posture([
+            {"role": "Owner", "scope_kind": "Subscription", "access_risk": "Crítico", "assignment_type": "Permanent/unknown"},
+            {"role": "Reader", "scope_kind": "Resource Group", "access_risk": "Moderado", "assignment_type": "Permanent/unknown"},
+        ])
+        self.assertEqual(result["assignments"], 2)
+        self.assertEqual(result["critical_assignments"], 1)
+        self.assertEqual({item["scope_kind"] for item in result["by_scope"]}, {"Subscription", "Resource Group"})
+        self.assertIn("não é presumida", result["inheritance_note"])
 
     def test_conditional_access_exposes_coverage_and_exclusions(self):
         row = conditional_access_row({"displayName": "Require MFA", "state": "enabled", "conditions": {"users": {"includeUsers": ["All"], "excludeGroups": ["breakglass"]}}, "grantControls": {"builtInControls": ["mfa"]}})
@@ -548,6 +800,10 @@ class EngineContractTests(unittest.TestCase):
     def test_beta_deployment_wrappers_exist(self):
         self.assertTrue((ROOT / "scripts" / "run-beta-gate.ps1").exists())
         self.assertTrue((ROOT / "scripts" / "run-beta-gate.sh").exists())
+        self.assertTrue((ROOT / "scripts" / "run-focused-pilot.sh").exists())
+        self.assertTrue((ROOT / "scripts" / "run-focused-pilot.ps1").exists())
+        self.assertTrue((ROOT / "scripts" / "run-lab-validation.sh").exists())
+        self.assertTrue((ROOT / "scripts" / "run-lab-validation.ps1").exists())
 
     def test_azure_exposure_detection_covers_network_properties(self):
         self.assertEqual(exposure_details("Microsoft.Storage/storageAccounts", {"publicNetworkAccess": "Disabled"})[0], "Private")
@@ -555,6 +811,84 @@ class EngineContractTests(unittest.TestCase):
         self.assertEqual(exposure_details("Microsoft.KeyVault/vaults", {})[0], "Review")
         row = resource_row({"id": "x", "type": "Microsoft.Web/sites", "properties": {"publicNetworkAccess": "Enabled"}, "tags": {}})
         self.assertEqual(row["exposure_reason"], "publicNetworkAccess=Enabled")
+
+    def test_resource_security_posture_detects_explicit_service_gaps(self):
+        storage = resource_security_posture("Microsoft.Storage/storageAccounts", {"allowBlobPublicAccess": True, "supportsHttpsTrafficOnly": False, "minimumTlsVersion": "TLS1_0"})
+        self.assertIn("Storage: blob público habilitado", storage)
+        self.assertIn("Storage: HTTPS-only desabilitado", storage)
+        keyvault = resource_security_posture("Microsoft.KeyVault/vaults", {"enablePurgeProtection": False, "networkAcls": {"defaultAction": "Allow"}})
+        self.assertIn("Key Vault: purge protection desabilitado", keyvault)
+        nsg = resource_security_posture("Microsoft.Network/networkSecurityGroups", {"securityRules": [{"access": "Allow", "direction": "Inbound", "sourceAddressPrefix": "0.0.0.0/0", "destinationPortRange": "3389"}]})
+        self.assertIn("NSG: entrada pública permitida na porta 3389", nsg)
+        app_service = resource_security_posture("Microsoft.Web/sites", {"httpsOnly": False, "siteConfig": {"minTlsVersion": "1.0"}})
+        self.assertIn("App Service: HTTPS-only desabilitado", app_service)
+        self.assertIn("App Service: TLS mínimo legado", app_service)
+        sql_firewall = resource_security_posture("Microsoft.Sql/servers/firewallRules", {"startIpAddress": "0.0.0.0", "endIpAddress": "255.255.255.255"})
+        self.assertIn("SQL Firewall: acesso público de qualquer origem", sql_firewall)
+        sql_server = resource_security_posture("Microsoft.Sql/servers", {"publicNetworkAccess": True})
+        self.assertIn("Azure SQL: acesso público habilitado", sql_server)
+        cosmos = resource_security_posture("Microsoft.DocumentDB/databaseAccounts", {"publicNetworkAccess": "Enabled", "isVirtualNetworkFilterEnabled": False})
+        self.assertIn("Serviço de dados: acesso público habilitado", cosmos)
+        self.assertIn("Cosmos DB: filtro de rede virtual desabilitado", cosmos)
+        redis = resource_security_posture("Microsoft.Cache/Redis", {"publicNetworkAccess": True})
+        self.assertIn("Serviço de dados: acesso público habilitado", redis)
+        acr = resource_security_posture("Microsoft.ContainerRegistry/registries", {"adminUserEnabled": True})
+        self.assertIn("Container Registry: usuário administrador habilitado", acr)
+        gateway = resource_security_posture("Microsoft.Network/applicationGateways", {"webApplicationFirewallConfiguration": {"enabled": False}})
+        self.assertIn("Application Gateway: WAF desabilitado", gateway)
+
+    def test_security_posture_summary_is_explicit_and_aggregated(self):
+        result = summarize_security_posture([
+            {"type": "Microsoft.Storage/storageAccounts", "security_posture": "Storage: blob público habilitado; HTTPS-only desabilitado"},
+            {"type": "Microsoft.Web/sites", "security_posture": "Nenhum sinal explícito retornado"},
+        ])
+        self.assertEqual(result["resources"], 2)
+        self.assertEqual(result["resources_with_explicit_signals"], 1)
+        self.assertEqual(result["signals_total"], 2)
+        self.assertEqual(result["by_signal"][0]["resources"], 1)
+        self.assertIn("ausência não é conformidade", result["coverage_note"])
+
+    def test_governance_summary_aggregates_tags_owner_and_policy(self):
+        result = summarize_governance_posture(
+            [{"owner": "A definir", "tags": "env"}, {"owner": "Platform", "tags": "Nenhuma"}],
+            [{"non_compliant": 1}, {"non_compliant": 0}],
+        )
+        self.assertEqual(result["resources_assessed"], 2)
+        self.assertEqual(result["without_owner"], 1)
+        self.assertEqual(result["without_environment_tag"], 1)
+        self.assertEqual(result["policy_non_compliant"], 1)
+        self.assertEqual(result["policy_compliance_rate"], 50.0)
+        self.assertIn("não prova risco", result["interpretation"])
+
+    def test_cross_domain_insights_include_explicit_azure_posture_signals(self):
+        result = cross_domain_insights({
+            "security_posture_summary": {
+                "resources_with_explicit_signals": 2,
+                "by_signal": [{"signal": "Storage: blob público habilitado", "resources": 2}],
+            }
+        })
+        posture = next(item for item in result if item["id"] == "I-008")
+        self.assertEqual(posture["affected"], 2)
+        self.assertEqual(posture["severity"], "high")
+        self.assertIn("explicitamente", posture["evidence"])
+
+    def test_cross_domain_insights_include_governance_gaps_without_overclaiming(self):
+        result = cross_domain_insights({
+            "governance_summary": {
+                "resources_assessed": 10,
+                "without_owner": 6,
+                "policy_evaluated": 10,
+                "policy_non_compliant": 6,
+            }
+        })
+        owner = next(item for item in result if item["id"] == "I-009")
+        policy = next(item for item in result if item["id"] == "I-010")
+        self.assertEqual(owner["severity"], "high")
+        self.assertEqual(policy["affected"], 6)
+        self.assertIn("Validar", policy["action"])
+        self.assertEqual(owner["priority"], "P2")
+        self.assertEqual(policy["suggested_owner"], "Cloud Governance")
+        self.assertIn(policy["effort_band"], {"Baixo", "Médio", "Alto"})
 
     def test_policy_summary_groups_evidence_and_assigns_risk(self):
         result = summarize_policy_compliance([
@@ -566,6 +900,18 @@ class EngineContractTests(unittest.TestCase):
         self.assertEqual(result[0]["compliance_rate"], 50.0)
         self.assertEqual(result[0]["risk_signal"], "Atenção")
 
+    def test_policy_unknown_state_is_evidence_gap_not_non_compliance(self):
+        unknown = policy_row({"policyDefinitionName": "Require TLS", "policyAssignmentName": "baseline", "complianceState": "Unknown", "subscriptionId": "sub1"})
+        compliant = policy_row({"policyDefinitionName": "Require TLS", "policyAssignmentName": "baseline", "complianceState": "Compliant", "subscriptionId": "sub1"})
+        result = summarize_policy_compliance([unknown, compliant])
+        self.assertEqual(unknown["evidence_state"], "INSUFFICIENT_EVIDENCE")
+        self.assertEqual(unknown["non_compliant"], 0)
+        self.assertEqual(result[0]["observations"], 2)
+        self.assertEqual(result[0]["evaluated"], 1)
+        self.assertEqual(result[0]["insufficient_evidence"], 1)
+        self.assertEqual(result[0]["compliance_rate"], 100.0)
+        self.assertEqual(result[0]["evidence_coverage"], 50.0)
+
     def test_service_health_row_handles_raw_properties(self):
         row = retirement_row({"name": "event-1", "properties": {"Title": "Retirement advisory", "EventType": "HealthAdvisory", "Status": "Active", "TrackingId": "t1"}})
         self.assertEqual(row["service"], "Retirement advisory")
@@ -575,6 +921,41 @@ class EngineContractTests(unittest.TestCase):
     def test_engine_version_is_loaded_from_single_source(self):
         from version import engine_version
         self.assertEqual(engine_version(), (ROOT / "VERSION").read_text(encoding="utf-8").strip())
+
+    def test_engagement_config_is_local_metadata_only(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "engagement.yaml"
+            path.write_text("customer_name: Cliente Demo\nconsultant_name: Lucas\nsubscriptions: all\n", encoding="utf-8")
+            result = load_engagement(path)
+        self.assertEqual(result["customer_name"], "Cliente Demo")
+        self.assertEqual(result["consultant_name"], "Lucas")
+        self.assertNotIn("subscriptions", result)
+
+    def test_lab_validation_summary_is_cross_platform_and_explicit(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for profile in ("security", "governance", "full"):
+                folder = root / profile
+                folder.mkdir()
+                (folder / "pilot-validation.json").write_text(json.dumps({"status": "ready_for_pilot_review", "quality_audit": {"metrics": {"coverage": 80}}, "modules_unavailable_or_error": 1, "warnings": ["limited"]}), encoding="utf-8")
+                (folder / "manifest-validation.json").write_text(json.dumps({"status": "valid"}), encoding="utf-8")
+            result = summarize_lab_validation(root)
+            self.assertTrue(result["read_only"])
+            self.assertEqual(set(result["profiles"]), {"security", "governance", "full"})
+            self.assertEqual(result["overall_status"], "warning")
+            self.assertEqual(result["profiles"]["governance"]["readiness"], "warning")
+            self.assertEqual(result["profiles"]["full"]["artifact_integrity"], "valid")
+
+    def test_lab_validation_summary_blocks_on_invalid_artifact(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            folder = root / "full"
+            folder.mkdir()
+            (folder / "pilot-validation.json").write_text(json.dumps({"status": "ready_for_pilot_review", "quality_audit": {"metrics": {"coverage": 100, "overall_score": 80}}, "warnings": [], "errors": []}), encoding="utf-8")
+            (folder / "manifest-validation.json").write_text(json.dumps({"status": "invalid"}), encoding="utf-8")
+            result = summarize_lab_validation(root)
+        self.assertEqual(result["overall_status"], "blocked")
+        self.assertEqual(result["profiles"]["full"]["readiness"], "blocked")
 
     def test_power_platform_inventory_is_normalized_without_content(self):
         row = power_platform_row({

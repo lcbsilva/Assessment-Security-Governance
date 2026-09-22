@@ -50,6 +50,21 @@ O relatório será criado em:
 dist/assessment-demo.html
 ```
 
+### Importar relatório Microsoft Zero Trust (opcional)
+
+O JSON ou ZIP exportado pelo assessment Microsoft pode ser importado localmente para comparar evidências e apoiar a revisão. Os estados Microsoft ficam separados e não são convertidos nem combinados com o score deste engine.
+
+```bash
+python3 src/import_zt_assessment.py \
+  --source "/caminho/ZeroTrustAssessmentReport.zip" \
+  --data runtime/assessment.json \
+  --output runtime/assessment-combined.json
+python3 src/generate_report.py --data runtime/assessment-combined.json --output dist/assessment.html
+python3 src/export_artifacts.py --data runtime/assessment-combined.json --output-dir dist
+```
+
+Se o contrato local não tiver tenant ID completo ou mascarado para validar a correspondência, confirme manualmente que os relatórios pertencem ao mesmo tenant e acrescente `--confirm-same-tenant`. Os wrappers Bash e PowerShell também aceitam importação automática quando `ASSESSMENT_ZERO_TRUST_REPORT` contém o caminho local do JSON/ZIP. O payload de IA continua sendo criado somente dos dados base deste engine; o conteúdo bruto do ZIP não é enviado à IA. Trate os relatórios e artefatos combinados como confidenciais.
+
 ## Testes de integridade
 
 ```bash
@@ -62,6 +77,8 @@ Para validar a prontidão da versão beta sem acessar nenhum tenant:
 ```bash
 python3 src/beta_gate.py --data mock/assessment.json
 ```
+
+Para personalizar o cliente, engagement e classificação dos artefatos, consulte [docs/ENGAGEMENT-CONFIG.md](docs/ENGAGEMENT-CONFIG.md). A configuração é local e não altera o escopo read-only.
 
 O gate compila o código, executa os testes, gera HTML/XLSX/PPTX/PDF, valida os
 guardrails de IA e confirma o piloto em diretório temporário.
@@ -85,6 +102,42 @@ Azure CLI, sessão, acesso Reader à subscription, sessão Graph e guardrail rea
 
 O resultado fica em `runtime/preflight.json` e também aparece no HTML final. A estimativa
 de duração é indicativa e pode variar com volume, paginação, throttling, retenção e licenças.
+
+Ao final, `runtime/pilot-validation.json` também contém um checklist automático de pré-entrega.
+Ele diferencia bloqueios (read-only, contrato, manifesto ou IA), warnings (cobertura e
+limitações de módulos) e condições que exigem revisão consultiva antes de compartilhar o
+relatório.
+
+O arquivo `runtime/artifact-manifest.json` registra a classificação confidencial, o perfil,
+o run ID e o SHA-256 dos artefatos em `dist`, permitindo verificar se HTML, PDF, PPTX ou XLSX
+foram alterados depois da geração.
+
+Cada entrada do `collection_log` registra início, fim, duração e tentativa do módulo. Isso
+deixa explícito que um assessment longo é uma sequência de janelas de coleta, e não um
+snapshot temporal único.
+
+O inventário Azure também normaliza sinais explícitos de postura para Storage, Key Vault e
+NSG, incluindo blob público, HTTPS-only, TLS legado, soft delete, purge protection e regras
+inbound públicas para SSH/RDP. Propriedade ausente continua sendo evidência insuficiente.
+
+Para compartilhar uma cópia com identificadores protegidos, sem alterar o assessment original:
+
+```bash
+./scripts/generate-shareable-report.sh runtime/assessment.json
+```
+
+Os artefatos pseudonimizados são gravados em `dist-shareable/`. O salt usado para a
+pseudonimização nunca é armazenado no contrato.
+
+Para revisar arquivos locais antigos, a ferramenta começa somente em modo de prévia; a remoção requer `--apply` explícito:
+
+```bash
+python3 src/cleanup_local.py
+python3 src/cleanup_local.py --include-reports
+python3 src/cleanup_local.py --include-reports --apply
+```
+
+A retenção padrão é 30 dias (`privacy.local_artifact_retention_days` em `config/assessment.yaml`). Revise a lista antes de acrescentar `--apply`. A rotina cobre apenas `runtime/`, `dist/` e `dist-shareable/`; não roda automaticamente e não promete apagamento físico seguro. Em Windows, proteja as pastas usando ACLs da conta/perfil local; em POSIX, o engine restringe diretórios de saída conhecidos quando aplicável.
 
 Os coletores independentes executam com paralelismo conservador de 2 workers. Para um
 ambiente com limites de API mais restritivos, use `ASSESSMENT_MAX_WORKERS=1`; para um
@@ -190,10 +243,11 @@ ou o escopo não estiver disponível, o manifesto registra `not_available` ou
 `partial`. DevOps e Purview permanecem integrações opcionais com autenticação e
 permissões próprias, sem ampliar o token Azure por padrão.
 
-Perfis disponíveis: `security` concentra identidade, exposição e sinais de
-segurança; `governance` concentra inventário, hierarquia, RBAC e Policy; `full`
-executa todos os módulos, incluindo custo. Módulos fora do perfil aparecem
-explicitamente como `not_available` no manifesto.
+Perfis disponíveis: `security` concentra identidade, exposição, sinais de
+segurança e postura de domínio M365; `governance` concentra inventário,
+hierarquia, RBAC e Policy; `full` executa também custo e integrações opcionais.
+Módulos fora do perfil aparecem explicitamente como `not_run` no manifesto.
+As decisões de escopo estão documentadas em [`docs/BETA-SCOPE-REVIEW.md`](docs/BETA-SCOPE-REVIEW.md).
 
 ### Execução local no tenant do cliente
 
@@ -208,6 +262,19 @@ No Windows PowerShell:
 ```powershell
 az login
 .\scripts\run-assessment.ps1 -Subscriptions "<subscription-id-1>,<subscription-id-2>"
+```
+
+Para o primeiro piloto focado, use o wrapper de Segurança. Ele executa com um
+worker, habilita retomada por checkpoint e valida o Release Gate ao final:
+
+```bash
+./scripts/run-focused-pilot.sh "<subscription-id-1>"
+```
+
+No PowerShell:
+
+```powershell
+.\scripts\run-focused-pilot.ps1 -Subscriptions "<subscription-id-1>"
 ```
 
 No Linux ou macOS:

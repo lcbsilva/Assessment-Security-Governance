@@ -1,5 +1,46 @@
 # Roadmap de sprints — Assessment Security & Governance
 
+## Beta 64–67 — confiança, privacidade e contexto
+
+- [x] Beta 64 — proteger arquivos locais, documentar retenção e fornecer limpeza manual com prévia.
+- [x] Beta 65 — ligar cada controle/achado a fonte, estado e janela de coleta; remover associação inadequada de Azure Policy aos controles Purview.
+- [x] Beta 66 — confiança por evidência do controle, alcance com unidade e estimativa relativa de esforço/impacto potencial.
+- [x] Beta 67 — publicar contexto de perfil, escopo, duração e limitações nos relatórios e manifesto.
+- [ ] Executar suíte completa, Release Gate e renderização de HTML/PDF/PPTX/XLSX em ambiente limpo.
+- [ ] Revisar ACLs no Windows e permissões POSIX no Cloud Shell com operadores do laboratório.
+
+O código e a documentação das quatro sprints foram concluídos. Os gates automatizados e a revisão nos shells do laboratório ainda precisam ser executados antes de declarar a entrega validada para piloto.
+
+## Beta 63 — experiência observável de execução
+
+- [x] Exibir etapas claras nos wrappers Linux/Cloud Shell e PowerShell 7.
+- [x] Medir e mostrar tempo decorrido durante o fluxo.
+- [x] Mostrar estado, duração e gravação do checkpoint por coletor.
+- [x] Identificar coletores retomados e reutilizados após interrupção.
+- [x] Mostrar importação Microsoft como etapa local opcional e scores separados.
+- [x] Atualizar runbook e Release Gate.
+- [ ] Validar a experiência em Cloud Shell e Windows PowerShell 7 no laboratório.
+
+O aceite visual e operacional deve ser feito nos dois shells suportados; a inspeção local de sintaxe não substitui essa validação.
+
+## Beta 61 — quatro sprints priorizadas
+
+- [x] Sprint 1 — endurecer o limite read-only, restringir o POST de Cost
+  Management ao endpoint de consulta e acrescentar inspeção AST no gate.
+- [x] Sprint 2 — recalcular score/cobertura em cada cenário sintético, alinhar
+  escopo aos registros produzidos e remover evidência herdada dos módulos
+  simulados como indisponíveis.
+- [x] Sprint 3 — mostrar `N/D` quando não houver controles avaliados e ampliar
+  a detecção de identificadores/segredos no payload agregado para IA.
+- [x] Sprint 4 — documentar execução no Cloud Shell, tratamento confidencial
+  dos artefatos, critérios de aceite e o handoff do piloto interno.
+- [ ] Reconciliação manual de amostras reais com Portal/Graph/ARG e revisão por
+  outro consultor: execução operacional a ser feita pela equipe no laboratório.
+
+Os itens de código e documentação desta entrega estão concluídos. O item de
+reconciliação exige revisão humana dos dados do laboratório e não é inferido pelo
+Release Gate local.
+
 ## Sprint atual — Qualidade e segurança do discovery
 
 - [x] Barreira técnica permanente read-only.
@@ -90,3 +131,55 @@ obrigatória e não é substituído por dados sintéticos.
 - [x] Modos de falha 403/429 simulados sem inventar conformidade.
 - [x] Parâmetro `--scale` para stress progressivo.
 - [x] Renderer validado com 20 mil usuários e 25 mil recursos.
+
+## Sprint beta.7 — Auditoria pré-entrega
+
+- [x] Auditor automático de qualidade do contrato.
+- [x] Detecção de achado sem evidência ou limitação.
+- [x] Detecção de estados de evidência contraditórios.
+- [x] Detecção de módulos indisponíveis e domínios com baixa cobertura.
+- [x] Integração na validação de piloto sem alterar o tenant.
+
+## Sprint beta.8 — Revisão objetiva de escopo
+
+- [x] Núcleo de Segurança e Governança separado das integrações opcionais.
+- [x] Perfis focados deixam de chamar DevOps, analytics e custo sem necessidade.
+- [x] Decisão de manter, tornar opcional ou adiar cada capacidade documentada.
+- [x] Riscos de PII, relatório grande, licença e estimativa financeira registrados.
+- [x] Release Gate e testes executados após a revisão.
+
+## Sprint beta.9 — Piloto focado de Segurança
+
+- [x] Wrapper Linux/Cloud Shell para execução do perfil `security`.
+- [x] Wrapper PowerShell equivalente.
+- [x] Paralelismo conservador de um worker no piloto inicial.
+- [x] Retomada por checkpoint habilitada por padrão.
+- [x] Release Gate executado ao final do piloto local.
+
+## Sprint beta.10 — Correção de compatibilidade Cloud Shell
+
+- [x] Corrigido preflight incompatível com `az resource list --top`.
+- [x] Readiness agora consulta somente o primeiro ID via `--query "[0].id"`.
+- [x] Mantida leitura mínima e comportamento read-only.
+- [x] Regressão automatizada adicionada para evitar retorno do erro.
+
+## Sprint beta.11 — Gate reproduzível em pacote limpo
+
+- [x] Testes de artefatos não dependem mais de arquivos antigos em `dist/`.
+- [x] Fixtures de HTML, PDF, PPTX e XLSX são geradas temporariamente durante os testes.
+- [x] Wrapper Linux e PowerShell exibem automaticamente o check bloqueado.
+- [x] Release Gate validado em checkout sem artefatos pré-gerados.
+
+## Sprint beta.12 — Correção de cobertura por evidência
+
+- [x] Score não conta `INSUFFICIENT_EVIDENCE` como controle avaliado.
+- [x] Cobertura por domínio e cobertura geral usam o estado formal da evidência.
+- [x] Teste de regressão para status numérico sem evidência.
+- [x] Evita relatório com cobertura artificialmente em 100%.
+
+## Sprint beta.13 — Evidência de autorização do piloto
+
+- [x] Manifesto local de aprovação separado da execução e dos segredos.
+- [x] Consentimento confirmado, perfil e subscriptions validados antes do piloto.
+- [x] Escopos incompatíveis com read-only bloqueados.
+- [x] Gate não consulta, autentica, concede permissões ou altera o tenant.

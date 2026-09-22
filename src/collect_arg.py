@@ -139,6 +139,66 @@ def exposure_details(resource_type: str, properties: dict) -> tuple[str, str]:
     return "Private", "Nenhum sinal público conhecido"
 
 
+def resource_security_posture(resource_type: str, properties: dict) -> list[str]:
+    """Extrai sinais explícitos de segurança; ausência de propriedade não vira conformidade."""
+    resource_type = str(resource_type).lower()
+    properties = properties if isinstance(properties, dict) else {}
+    signals: list[str] = []
+    if "microsoft.storage/storageaccounts" in resource_type:
+        if properties.get("allowBlobPublicAccess") is True:
+            signals.append("Storage: blob público habilitado")
+        if properties.get("supportsHttpsTrafficOnly") is False:
+            signals.append("Storage: HTTPS-only desabilitado")
+        if str(properties.get("minimumTlsVersion", "")).upper() in {"TLS1_0", "TLS1_1", "TLS 1.0", "TLS 1.1"}:
+            signals.append("Storage: TLS mínimo legado")
+    if "microsoft.keyvault/vaults" in resource_type:
+        if properties.get("enableSoftDelete") is False or properties.get("softDeleteEnabled") is False:
+            signals.append("Key Vault: soft delete desabilitado")
+        if properties.get("enablePurgeProtection") is False or properties.get("purgeProtectionEnabled") is False:
+            signals.append("Key Vault: purge protection desabilitado")
+        if str((properties.get("networkAcls") or {}).get("defaultAction", "")).lower() == "allow":
+            signals.append("Key Vault: ACL de rede permite acesso por padrão")
+    if "microsoft.network/networksecuritygroups" in resource_type:
+        rules = properties.get("securityRules") or properties.get("rules") or []
+        if isinstance(rules, dict):
+            rules = list(rules.values())
+        for rule in rules if isinstance(rules, list) else []:
+            if not isinstance(rule, dict):
+                continue
+            source = str(rule.get("sourceAddressPrefix") or rule.get("sourceAddressPrefixes") or "").lower()
+            destination = str(rule.get("destinationPortRange") or rule.get("destinationPortRanges") or "").lower()
+            if str(rule.get("access", "")).lower() == "allow" and str(rule.get("direction", "")).lower() == "inbound" and (source in {"*", "0.0.0.0/0", "internet"} or "0.0.0.0/0" in source) and any(port in destination for port in ("22", "3389")):
+                signals.append(f"NSG: entrada pública permitida na porta {('22/3389' if '22' in destination and '3389' in destination else '22' if '22' in destination else '3389')}")
+    if "microsoft.web/sites" in resource_type:
+        if properties.get("httpsOnly") is False:
+            signals.append("App Service: HTTPS-only desabilitado")
+        site_config = properties.get("siteConfig") or {}
+        minimum_tls = properties.get("minTlsVersion") or site_config.get("minTlsVersion")
+        if str(minimum_tls).upper() in {"1.0", "1.1", "TLS1_0", "TLS1_1", "TLS 1.0", "TLS 1.1"}:
+            signals.append("App Service: TLS mínimo legado")
+    if "microsoft.sql/servers/firewallrules" in resource_type:
+        start_ip = str(properties.get("startIpAddress", "")).strip()
+        end_ip = str(properties.get("endIpAddress", "")).strip()
+        if start_ip == "0.0.0.0" and end_ip == "255.255.255.255":
+            signals.append("SQL Firewall: acesso público de qualquer origem")
+        elif start_ip == "0.0.0.0" and end_ip == "0.0.0.0":
+            signals.append("SQL Firewall: regra especial permite serviços Azure")
+    if "microsoft.sql/servers" in resource_type and properties.get("publicNetworkAccess") is True:
+        signals.append("Azure SQL: acesso público habilitado")
+    if any(service in resource_type for service in ("microsoft.documentdb/databaseaccounts", "microsoft.cache/redis", "microsoft.dbforpostgresql/flexibleservers", "microsoft.dbformysql/flexibleservers")):
+        if str(properties.get("publicNetworkAccess", "")).lower() in {"true", "enabled"} or properties.get("publicNetworkAccess") is True:
+            signals.append("Serviço de dados: acesso público habilitado")
+    if "microsoft.documentdb/databaseaccounts" in resource_type and properties.get("isVirtualNetworkFilterEnabled") is False:
+        signals.append("Cosmos DB: filtro de rede virtual desabilitado")
+    if "microsoft.containerregistry/registries" in resource_type and properties.get("adminUserEnabled") is True:
+        signals.append("Container Registry: usuário administrador habilitado")
+    if "microsoft.network/applicationgateways" in resource_type:
+        waf = properties.get("webApplicationFirewallConfiguration") or {}
+        if isinstance(waf, dict) and waf.get("enabled") is False:
+            signals.append("Application Gateway: WAF desabilitado")
+    return sorted(set(signals))
+
+
 def resource_row(item: dict) -> dict:
     resource_id = item.get("id", "")
     resource_type = str(item.get("type", "")).lower()
@@ -152,6 +212,7 @@ def resource_row(item: dict) -> dict:
         except ValueError:
             pass
     exposure, exposure_reason = exposure_details(resource_type, properties)
+    security_posture = resource_security_posture(resource_type, properties)
     posture = []
     if exposure.lower().startswith("public") or "review" in exposure.lower():
         posture.append("Exposição de rede")
@@ -159,7 +220,7 @@ def resource_row(item: dict) -> dict:
         posture.append("Sem owner")
     if not (item.get("tags") or {}).get("env"):
         posture.append("Sem env")
-    security_signal = "Atenção" if any(signal == "Exposição de rede" for signal in posture) else "Sem sinal público detectado"
+    security_signal = "Atenção" if any(signal == "Exposição de rede" for signal in posture) or security_posture else "Sem sinal público detectado"
     governance_signal = "Atenção" if len(posture) > 0 else "Sem sinal básico"
     return {
         "name": item.get("name", "—"),
@@ -177,18 +238,35 @@ def resource_row(item: dict) -> dict:
         "created_at": created_at,
         "age_days": age_days,
         "security_signal": security_signal,
+        "security_posture": "; ".join(security_posture) or "Nenhum sinal explícito retornado",
         "governance_signal": governance_signal,
         "posture_signals": "; ".join(posture) or "Nenhum sinal básico",
     }
 
 
 def policy_row(item: dict) -> dict:
+    raw_state = str(item.get("complianceState") or "Unknown").strip()
+    normalized_state = raw_state.lower().replace("-", "_").replace(" ", "_")
+    if normalized_state in {"compliant", "compliance"}:
+        classification = "compliant"
+        evidence_state = "CONFORMANT"
+    elif normalized_state in {"noncompliant", "non_compliant", "noncompliance", "non_compliance", "conflict", "partial"}:
+        classification = "non_compliant"
+        evidence_state = "NON_CONFORMANT"
+    elif normalized_state in {"exempt", "excluded"}:
+        classification = "exempt"
+        evidence_state = "INSUFFICIENT_EVIDENCE"
+    else:
+        classification = "unknown"
+        evidence_state = "INSUFFICIENT_EVIDENCE"
     return {
         "policy": item.get("policyDefinitionName") or "—",
         "assignment": item.get("policyAssignmentName") or item.get("policyAssignmentId") or "—",
-        "compliance_state": item.get("complianceState") or "Unknown",
-        "non_compliant": 1 if str(item.get("complianceState", "")).lower() != "compliant" else 0,
-        "exemptions": 0,
+        "compliance_state": raw_state,
+        "classification": classification,
+        "evidence_state": evidence_state,
+        "non_compliant": 1 if classification == "non_compliant" else 0,
+        "exemptions": 1 if classification == "exempt" else 0,
         "last_evaluated": item.get("timestamp") or "—",
         "resource_id": item.get("resourceId") or "—",
         "subscription": item.get("subscriptionId") or "—",
@@ -200,15 +278,82 @@ def summarize_policy_compliance(rows: list[dict]) -> list[dict]:
     grouped: dict[tuple[str, str, str], dict] = {}
     for row in rows:
         key = (str(row.get("policy", "—")), str(row.get("assignment", "—")), str(row.get("subscription", "—")))
-        item = grouped.setdefault(key, {"policy": key[0], "assignment": key[1], "subscription": key[2], "evaluated": 0, "non_compliant": 0, "exemptions": 0})
-        item["evaluated"] += 1
+        item = grouped.setdefault(key, {"policy": key[0], "assignment": key[1], "subscription": key[2], "evaluated": 0, "observations": 0, "non_compliant": 0, "exemptions": 0, "insufficient_evidence": 0})
+        classification = str(row.get("classification", "")).lower()
+        if not classification:
+            state = str(row.get("compliance_state", "")).lower().replace("-", "_").replace(" ", "_")
+            if state in {"compliant", "compliance"}:
+                classification = "compliant"
+            elif state in {"noncompliant", "non_compliant", "noncompliance", "non_compliance", "conflict", "partial"} or int(row.get("non_compliant", 0) or 0) > 0:
+                classification = "non_compliant"
+            elif state in {"exempt", "excluded"}:
+                classification = "exempt"
+            elif "non_compliant" in row:
+                # Backward-compatible normalized rows may only carry the
+                # legacy counter; zero means an explicit compliant sample.
+                classification = "compliant"
+        # Only explicit compliant/non-compliant observations belong in the
+        # compliance denominator. Unknown states are evidence gaps, not fails.
+        if classification in {"compliant", "non_compliant"}:
+            item["evaluated"] += 1
+        elif classification in {"exempt", "unknown", ""}:
+            item["insufficient_evidence"] += 1
+        item["observations"] += 1
         item["non_compliant"] += int(row.get("non_compliant", 0) or 0)
         item["exemptions"] += int(row.get("exemptions", 0) or 0)
     for item in grouped.values():
         item["compliant"] = item["evaluated"] - item["non_compliant"]
         item["compliance_rate"] = round(item["compliant"] / item["evaluated"] * 100, 1) if item["evaluated"] else 0
-        item["risk_signal"] = "Crítico" if item["compliance_rate"] < 50 else ("Atenção" if item["non_compliant"] else "Controlado")
+        item["evidence_coverage"] = round(item["evaluated"] / item["observations"] * 100, 1) if item["observations"] else 0
+        if not item["evaluated"]:
+            item["risk_signal"] = "Evidência insuficiente"
+        elif item["compliance_rate"] < 50:
+            item["risk_signal"] = "Crítico"
+        else:
+            item["risk_signal"] = "Atenção" if item["non_compliant"] else "Controlado"
     return sorted(grouped.values(), key=lambda item: (item["risk_signal"] != "Crítico", item["compliance_rate"]))
+
+
+def summarize_security_posture(rows: list[dict]) -> dict:
+    """Agrega sinais explícitos sem converter ausência em conformidade."""
+    signal_counts: dict[str, int] = {}
+    type_counts: dict[str, int] = {}
+    resources_with_signals = 0
+    for row in rows:
+        signals = [item.strip() for item in str(row.get("security_posture", "")).split(";") if item.strip() and item.strip() != "Nenhum sinal explícito retornado"]
+        if signals:
+            resources_with_signals += 1
+        resource_type = str(row.get("type", "—"))
+        type_counts[resource_type] = type_counts.get(resource_type, 0) + len(signals)
+        for signal in signals:
+            signal_counts[signal] = signal_counts.get(signal, 0) + 1
+    return {
+        "resources": len(rows),
+        "resources_with_explicit_signals": resources_with_signals,
+        "signals_total": sum(signal_counts.values()),
+        "coverage_note": "Somente propriedades de segurança explicitamente retornadas pelo Azure Resource Graph; ausência não é conformidade.",
+        "by_signal": [{"signal": key, "resources": value} for key, value in sorted(signal_counts.items(), key=lambda item: (-item[1], item[0]))],
+        "by_resource_type": [{"resource_type": key, "signals": value} for key, value in sorted(type_counts.items(), key=lambda item: (-item[1], item[0])) if value],
+    }
+
+
+def summarize_governance_posture(resources: list[dict], policy_rows: list[dict]) -> dict:
+    """Resume ownership, tags e Policy sem afirmar governança completa."""
+    without_owner = sum(1 for row in resources if row.get("owner") in {None, "", "A definir"})
+    without_env = sum(1 for row in resources if "env" not in str(row.get("tags", "")).lower())
+    without_tags = sum(1 for row in resources if str(row.get("tags", "")).lower() in {"", "nenhuma", "none"})
+    evaluated = len(policy_rows)
+    non_compliant = sum(int(row.get("non_compliant", 0) or 0) for row in policy_rows)
+    return {
+        "resources_assessed": len(resources),
+        "without_owner": without_owner,
+        "without_environment_tag": without_env,
+        "without_tags": without_tags,
+        "policy_evaluated": evaluated,
+        "policy_non_compliant": non_compliant,
+        "policy_compliance_rate": round((evaluated - non_compliant) / evaluated * 100, 1) if evaluated else "Não calculada",
+        "interpretation": "Indicadores de governança observados; ausência de tag ou estado de Policy não prova risco nem conformidade isoladamente.",
+    }
 
 
 def orphan_row(item: dict) -> dict:
@@ -501,6 +646,7 @@ def collect(subscription_ids: list[str]) -> dict:
         "findings": [],
         "discovery": {
             "resources": rows,
+            "security_posture_summary": summarize_security_posture(rows),
             "containers": container_rows,
             "policy_compliance": policy_rows,
             "lifecycle": {
@@ -566,6 +712,7 @@ def collect(subscription_ids: list[str]) -> dict:
         },
     }
     payload["discovery"]["policy_summary"] = summarize_policy_compliance(policy_rows)
+    payload["discovery"]["governance_summary"] = summarize_governance_posture(rows, policy_rows)
     return payload
 
 

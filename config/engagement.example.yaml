@@ -1,0 +1,7 @@
+# Copie para config/engagement.yaml ou informe --engagement <arquivo.yaml>.
+# Este arquivo contém somente metadados locais de apresentação; não altera
+# escopo, permissões, coletores ou qualquer objeto do tenant.
+customer_name: "Cliente / unidade"
+engagement_name: "Assessment Security & Governance"
+consultant_name: "Consultor SoftwareOne"
+classification: "Confidencial — Security & Governance Assessment"

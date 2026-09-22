@@ -12,6 +12,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from local_privacy import protect_output_parent
+
 
 def check(name: str, label: str, category: str, status: str, detail: str,
           impact: str, remediation: str, blocking: bool = False) -> dict:
@@ -54,7 +56,10 @@ def permission_check(subscription_ids: list[str]) -> dict:
                      "Informe uma ou mais subscription IDs.", True)
     results = []
     for subscription_id in subscription_ids:
-        code, output = run_cli(["az", "resource", "list", "--subscription", subscription_id, "--top", "1", "--output", "json"])
+        # O Azure CLI não aceita --top neste comando em algumas versões do
+        # Cloud Shell. A query limita a resposta ao primeiro ID sem depender
+        # de paginação manual e continua sendo uma leitura mínima.
+        code, output = run_cli(["az", "resource", "list", "--subscription", subscription_id, "--query", "[0].id", "--output", "tsv"])
         results.append((subscription_id, code, output))
     accessible = [item for item in results if item[1] == 0]
     if len(accessible) == len(results):
@@ -138,6 +143,7 @@ def main() -> int:
     parser.add_argument("--profile", choices=("security", "governance", "full"), default="full")
     parser.add_argument("--output", type=Path, default=Path("runtime/preflight.json"))
     options = parser.parse_args()
+    protect_output_parent(options.output)
     subscription_ids = [item.strip() for item in options.subscriptions.split(",") if item.strip()]
     checks: list[dict] = []
     checks.append(check("python", "Python", "local", "pass" if sys.version_info >= (3, 10) else "blocked",

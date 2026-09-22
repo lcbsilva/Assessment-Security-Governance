@@ -1,4 +1,4 @@
-catalog_version: "0.1.0"
+catalog_version: "0.2.0"
 
 domains:
   identity:
@@ -131,3 +131,21 @@ controls:
     title: "Ciclo de vida e aposentadoria de serviços"
     weight: 4
     frameworks: ["FinOps Framework", "Azure Governance"]
+  - id: "CMP-001"
+    domain: "compliance"
+    title: "Políticas de prevenção contra perda de dados"
+    weight: 5
+    frameworks: ["Microsoft Purview", "Zero Trust"]
+    evidence_source: "Purview / Microsoft Zero Trust Assessment; integração ainda não disponível no coletor nativo"
+  - id: "CMP-002"
+    domain: "compliance"
+    title: "Governança de rótulos de sensibilidade"
+    weight: 5
+    frameworks: ["Microsoft Purview", "Zero Trust"]
+    evidence_source: "Purview / Microsoft Zero Trust Assessment; integração ainda não disponível no coletor nativo"
+  - id: "CMP-003"
+    domain: "compliance"
+    title: "Políticas de retenção de dados"
+    weight: 4
+    frameworks: ["Microsoft Purview", "Zero Trust"]
+    evidence_source: "Purview / Microsoft Zero Trust Assessment; integração ainda não disponível no coletor nativo"

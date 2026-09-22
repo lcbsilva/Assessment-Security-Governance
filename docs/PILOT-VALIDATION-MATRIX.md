@@ -6,6 +6,10 @@
 2. Criar/usar uma identidade dedicada com permissões somente de leitura.
 3. Registrar tenant, subscriptions, horário, versão do engine e consentimentos.
 4. Executar primeiro o preflight e confirmar `ready`.
+5. Preencher uma cópia local de `config/pilot-approval.example.json` e executar
+   o Pilot Evidence Gate. O campo `consent_status` só pode ser `confirmed` após
+   registro humano do consentimento; o arquivo não deve conter tokens, segredos,
+   PATs ou certificados.
 
 ## Conferência cruzada
 
@@ -30,6 +34,8 @@
 - Diferenças relevantes explicadas por escopo, permissão, paginação ou retenção.
 - Módulos indisponíveis explicitamente registrados.
 - Nenhum segredo, certificado ou PII no payload de IA.
+- `runtime/pilot-evidence.json` igual a `ready_for_controlled_pilot` antes da
+  coleta em tenant real.
 
 Guardar os arquivos técnicos do piloto separadamente do relatório executivo:
 JSON normalizado, preflight, validação, comparação e logs.

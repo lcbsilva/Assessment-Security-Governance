@@ -10,9 +10,33 @@ import urllib.error
 import urllib.request
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlsplit, parse_qs
+
+
+def is_readonly_cost_query_url(url: str) -> bool:
+    """Aceita somente o endpoint de consulta Cost Management por HTTPS."""
+    parsed = urlsplit(str(url))
+    parts = parsed.path.strip("/").split("/")
+    return bool(
+        parsed.scheme == "https"
+        and parsed.hostname == "management.azure.com"
+        and not parsed.username and not parsed.password
+        and len(parts) == 5
+        and parts[0].lower() == "subscriptions"
+        and len(parts[1]) == 36
+        and parts[2].lower() == "providers"
+        and parts[3].lower() == "microsoft.costmanagement"
+        and parts[4].lower() == "query"
+        and "api-version" in parse_qs(parsed.query)
+        and not parsed.fragment
+    )
 
 
 def query_cost(url: str, token: str, body: dict, attempts: int = 3) -> tuple[list[dict], str | None]:
+    if not is_readonly_cost_query_url(url):
+        return [], "Refused non-allowlisted read-only Cost Management query endpoint"
+    if not isinstance(body, dict) or not {"type", "timeframe", "dataset"}.issubset(body):
+        return [], "Refused Cost Management request without the read-only query contract"
     request = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, method="POST")
     for attempt in range(attempts):
         try:

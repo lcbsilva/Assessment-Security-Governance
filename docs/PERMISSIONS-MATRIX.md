@@ -36,6 +36,20 @@ forem executados.
 | Purview DLP / retenção | APIs específicas do Purview | Integração/licenciamento específico | Tenant | Não é inferido pelo inventário; aparece como não executado quando não configurado |
 | Postura de domínios M365 | DNS TXT + Microsoft Graph opcional | DNS read-only; `Domain.Read.All` quando os domínios vierem do Graph | Domínios aprovados | SPF, DMARC e DKIM; não acessa caixas, mensagens ou conteúdo |
 
+## Limite de operações HTTP
+
+O método HTTP isolado não determina se uma chamada altera o tenant. A API de
+consulta do Cost Management usa `POST` com operação `query`; o engine só permite
+esse endpoint HTTPS por meio de uma allowlist validada localmente. As chamadas
+de inventário do Azure Resource Graph também são consultas, ainda que o SDK
+encapsule transporte próprio. O gate estático falha se encontrar chamadas
+explícitas de mutação ou um `urllib Request` com método de escrita fora da
+consulta de custo aprovada.
+
+`Microsoft.Storage/storageAccounts/listKeys/action` não é necessário para os
+coletores e permanece fora do escopo. Chaves, segredos e connection strings não
+são consultados, registrados ou enviados à camada de IA.
+
 ## Permissões proibidas no assessment
 
 - `Owner`, `Contributor`, `User Access Administrator` ou equivalentes;

@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "consent_status": "confirmed",
+  "approved_profile": "full",
+  "approved_subscriptions": ["00000000-0000-0000-0000-000000000000"],
+  "approved_read_scopes": [
+    "Reader",
+    "Cost Management Reader",
+    "User.Read.All",
+    "Reports.Read.All",
+    "Policy.Read.All",
+    "AuditLog.Read.All"
+  ],
+  "approval_reference": "ticket-or-record-reference"
+}

@@ -11,6 +11,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from local_privacy import protect_output_directory
+
 
 def snapshot(data: dict) -> dict:
     metadata = data.get("metadata", {})
@@ -29,6 +31,7 @@ def snapshot(data: dict) -> dict:
 
 def record(data: dict, history_dir: Path) -> Path:
     history_dir.mkdir(parents=True, exist_ok=True)
+    protect_output_directory(history_dir)
     run_id = str(data.get("metadata", {}).get("run_id", "run"))
     path = history_dir / f"{run_id}.json"
     path.write_text(json.dumps(snapshot(data), ensure_ascii=False, indent=2), encoding="utf-8")

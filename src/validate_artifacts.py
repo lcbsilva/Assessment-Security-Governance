@@ -10,6 +10,8 @@ import zipfile
 from html.parser import HTMLParser
 from pathlib import Path
 
+from ai_payload import privacy_violations
+
 
 class StructureParser(HTMLParser):
     def __init__(self) -> None:
@@ -61,6 +63,8 @@ def validate_html(path: Path) -> list[str]:
         errors.append(f"Inputs sem label: {', '.join(parser.inputs_without_label)}")
     if "SoftwareOne" not in html:
         errors.append("Branding SoftwareOne ausente")
+    if "Não configurado" not in html and "N/D" not in html:
+        errors.append("HTML não sinaliza domínios sem configuração ou score não disponível")
     return errors
 
 
@@ -86,21 +90,7 @@ def validate_payload(path: Path) -> list[str]:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         return [f"Payload IA inválido: {type(exc).__name__}"]
-    forbidden_keys = {"user_principal_name", "principal_id", "resource_id", "subscription_id", "tenant_id", "app_id", "ip_address", "secret", "token"}
-    serialized = json.dumps(payload, ensure_ascii=False)
-    if re.search(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", serialized):
-        errors.append("Payload IA contém padrão de e-mail")
-
-    def walk(value: object, path_text: str = "payload") -> None:
-        if isinstance(value, dict):
-            for key, child in value.items():
-                if str(key).lower() in forbidden_keys:
-                    errors.append(f"Payload IA contém campo proibido: {path_text}.{key}")
-                walk(child, f"{path_text}.{key}")
-        elif isinstance(value, list):
-            for index, child in enumerate(value):
-                walk(child, f"{path_text}[{index}]")
-    walk(payload)
+    errors.extend(f"Payload IA contém {item}" for item in privacy_violations(payload))
     return sorted(set(errors))
 
 

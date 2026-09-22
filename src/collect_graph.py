@@ -253,7 +253,9 @@ def collect() -> dict:
     # Zero significa sem limite artificial: a paginação do Graph segue até o
     # fim da janela. Em tenants enormes, o cliente pode definir um limite
     # consciente por variável de ambiente e o manifesto marcará partial.
-    sign_in_max_pages = max(0, int(os.getenv("ASSESSMENT_SIGNIN_MAX_PAGES", "0")))
+    # Limite seguro para Cloud Shell. Defina 0 conscientemente para consultar
+    # todas as páginas; quando o limite é atingido, o log fica partial.
+    sign_in_max_pages = max(0, int(os.getenv("ASSESSMENT_SIGNIN_MAX_PAGES", "20")))
     signins = get_all(sign_in_path(start_date), "Sign-ins / legacy auth", "AuditLog.Read.All", max_pages=sign_in_max_pages or None)
     legacy_clients = {"exchange activesync", "other clients", "imap4", "pop3", "smtp"}
     legacy_signins = [{

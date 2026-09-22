@@ -1,4 +1,4 @@
-config_version: "0.1.0"
+config_version: "0.2.0"
 
 # O discovery é amplo; esta é a prioridade consultiva da oferta.
 focus:
@@ -11,7 +11,7 @@ collection:
   azure_scope: "subscriptions"
   graph_api_version: "v1.0"
   sign_in_lookback_days: 30
-  sign_in_max_pages: 0 # 0 = paginação completa; defina ASSESSMENT_SIGNIN_MAX_PAGES para limitar conscientemente
+  sign_in_max_pages: 20 # O coletor usa 20 por padrão; ASSESSMENT_SIGNIN_MAX_PAGES=0 libera paginação completa conscientemente
   cost_timeframe: "BillingMonthToDate"
   max_query_page: 5000
   request_timeout_seconds: 60
@@ -19,8 +19,11 @@ collection:
 privacy:
   pii_stays_in_tenant: true
   ai_payload_aggregated_only: true
+  # O relatório técnico detalhado é confidencial; o modo compartilhável deve
+  # usar pseudonimização explícita antes de sair do perímetro do cliente.
   executive_report_mask_pii: false
   retain_raw_api_payloads: false
+  local_artifact_retention_days: 30
 
 quality:
   missing_data_status: "not_available"

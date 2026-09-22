@@ -23,7 +23,7 @@ def classify(status: object, note: object = "") -> str:
 
 def summarize(logs: list[dict]) -> dict:
     """Score conservador: indisponibilidade nunca vira conformidade."""
-    counts = {"success": 0, "partial": 0, "not_available": 0, "error": 0}
+    counts = {"success": 0, "partial": 0, "not_available": 0, "error": 0, "not_run": 0}
     categories = {"permission": 0, "license": 0, "throttling": 0, "unsupported": 0, "execution": 0, "availability": 0}
     for item in logs:
         status = str(item.get("status", "unknown")).lower()
@@ -31,7 +31,10 @@ def summarize(logs: list[dict]) -> dict:
         category = classify(status, item.get("note"))
         if category in categories:
             categories[category] += 1
-    total = len(logs)
-    score = round(((counts.get("success", 0) * 100) + (counts.get("partial", 0) * 70)) / total) if total else 0
-    return {"score": score, "total_modules": total, **{key: counts.get(key, 0) for key in counts}, "categories": categories,
+    # `not_run` descreve escopo escolhido, não qualidade da API. Ele deve ser
+    # reportado, mas não pode reduzir a qualidade dos módulos que foram de fato
+    # executados; a cobertura de escopo permanece em execution_health.
+    evaluated = sum(counts.get(key, 0) for key in ("success", "partial", "not_available", "error"))
+    score = round(((counts.get("success", 0) * 100) + (counts.get("partial", 0) * 70)) / evaluated) if evaluated else 0
+    return {"score": score, "total_modules": len(logs), "evaluated_modules": evaluated, **{key: counts.get(key, 0) for key in counts}, "categories": categories,
             "interpretation": "Evidência suficiente para os módulos executados." if score >= 80 else "Ampliar permissões, licenças ou disponibilidade antes de comparar tenants."}

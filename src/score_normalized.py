@@ -29,6 +29,17 @@ def evidence_state(control_status: str) -> tuple[str, str]:
     return "INSUFFICIENT_EVIDENCE", "collector_execution_error"
 
 
+def count_from_signal(value: object) -> int:
+    """Parseia contagens numéricas ou rótulos como '2 break-glass'."""
+    if isinstance(value, bool) or value is None:
+        return 0
+    if isinstance(value, (int, float)):
+        return max(0, int(value))
+    import re
+    match = re.search(r"\d+", str(value))
+    return int(match.group(0)) if match else 0
+
+
 def license_gate_status(control_id: str, discovery: dict) -> str:
     """Indica se a fonte/licença mínima do controle apareceu na coleta."""
     if control_id == "SEC-001":
@@ -99,10 +110,19 @@ def derive(data: dict, catalog: dict) -> dict:
     findings: list[dict] = []
 
     def put(control_id: str, score: int | None, confidence: str = "medium") -> None:
-        control_status = status(score)
-        state, reason = evidence_state(control_status)
         definition = next((item for item in catalog.get("controls", []) if item.get("id") == control_id), {})
-        controls[control_id] = {"id": control_id, "status": control_status, "score": score or 0, "confidence": confidence, "evidence_state": state, "evidence_reason": reason, "license_gate": definition.get("license_gate", "not_required_or_not_declared"), "license_gate_status": license_gate_status(control_id, discovery)}
+        gate = definition.get("license_gate", "not_required_or_not_declared")
+        gate_status = license_gate_status(control_id, discovery)
+        # A control that depends on an entitlement cannot become compliant
+        # solely because a collector returned a default or partial value.
+        # Missing entitlement evidence is explicitly insufficient evidence.
+        gated_out = gate != "not_required_or_not_declared" and gate_status != "satisfied"
+        control_status = "not_available" if gated_out else status(score)
+        state, reason = evidence_state(control_status)
+        if gated_out:
+            reason = "license_or_entitlement_not_verified"
+            confidence = "low"
+        controls[control_id] = {"id": control_id, "status": control_status, "score": score or 0, "confidence": confidence, "evidence_state": state, "evidence_reason": reason, "license_gate": gate, "license_gate_status": gate_status}
 
     if users:
         registered = sum(1 for item in users if item.get("mfa_status") == "Registered")
@@ -116,7 +136,7 @@ def derive(data: dict, catalog: dict) -> dict:
 
     enabled_ca = [item for item in policies if str(item.get("state", "")).lower() == "enabled"]
     put("ID-003", 100 if enabled_ca else (40 if policies else None), "high" if policies else "low")
-    exclusions = sum(int(item.get("excluded", 0) or 0) for item in policies)
+    exclusions = sum(count_from_signal(item.get("excluded", 0)) for item in policies)
     put("ID-004", 100 if policies and exclusions == 0 else (70 if policies else None), "high" if policies else "low")
     if policies and exclusions:
         findings.append(finding("ID-004", "Exclusões em Conditional Access exigem revisão", "medium", 58, 2, exclusions, f"Foram identificadas {exclusions} exclusões configuradas em Conditional Access.", [f"Políticas avaliadas: {len(policies)}", f"Exclusões contabilizadas: {exclusions}"], "Documentar justificativas, reduzir exclusões e proteger contas de emergência.", "Identity / IAM", "Microsoft Graph Conditional Access", {"30": "Documentar exceções.", "60": "Reduzir exclusões não justificadas.", "90": "Implantar revisão periódica."}))

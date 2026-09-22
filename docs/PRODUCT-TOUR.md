@@ -162,6 +162,24 @@ Isso gera três relatórios:
 
 Todos são sintéticos e carregam `metadata.simulation.is_simulation=true`. Eles servem para demonstrar comportamento, não para representar evidência de cliente.
 
+Para gerar o pacote completo que será apresentado ao gestor, use:
+
+```bash
+./scripts/run-beta-demo.sh
+```
+
+No PowerShell:
+
+```powershell
+.\scripts\run-beta-demo.ps1
+```
+
+O pacote fica em `dist/demo-package/` e inclui HTML, PDF, PPTX, XLSX,
+`demo-summary.json`, manifesto SHA-256 e validações. O `demo-summary.json` confirma
+`read_only: true` e `synthetic: true`, deixando claro que a apresentação demonstra
+o produto e o fluxo, enquanto a execução real substitui as evidências após o
+Readiness Gate.
+
 ## 9. Execução em tenant real
 
 ### Cloud Shell Linux

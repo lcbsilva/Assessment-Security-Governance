@@ -48,6 +48,29 @@ def access_risk(role: str, scope_kind: str) -> tuple[str, str]:
     return "Moderado", "Validar necessidade, owner e periodicidade da revisão"
 
 
+def summarize_rbac_posture(rows: list[dict]) -> dict:
+    """Agrega blast radius de RBAC sem afirmar uso efetivo ou herança completa."""
+    by_scope: dict[str, int] = {}
+    by_role: dict[str, int] = {}
+    for row in rows:
+        scope = str(row.get("scope_kind") or "Unknown")
+        role = str(row.get("role") or "Unknown")
+        by_scope[scope] = by_scope.get(scope, 0) + 1
+        by_role[role] = by_role.get(role, 0) + 1
+    high_risk = sum(1 for row in rows if row.get("access_risk") in {"Crítico", "Alto"})
+    critical = sum(1 for row in rows if row.get("access_risk") == "Crítico")
+    permanent_unknown = sum(1 for row in rows if str(row.get("assignment_type", "")).lower() in {"permanent/unknown", "permanent", "unknown", ""})
+    return {
+        "assignments": len(rows),
+        "high_risk_assignments": high_risk,
+        "critical_assignments": critical,
+        "permanent_or_unknown_assignments": permanent_unknown,
+        "inheritance_note": "O escopo declarado é reportado; herança efetiva depende de enriquecimento e não é presumida.",
+        "by_scope": [{"scope_kind": key, "assignments": value} for key, value in sorted(by_scope.items(), key=lambda item: (-item[1], item[0]))],
+        "by_role": [{"role": key, "assignments": value} for key, value in sorted(by_role.items(), key=lambda item: (-item[1], item[0]))],
+    }
+
+
 def collect(subscription_ids: list[str]) -> dict:
     from azure.identity import DefaultAzureCredential
     from azure.mgmt.resourcegraph import ResourceGraphClient
@@ -88,5 +111,5 @@ def collect(subscription_ids: list[str]) -> dict:
         })
     return {
         "metadata": {"collected_at": started, "modules": {"governance": "success"}},
-        "discovery": {"rbac": rows, "collection_log": [{"module": "RBAC", "source": "AuthorizationResources / Azure Resource Graph", "status": "success", "records": len(rows), "note": "Atribuições e funções; PIM e revisão de acesso exigem enriquecimento adicional."}]},
+        "discovery": {"rbac": rows, "rbac_summary": summarize_rbac_posture(rows), "collection_log": [{"module": "RBAC", "source": "AuthorizationResources / Azure Resource Graph", "status": "success", "records": len(rows), "note": "Atribuições e funções; PIM e revisão de acesso exigem enriquecimento adicional."}]},
     }

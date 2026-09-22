@@ -46,6 +46,35 @@ def run_gate(data_path: Path, include_tests: bool = True, scenarios: tuple[str, 
                 checks.append({"name": f"scenario_{scenario}", "status": "pass" if result.returncode == 0 and scenario_html.exists() and scenario_html.stat().st_size > 0 else "fail", "detail": "Cenário sintético offline; não acessa tenant."})
             except (OSError, ValueError) as exc:
                 checks.append({"name": f"scenario_{scenario}", "status": "fail", "detail": f"{type(exc).__name__}: {exc}"})
+        if "large" in scenarios:
+            stress_path = Path(temporary) / "scenario-large-scale5.json"
+            stress_output = Path(temporary) / "scenario-large-scale5-artifacts"
+            stress_html = stress_output / "assessment.html"
+            stress_ai = Path(temporary) / "scenario-large-scale5-ai.json"
+            stress_validation = Path(temporary) / "scenario-large-scale5-validation.json"
+            stress_manifest = Path(temporary) / "scenario-large-scale5-manifest.json"
+            stress_manifest_validation = Path(temporary) / "scenario-large-scale5-manifest-validation.json"
+            try:
+                stress_path.write_text(json.dumps(simulate(base, "large", scale=5), ensure_ascii=False), encoding="utf-8")
+                stress_output.mkdir(parents=True, exist_ok=True)
+                result = subprocess.run([sys.executable, "src/generate_report.py", "--data", str(stress_path), "--output", str(stress_html)], cwd=ROOT, capture_output=True, text=True)
+                export = subprocess.run([sys.executable, "src/export_artifacts.py", "--data", str(stress_path), "--output-dir", str(stress_output)], cwd=ROOT, capture_output=True, text=True)
+                ai = subprocess.run([sys.executable, "src/ai_payload.py", "--data", str(stress_path), "--output", str(stress_ai)], cwd=ROOT, capture_output=True, text=True)
+                validation = subprocess.run([sys.executable, "src/validate_artifacts.py", "--output-dir", str(stress_output), "--ai-payload", str(stress_ai), "--output", str(stress_validation)], cwd=ROOT, capture_output=True, text=True)
+                manifest = subprocess.run([sys.executable, "src/artifact_manifest.py", "--output-dir", str(stress_output), "--assessment", str(stress_path), "--input", str(stress_ai), "--output", str(stress_manifest)], cwd=ROOT, capture_output=True, text=True)
+                manifest_validation = subprocess.run([sys.executable, "src/validate_manifest.py", "--manifest", str(stress_manifest), "--output-dir", str(stress_output), "--input-dir", str(temporary), "--output", str(stress_manifest_validation)], cwd=ROOT, capture_output=True, text=True)
+                artifacts_ready = all((stress_output / name).exists() and (stress_output / name).stat().st_size > 0 for name in ("assessment-action-plan.xlsx", "assessment-executive-summary.pptx", "assessment-executive-summary.pdf"))
+                status = "pass" if result.returncode == 0 and export.returncode == 0 and ai.returncode == 0 and validation.returncode == 0 and manifest.returncode == 0 and manifest_validation.returncode == 0 and stress_html.exists() and stress_html.stat().st_size > 100000 and artifacts_ready else "fail"
+                checks.append({"name": "scenario_large_scale5", "status": status, "detail": "Pipeline completo em stress sintético: HTML, PDF, PPTX, XLSX, payload IA, hashes e validação; aproximadamente 10 mil usuários e 12,5 mil recursos; não representa evidência de cliente."})
+            except (OSError, ValueError) as exc:
+                checks.append({"name": "scenario_large_scale5", "status": "fail", "detail": f"{type(exc).__name__}: {exc}"})
+            try:
+                first = simulate(base, "large", scale=5)
+                second = simulate(base, "large", scale=5)
+                deterministic = json.dumps(first, ensure_ascii=False, sort_keys=True) == json.dumps(second, ensure_ascii=False, sort_keys=True)
+                checks.append({"name": "scenario_large_determinism", "status": "pass" if deterministic else "fail", "detail": "Duas gerações sintéticas grandes produziram contratos idênticos; não representa evidência de cliente."})
+            except (OSError, ValueError, TypeError) as exc:
+                checks.append({"name": "scenario_large_determinism", "status": "fail", "detail": f"{type(exc).__name__}: {exc}"})
     passed = sum(item["status"] == "pass" for item in checks)
     return {"status": "beta_ready" if passed == len(checks) else "blocked", "checks": checks, "passed": passed, "total": len(checks), "read_only": True, "note": "Gate executa somente mock/local; não autentica nem acessa tenant."}
 

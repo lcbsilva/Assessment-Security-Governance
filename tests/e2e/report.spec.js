@@ -14,7 +14,11 @@ test.beforeEach(async ({ page }) => {
 test('abre o relatório e exibe as áreas críticas', async ({ page }) => {
   await expect(page).toHaveTitle(/Security & Governance Assessment/);
   await expect(page.locator('header')).toContainText('SoftwareOne');
-  for (const id of ['executive-summary', 'coverage', 'inventory-overview', 'risks', 'discovery', 'transparency']) {
+  for (const id of ['executive-summary', 'coverage', 'inventory-overview', 'risks']) {
+    await expect(page.locator(`#${id}`)).toBeVisible();
+  }
+  await page.locator('[data-view-target="full"]').click();
+  for (const id of ['discovery', 'transparency']) {
     await expect(page.locator(`#${id}`)).toBeVisible();
   }
   expect(await page.locator('table').count()).toBeGreaterThan(0);
@@ -30,12 +34,32 @@ test('filtro de discovery funciona sem quebrar a página', async ({ page }) => {
 });
 
 test('painéis técnicos começam compactos e podem ser expandidos', async ({ page }) => {
+  await page.locator('[data-view-target="technical"]').click();
   const panels = page.locator('#discovery > .panel');
   const count = await panels.count();
   expect(count).toBeGreaterThan(1);
   await expect(panels.nth(1)).toHaveClass(/collapsed/);
   await panels.nth(1).locator('h3').click();
   await expect(panels.nth(1)).not.toHaveClass(/collapsed/);
+});
+
+test('modos executivo, técnico e completo reorganizam a leitura', async ({ page }) => {
+  const technicalSection = page.locator('#discovery');
+
+  await expect(page.locator('body')).toHaveClass(/exec-view/);
+  await expect(technicalSection).toBeHidden();
+
+  await page.locator('[data-view-target="technical"]').click();
+  await expect(page.locator('body')).toHaveClass(/technical-view/);
+  await expect(technicalSection).toBeVisible();
+
+  await page.locator('[data-view-target="full"]').click();
+  await expect(page.locator('body')).toHaveClass(/full-view/);
+  await expect(technicalSection).toBeVisible();
+
+  await page.locator('[data-view-target="executive"]').click();
+  await expect(page.locator('body')).toHaveClass(/exec-view/);
+  await expect(technicalSection).toBeHidden();
 });
 
 test('é responsivo e preparado para impressão', async ({ page }) => {
@@ -56,7 +80,9 @@ test('mantém requisitos básicos de acessibilidade', async ({ page }) => {
   await expect(page.locator('html')).toHaveAttribute('lang', 'pt-BR');
   await expect(page.locator('h1')).toHaveCount(1);
   await expect(page.locator('input#discoverySearch')).toHaveAttribute('aria-label', /.+/);
-  await expect(page.locator('button')).toHaveCount(2);
+  await expect(page.locator('[data-view-target]')).toHaveCount(3);
+  await expect(page.locator('#clearDiscovery')).toBeVisible();
+  await expect(page.locator('#exportDiscovery')).toBeVisible();
   await expect(page.locator('nav a').first()).toBeVisible();
 });
 

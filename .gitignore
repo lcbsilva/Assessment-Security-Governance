@@ -1,6 +1,7 @@
 # Saídas locais e dados potencialmente sensíveis do tenant
 runtime/
 dist/
+dist-shareable/
 *.jsonl
 customer-data/
 tenant-data/

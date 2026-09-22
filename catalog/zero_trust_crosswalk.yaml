@@ -1,0 +1,51 @@
+crosswalk_version: "1.0"
+source: "Microsoft Zero Trust Assessment"
+source_version_tested: "2.6.0"
+status_note: "Mapeamento de referência; evidência externa não altera o score nativo do Assessment Engine."
+tests:
+  "21795": {title: "No legacy authentication sign-in activity", control_ids: ["ID-005"]}
+  "21796": {title: "Block legacy authentication policies are configured", control_ids: ["ID-005"]}
+  "21800": {title: "All user sign-in activity uses strong authentication methods", control_ids: ["ID-001"]}
+  "21784": {title: "All user sign in activity uses phishing-resistant authentication methods", control_ids: ["ID-001"]}
+  "21783": {title: "Privileged Microsoft Entra built-in roles are targeted with Conditional Access policies to enforce phishing-resistant methods", control_ids: ["ID-002", "ID-003"]}
+  "21781": {title: "Privileged users sign in with phishing-resistant methods", control_ids: ["ID-002"]}
+  "21831": {title: "Conditional Access protected actions are enabled", control_ids: ["ID-003"]}
+  "21964": {title: "Enable protected actions to secure Conditional Access policy creation and changes", control_ids: ["ID-003"]}
+  "21822": {title: "Guest access is limited to approved tenants", control_ids: ["ID-006"]}
+  "21858": {title: "Inactive guest identities are disabled or removed from the tenant", control_ids: ["ID-006", "ID-008"]}
+  "21791": {title: "Guest can’t invite other guests", control_ids: ["ID-006"]}
+  "21877": {title: "All guests have a sponsor", control_ids: ["ID-006"]}
+  "21792": {title: "Guests have restricted access to directory objects", control_ids: ["ID-006"]}
+  "21868": {title: "Guests don’t own apps in the tenant", control_ids: ["ID-006"]}
+  "21876": {title: "Use PIM for Microsoft Entra privileged roles", control_ids: ["ID-007", "ID-009"]}
+  "21815": {title: "All privileged role assignments are activated just in time and not permanently active", control_ids: ["ID-007", "ID-009"]}
+  "21816": {title: "All Microsoft Entra privileged role assignments are managed with PIM", control_ids: ["ID-007", "ID-009"]}
+  "24541": {title: "Windows Compliance Policy is Created and Assigned", control_ids: ["SEC-002"]}
+  "24573": {title: "Windows Security Baseline is Configured and Assigned", control_ids: ["SEC-002"]}
+  "24540": {title: "Windows Firewall Policy is Created and Assigned", control_ids: ["SEC-002"]}
+  "24574": {title: "Attack Surface Reduction rules are applied to Windows devices to prevent exploitation of vulnerable system components", control_ids: ["SEC-002"]}
+  "24824": {title: "Non-compliant Devices are Restricted from Accessing Corporate Data", control_ids: ["SEC-002"]}
+  "21770": {title: "Inactive applications don’t have highly privileged permissions", control_ids: ["SEC-003"]}
+  "21772": {title: "Applications don’t have secrets configured", control_ids: ["SEC-003"]}
+  "21773": {title: "Applications don’t have certificates with expiration longer than 180 days", control_ids: ["SEC-003"]}
+  "21992": {title: "Application Certificates need to be rotated on a regular basis", control_ids: ["SEC-003"]}
+  "21885": {title: "App registrations use safe redirect URIs", control_ids: ["SEC-003"]}
+  "23183": {title: "Service principals use safe redirect URIs", control_ids: ["SEC-003"]}
+  "21777": {title: "App Instance Property Lock is configured for all multitenant applications", control_ids: ["SEC-003"]}
+  "21860": {title: "Diagnostic settings are configured for all Microsoft Entra logs", control_ids: ["SEC-004"]}
+  "41211": {title: "Auditing and health monitoring is enabled for Microsoft Sentinel", control_ids: ["SEC-004"]}
+  "41002": {title: "Microsoft Defender for Identity sensor is installed and healthy on every domain controller", control_ids: ["SEC-005"]}
+  "41018": {title: "No open Microsoft Defender for Identity health issues are present in the tenant", control_ids: ["SEC-005"]}
+  "41020": {title: "Microsoft Defender for Identity sensor deployment is validated by reviewing the Health Issues page", control_ids: ["SEC-005"]}
+  "41045": {title: "All eligible endpoints are onboarded to Microsoft Defender for Endpoint", control_ids: ["SEC-005"]}
+  "41061": {title: "All active Microsoft Defender XDR incidents are triaged and remediated", control_ids: ["SEC-005"]}
+  "41121": {title: "Every open Microsoft Defender XDR alert is triaged across all Defender services, with no high-severity alert left unassigned or unworked past its triage window", control_ids: ["SEC-005"]}
+  "35030": {title: "Data loss prevention policies are enabled", control_ids: ["CMP-001"]}
+  "35032": {title: "Adaptive Protection in DLP Policies", control_ids: ["CMP-001"]}
+  "35003": {title: "Total Sensitivity Labels Configured", control_ids: ["CMP-002"]}
+  "35004": {title: "Published Label Policies", control_ids: ["CMP-002"]}
+  "35005": {title: "Sensitivity labels are enabled for SharePoint and OneDrive", control_ids: ["CMP-002"]}
+  "35016": {title: "Mandatory labeling enabled for sensitivity labels", control_ids: ["CMP-002"]}
+  "35017": {title: "Default label configured for sensitivity labels", control_ids: ["CMP-002"]}
+  "35021": {title: "Auto-Labeling Policies Enabled for SharePoint and OneDrive", control_ids: ["CMP-002"]}
+  "35028": {title: "Email retention policies are configured", control_ids: ["CMP-003"]}
