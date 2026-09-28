@@ -42,6 +42,8 @@ jobs:
           python src/validate_artifacts.py --output-dir /tmp/assessment-dist --ai-payload /tmp/assessment-runtime/ai-payload.json --output /tmp/assessment-runtime/artifact-validation.json
       - name: Run beta release gate
         run: python src/release_gate.py --data mock/assessment.json --output /tmp/assessment-runtime/release-gate.json
+      - name: Validate synthetic scenario matrix
+        run: bash scripts/run-synthetic-matrix.sh
 
   report-e2e:
     runs-on: ubuntu-latest

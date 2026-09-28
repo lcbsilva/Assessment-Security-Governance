@@ -1,5 +1,15 @@
 # Roadmap de sprints — Assessment Security & Governance
 
+## Beta 71 — matriz de validação e fechamento técnico
+
+- [x] Matriz offline para cenários `small`, `medium`, `limited`, `full` e `large`.
+- [x] Cada cenário valida artefatos, manifesto, piloto e status de prontidão.
+- [x] CI executa a matriz sem autenticar ou acessar tenant.
+- [x] Escala grande permanece controlada para evitar consumo excessivo no CI.
+- [ ] Validação humana em tenant autorizado e comparação com Portal/Graph/ARG.
+
+Detalhes em [`SPRINT-DELIVERY-BETA71.md`](SPRINT-DELIVERY-BETA71.md).
+
 ## Beta 70 — fechamento para revisão interna
 
 - [x] Navegação do relatório reorganizada em faixas centralizadas e responsivas.

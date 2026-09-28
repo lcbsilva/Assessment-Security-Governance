@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0-beta.71
+
+- Adiciona matriz reproduzível de validação sintética para os cenários `small`,
+  `medium`, `limited`, `full` e `large`.
+- Executa integridade de artefatos, manifesto e piloto em cada cenário antes de
+  liberar a revisão interna.
+- Integra a matriz ao CI para detectar regressões de cobertura, score, contrato
+  e artefatos sem acessar tenant.
+- Mantém read-only, ausência de PII no payload de IA e nenhuma remediação.
+
 ## 0.2.0-beta.70
 
 - Reorganiza a navegação do HTML em faixas centralizadas e consistentes,
