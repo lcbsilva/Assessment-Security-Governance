@@ -34,7 +34,7 @@ def run_gate(data_path: Path, include_tests: bool = True, scenarios: tuple[str, 
         check("exports", [sys.executable, "src/export_artifacts.py", "--data", str(data_path), "--output-dir", str(output_dir)])
         check("ai_guardrails", [sys.executable, "src/ai_payload.py", "--data", str(data_path), "--output", str(ai_path)])
         check("pilot_validation", [sys.executable, "src/validate_pilot.py", "--data", str(data_path), "--output", str(pilot_path)])
-        for name, path in (("html_non_empty", html_path), ("xlsx_exists", output_dir / "assessment-action-plan.xlsx"), ("pptx_exists", output_dir / "assessment-executive-summary.pptx"), ("pdf_exists", output_dir / "assessment-executive-summary.pdf"), ("ai_payload_exists", ai_path)):
+        for name, path in (("html_non_empty", html_path), ("xlsx_exists", output_dir / "assessment-action-plan.xlsx"), ("pptx_exists", output_dir / "assessment-executive-summary.pptx"), ("pdf_exists", output_dir / "assessment-executive-summary.pdf"), ("one_page_brief_exists", output_dir / "assessment-one-page-brief.pdf"), ("ai_payload_exists", ai_path)):
             checks.append({"name": name, "status": "pass" if path.exists() and path.stat().st_size > 0 else "fail", "detail": str(path.name)})
         base = json.loads(data_path.read_text(encoding="utf-8"))
         for scenario in scenarios:
@@ -63,7 +63,7 @@ def run_gate(data_path: Path, include_tests: bool = True, scenarios: tuple[str, 
                 validation = subprocess.run([sys.executable, "src/validate_artifacts.py", "--output-dir", str(stress_output), "--ai-payload", str(stress_ai), "--output", str(stress_validation)], cwd=ROOT, capture_output=True, text=True)
                 manifest = subprocess.run([sys.executable, "src/artifact_manifest.py", "--output-dir", str(stress_output), "--assessment", str(stress_path), "--input", str(stress_ai), "--output", str(stress_manifest)], cwd=ROOT, capture_output=True, text=True)
                 manifest_validation = subprocess.run([sys.executable, "src/validate_manifest.py", "--manifest", str(stress_manifest), "--output-dir", str(stress_output), "--input-dir", str(temporary), "--output", str(stress_manifest_validation)], cwd=ROOT, capture_output=True, text=True)
-                artifacts_ready = all((stress_output / name).exists() and (stress_output / name).stat().st_size > 0 for name in ("assessment-action-plan.xlsx", "assessment-executive-summary.pptx", "assessment-executive-summary.pdf"))
+                artifacts_ready = all((stress_output / name).exists() and (stress_output / name).stat().st_size > 0 for name in ("assessment-action-plan.xlsx", "assessment-executive-summary.pptx", "assessment-executive-summary.pdf", "assessment-one-page-brief.pdf"))
                 status = "pass" if result.returncode == 0 and export.returncode == 0 and ai.returncode == 0 and validation.returncode == 0 and manifest.returncode == 0 and manifest_validation.returncode == 0 and stress_html.exists() and stress_html.stat().st_size > 100000 and artifacts_ready else "fail"
                 checks.append({"name": "scenario_large_scale5", "status": status, "detail": "Pipeline completo em stress sintético: HTML, PDF, PPTX, XLSX, payload IA, hashes e validação; aproximadamente 10 mil usuários e 12,5 mil recursos; não representa evidência de cliente."})
             except (OSError, ValueError) as exc:

@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from simulate_tenant import simulate
+from simulate_tenant import SCENARIOS, simulate
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +36,9 @@ def build_demo(output_root: Path, scenario: str = "full", scale: int = 1) -> dic
 
     run([sys.executable, "src/generate_report.py", "--data", str(assessment_path), "--output", str(html_path)])
     run([sys.executable, "src/export_artifacts.py", "--data", str(assessment_path), "--output-dir", str(dist)])
+    shutil.copy2(ROOT / "docs" / "TEAM-DEMO-KIT.md", dist / "team-review-guide.md")
+    shutil.copy2(ROOT / "docs" / "team-feedback-template.md", dist / "team-feedback-template.md")
+    shutil.copy2(ROOT / "docs" / "LAB-HANDOFF-FOR-REVIEWER.md", dist / "lab-handoff-for-reviewer.md")
     ai_path = runtime / "ai-payload.json"
     run([sys.executable, "src/ai_payload.py", "--data", str(assessment_path), "--output", str(ai_path)])
     artifact_validation = runtime / "artifact-validation.json"
@@ -67,6 +70,7 @@ def build_demo(output_root: Path, scenario: str = "full", scale: int = 1) -> dic
             "A execução real substitui este contrato após o Readiness Gate.",
             "Nenhuma chamada de autenticação, leitura ou escrita em tenant foi realizada.",
         ],
+        "team_review_materials": ["team-review-guide.md", "team-feedback-template.md", "lab-handoff-for-reviewer.md", "assessment-one-page-brief.pdf"],
     }
     (runtime / "demo-summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     return summary
@@ -75,7 +79,7 @@ def build_demo(output_root: Path, scenario: str = "full", scale: int = 1) -> dic
 def main() -> int:
     parser = argparse.ArgumentParser(description="Gera pacote demonstrável offline")
     parser.add_argument("--output-root", type=Path, default=ROOT / "runtime" / "demo-package")
-    parser.add_argument("--scenario", choices=("small", "limited", "full", "large"), default="full")
+    parser.add_argument("--scenario", choices=tuple(SCENARIOS), default="full")
     parser.add_argument("--scale", type=int, default=1)
     args = parser.parse_args()
     summary = build_demo(args.output_root, args.scenario, args.scale)

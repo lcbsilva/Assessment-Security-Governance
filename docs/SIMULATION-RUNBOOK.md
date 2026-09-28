@@ -6,6 +6,9 @@ O engine possui cenários locais para testar comportamento antes de usar um tena
 python3 src/simulate_tenant.py --scenario small --output runtime/sim-small.json
 python3 src/generate_report.py --data runtime/sim-small.json --output dist/assessment-small.html
 
+python3 src/simulate_tenant.py --scenario medium --output runtime/sim-medium.json
+python3 src/generate_report.py --data runtime/sim-medium.json --output dist/assessment-medium.html
+
 python3 src/simulate_tenant.py --scenario limited --output runtime/sim-limited.json
 python3 src/generate_report.py --data runtime/sim-limited.json --output dist/assessment-limited.html
 
@@ -16,6 +19,7 @@ python3 src/generate_report.py --data runtime/sim-full.json --output dist/assess
 | Cenário | O que valida |
 |---|---|
 | `small` | Poucos usuários, recursos e módulos opcionais ausentes |
+| `medium` | Volume intermediário, paginação representativa e limitações opcionais |
 | `limited` | 403, 429, falta de licença e cobertura parcial |
 | `full` | Fluxo executivo com maior cobertura sintética |
 

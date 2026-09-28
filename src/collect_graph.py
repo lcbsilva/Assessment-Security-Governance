@@ -21,6 +21,14 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def bounded_env_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        value = default
+    return min(maximum, max(minimum, value))
+
+
 def retryable_graph_status(code: int) -> bool:
     """Indica falha transitória que pode ser repetida com segurança em GET."""
     return code == 429 or code in {500, 502, 503, 504}
@@ -181,6 +189,8 @@ def collect() -> dict:
     token = credential.get_token("https://graph.microsoft.com/.default").token
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     logs: list[dict] = []
+    request_timeout = bounded_env_int("ASSESSMENT_GRAPH_REQUEST_TIMEOUT_SECONDS", 60, 5, 300)
+    max_retries = bounded_env_int("ASSESSMENT_GRAPH_MAX_RETRIES", 3, 0, 5)
 
     def get_all(path: str, module: str, permission_hint: str, max_pages: int | None = None) -> list[dict]:
         rows: list[dict] = []
@@ -191,10 +201,10 @@ def collect() -> dict:
             while url:
                 request = urllib.request.Request(url, headers=headers, method="GET")
                 try:
-                    with urllib.request.urlopen(request, timeout=60) as response:
+                    with urllib.request.urlopen(request, timeout=request_timeout) as response:
                         payload = json.load(response)
                 except urllib.error.HTTPError as exc:
-                    if retryable_graph_status(exc.code) and attempts < 3:
+                    if retryable_graph_status(exc.code) and attempts < max_retries:
                         retry_after = exc.headers.get("Retry-After", "1") if exc.headers else "1"
                         try:
                             delay = min(8, max(1, int(retry_after)))
@@ -219,10 +229,17 @@ def collect() -> dict:
         except urllib.error.HTTPError as exc:
             note = f"HTTP {exc.code}; verifique consentimento/licença ou throttling: {permission_hint}"
             logs.append({"module": module, "source": "Microsoft Graph", "status": "partial" if rows else "not_available", "records": len(rows), "note": note})
-            return []
+            return rows
         except Exception as exc:
-            logs.append({"module": module, "source": "Microsoft Graph", "status": "error", "records": 0, "note": f"{type(exc).__name__}: {exc}"})
-            return []
+            timed_out = isinstance(exc, (TimeoutError, urllib.error.URLError)) and (
+                isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError)
+            )
+            status = "partial" if rows else ("error" if not timed_out else "not_available")
+            note = f"{type(exc).__name__}: {exc}"
+            if rows:
+                note = f"Coleta interrompida após {len(rows)} registros: {note}"
+            logs.append({"module": module, "source": "Microsoft Graph", "status": status, "records": len(rows), "note": note})
+            return rows
 
     users = get_all("/users?$select=id,displayName,userPrincipalName,userType,accountEnabled,signInActivity", "Identity", "User.Read.All + AuditLog.Read.All")
     if not users:
@@ -231,7 +248,7 @@ def collect() -> dict:
         users = get_all("/users?$select=id,displayName,userPrincipalName,userType,accountEnabled", "Identity basic", "User.Read.All")
     registrations = get_all("/reports/authenticationMethods/userRegistrationDetails", "MFA", "Reports.Read.All")
     groups = get_all("/groups?$select=id,displayName,groupTypes,securityEnabled,mailEnabled,visibility,createdDateTime,membershipRule&$top=999", "Groups", "Group.Read.All")
-    subscribed_skus = get_all("/subscribedSkus?$select=skuPartNumber,skuId,consumedUnits,prepaidUnits,capabilityStatus&$top=999", "M365 licenses", "Organization.Read.All")
+    subscribed_skus = get_all("/subscribedSkus?$select=skuPartNumber,skuId,consumedUnits,prepaidUnits,capabilityStatus&$top=999", "M365 licenses", "LicenseAssignment.Read.All")
     policies = get_all("/identity/conditionalAccess/policies", "Conditional Access", "Policy.Read.All")
     risky = get_all("/identityProtection/riskyUsers?$select=id,userDisplayName,userPrincipalName,riskLevel,riskState", "Identity risk", "IdentityRiskyUser.Read.All")
     secure_scores = get_all("/security/secureScores?$top=5", "Secure Score", "SecurityEvents.Read.All")
@@ -241,21 +258,22 @@ def collect() -> dict:
     service_principals = get_all("/servicePrincipals?$select=id,appId,displayName,accountEnabled,appRoleAssignmentRequired,servicePrincipalType,signInAudience,createdDateTime&$top=999", "Enterprise applications", "Application.Read.All")
     applications = get_all("/applications?$select=id,appId,displayName,signInAudience,requiredResourceAccess,createdDateTime,passwordCredentials,keyCredentials&$top=999", "App registrations", "Application.Read.All")
     permission_grants = get_all("/oauth2PermissionGrants?$select=clientId,consentType,principalId,resourceId,scope&$top=999", "Application consents", "DelegatedPermissionGrant.Read.All")
-    role_assignments = get_all("/roleManagement/directory/roleAssignmentScheduleInstances?$select=principalId,roleDefinitionId,assignmentType,directoryScopeId,startDateTime,endDateTime,memberType&$top=999", "PIM active assignments", "RoleManagement.Read.Directory")
-    role_eligibility = get_all("/roleManagement/directory/roleEligibilityScheduleInstances?$select=principalId,roleDefinitionId,directoryScopeId,startDateTime,endDateTime,memberType&$top=999", "PIM eligible assignments", "RoleManagement.Read.Directory")
+    role_assignments = get_all("/roleManagement/directory/roleAssignmentScheduleInstances?$select=principalId,roleDefinitionId,assignmentType,directoryScopeId,startDateTime,endDateTime,memberType&$top=999", "PIM active assignments", "RoleAssignmentSchedule.Read.Directory")
+    role_eligibility = get_all("/roleManagement/directory/roleEligibilityScheduleInstances?$select=principalId,roleDefinitionId,directoryScopeId,startDateTime,endDateTime,memberType&$top=999", "PIM eligible assignments", "RoleEligibilitySchedule.Read.Directory")
     role_definitions = get_all("/roleManagement/directory/roleDefinitions?$select=id,displayName,isBuiltIn&$top=999", "PIM role definitions", "RoleManagement.Read.Directory")
     defender_alerts = get_all("/security/alerts_v2?$select=severity,status,serviceSource,createdDateTime&$top=1000", "Defender alerts", "SecurityIncident.Read.All")
     defender_vulnerabilities = get_all("/security/vulnerabilities?$select=id,name,description,severity,status,createdDateTime,lastModifiedDateTime&$top=1000", "Defender vulnerabilities", "Vulnerability.Read.All")
-    directory_audits = get_all("/auditLogs/directoryAudits?$top=999", "Directory audit events", "AuditLog.Read.All")
+    audit_max_pages = bounded_env_int("ASSESSMENT_AUDIT_MAX_PAGES", 10, 0, 10000)
+    directory_audits = get_all("/auditLogs/directoryAudits?$top=100", "Directory audit events", "AuditLog.Read.All", max_pages=audit_max_pages or None)
 
-    lookback_days = max(1, int(os.getenv("ASSESSMENT_SIGNIN_LOOKBACK_DAYS", "30")))
+    lookback_days = bounded_env_int("ASSESSMENT_SIGNIN_LOOKBACK_DAYS", 30, 1, 365)
     start_date = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     # Zero significa sem limite artificial: a paginação do Graph segue até o
     # fim da janela. Em tenants enormes, o cliente pode definir um limite
     # consciente por variável de ambiente e o manifesto marcará partial.
     # Limite seguro para Cloud Shell. Defina 0 conscientemente para consultar
     # todas as páginas; quando o limite é atingido, o log fica partial.
-    sign_in_max_pages = max(0, int(os.getenv("ASSESSMENT_SIGNIN_MAX_PAGES", "20")))
+    sign_in_max_pages = bounded_env_int("ASSESSMENT_SIGNIN_MAX_PAGES", 20, 0, 10000)
     signins = get_all(sign_in_path(start_date), "Sign-ins / legacy auth", "AuditLog.Read.All", max_pages=sign_in_max_pages or None)
     legacy_clients = {"exchange activesync", "other clients", "imap4", "pop3", "smtp"}
     legacy_signins = [{

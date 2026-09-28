@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from module_diagnostics import diagnose
+
 
 def build_execution_manifest(logs: list[dict], profile: str, read_only: bool = True) -> dict:
     """Produz um resumo auditável do escopo sem copiar dados sensíveis."""
@@ -45,6 +47,7 @@ def coverage_map(logs: list[dict], manifest: list[dict]) -> list[dict]:
         candidates = [item for module, item in normalized_logs if module == key or key in module or module in key]
         selected = next((item for item in candidates if item.get("status") in {"success", "partial"}), candidates[0] if candidates else {})
         status = selected.get("status", expected.get("status", "not_run"))
+        diagnostic = diagnose(name, str(status), str(selected.get("note", expected.get("detail", ""))))
         rows.append({
             "module": name,
             "domain": expected.get("domain", "—"),
@@ -53,6 +56,7 @@ def coverage_map(logs: list[dict], manifest: list[dict]) -> list[dict]:
             "records": int(selected.get("records", 0) or 0),
             "source": selected.get("source", "Não executado nesta execução"),
             "limitation": selected.get("note", expected.get("detail", "Evidência não disponível")),
+            **diagnostic,
             "evidence_confidence": "alta" if status == "success" else ("média" if status == "partial" else "baixa"),
         })
     return rows

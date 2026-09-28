@@ -23,12 +23,39 @@ ROOT = Path(__file__).resolve().parents[1]
 
 SCENARIOS = {
     "small": "Tenant pequeno com poucos recursos e cobertura básica",
+    "medium": "Tenant intermediário com volume representativo e limitações opcionais",
     "limited": "Tenant com módulos opcionais sem licença ou consentimento",
     "full": "Tenant demonstrativo com cobertura ampla e módulos disponíveis",
     "large": "Tenant sintético de escala para validar paginação, renderer e priorização",
 }
 
 DEFAULT_LARGE_SCALE = 1
+
+
+def _medium_inventory(discovery: dict) -> None:
+    """Reduz o inventário sintético grande para um porte intermediário determinístico."""
+    _large_inventory(discovery, scale=1)
+    limits = {
+        "users": 200,
+        "resources": 250,
+        "devices": 100,
+        "enterprise_applications": 50,
+        "app_registrations": 25,
+        "rbac": 80,
+        "policy_compliance": 180,
+    }
+    for key, limit in limits.items():
+        if isinstance(discovery.get(key), list):
+            discovery[key] = discovery[key][:limit]
+    discovery["security_posture_summary"] = summarize_security_posture(discovery["resources"])
+    discovery["rbac_summary"] = summarize_rbac_posture(discovery["rbac"])
+    discovery["governance_summary"] = summarize_governance_posture(discovery["resources"], discovery["policy_compliance"])
+    discovery["collection_log"] = [
+        {"module": "Azure inventory", "source": "synthetic", "status": "success", "records": len(discovery["resources"]), "note": "Volume sintético intermediário; não representa evidência de cliente."},
+        {"module": "Identity", "source": "synthetic", "status": "success", "records": len(discovery["users"]), "note": "Volume sintético intermediário; não representa evidência de cliente."},
+        {"module": "Cost / lifecycle", "source": "synthetic", "status": "partial", "records": 0, "note": "HTTP 429 simulado; resultado não representa custo completo."},
+        {"module": "Defender", "source": "synthetic", "status": "not_available", "records": 0, "note": "HTTP 403 simulado; licença ou consentimento não disponível."},
+    ]
 
 
 def _set_log_status(data: dict, module: str, status: str, note: str) -> None:
@@ -144,6 +171,10 @@ def simulate(data: dict, scenario: str, scale: int = DEFAULT_LARGE_SCALE) -> dic
         metadata["modules"].update({"identity": "success", "security": "partial", "governance": "success", "cost": "not_available", "compliance": "partial"})
         _set_log_status(result, "Defender", "not_available", "Tenant DEMO sem Defender licenciado; comportamento esperado para módulo opcional.")
         _set_log_status(result, "Cost / lifecycle", "not_available", "Cost Management Reader não disponível no cenário DEMO.")
+    elif scenario == "medium":
+        _medium_inventory(discovery)
+        metadata["scope"] = {"subscriptions": 1, "users_assessed": 200, "resources_assessed": 250, "devices_assessed": 100}
+        metadata["modules"].update({"identity": "success", "security": "partial", "governance": "success", "cost": "partial", "compliance": "partial"})
     elif scenario == "limited":
         metadata["modules"].update({"security": "partial", "cost": "not_available", "compliance": "partial"})
         # Não mantenha no cenário limitado valores herdados do mock de um

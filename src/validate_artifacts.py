@@ -96,9 +96,20 @@ def validate_payload(path: Path) -> list[str]:
 
 def validate(output_dir: Path, ai_payload: Path | None = None) -> dict:
     pdf_path = output_dir / "assessment-executive-summary.pdf"
+    brief_path = output_dir / "assessment-one-page-brief.pdf"
+    brief_errors = []
+    try:
+        from pypdf import PdfReader
+        if not brief_path.exists():
+            brief_errors.append("Briefing PDF de uma página ausente")
+        elif len(PdfReader(str(brief_path)).pages) != 1:
+            brief_errors.append("Briefing executivo deve conter exatamente uma página")
+    except Exception as exc:
+        brief_errors.append(f"Briefing PDF não pôde ser validado: {type(exc).__name__}")
     checks = {
         "html": validate_html(output_dir / "assessment.html") if (output_dir / "assessment.html").exists() else ["assessment.html ausente"],
         "pdf": [] if pdf_path.exists() and pdf_path.read_bytes()[:4] == b"%PDF" and pdf_path.read_bytes().rstrip().endswith(b"%%EOF") else ["PDF ausente, sem assinatura ou incompleto"],
+        "one_page_brief": brief_errors,
         "xlsx": validate_zip(output_dir / "assessment-action-plan.xlsx", ("[Content_Types].xml", "xl/workbook.xml")) if (output_dir / "assessment-action-plan.xlsx").exists() else ["XLSX ausente"],
         "pptx": validate_zip(output_dir / "assessment-executive-summary.pptx", ("[Content_Types].xml", "ppt/presentation.xml")) if (output_dir / "assessment-executive-summary.pptx").exists() else ["PPTX ausente"],
         "ai_payload": validate_payload(ai_payload) if ai_payload else [],

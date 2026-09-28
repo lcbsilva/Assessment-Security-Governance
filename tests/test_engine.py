@@ -40,6 +40,7 @@ from artifact_manifest import build as build_artifact_manifest
 from validate_manifest import validate as validate_manifest
 from pseudonymize import pseudonymize
 from summarize_lab_validation import summarize as summarize_lab_validation
+from module_diagnostics import diagnose as diagnose_module
 from build_demo_package import build_demo
 from doctor import diagnose
 from pilot_evidence import build as build_pilot_evidence
@@ -84,6 +85,9 @@ class EngineContractTests(unittest.TestCase):
             self.assertTrue(summary["read_only"])
             self.assertTrue(summary["synthetic"])
             self.assertIn("assessment.html", summary["outputs"])
+            self.assertIn("assessment-one-page-brief.pdf", summary["outputs"])
+            self.assertTrue((Path(temporary) / "demo" / "dist" / "team-review-guide.md").exists())
+            self.assertTrue((Path(temporary) / "demo" / "dist" / "team-feedback-template.md").exists())
             self.assertIn("assessment-action-plan.xlsx", summary["outputs"])
             self.assertEqual(summary["artifact_integrity"], "valid")
 
@@ -192,6 +196,30 @@ class EngineContractTests(unittest.TestCase):
             self.assertIsNone(load_checkpoint(root, "graph", key))
             write_checkpoint(root, "graph", key, unavailable)
             self.assertIsNone(load_checkpoint(root, "graph", key))
+            partial = {"metadata": {"modules": {"graph": "partial"}}, "discovery": {"collection_log": [{"status": "partial"}]}}
+            write_checkpoint(root, "graph", key, partial)
+            self.assertIsNone(load_checkpoint(root, "graph", key))
+
+    def test_checkpoint_expiration_prevents_reuse_of_stale_tenant_data(self):
+        from datetime import datetime, timedelta, timezone
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            key = scope_key(["sub-a"], "full")
+            write_checkpoint(root, "graph", key, {"metadata": {"modules": {"identity": "success"}}})
+            path = root / "graph.json"
+            envelope = json.loads(path.read_text(encoding="utf-8"))
+            envelope["written_at"] = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+            path.write_text(json.dumps(envelope), encoding="utf-8")
+            self.assertIsNone(load_checkpoint(root, "graph", key))
+
+    def test_module_diagnostic_categorizes_without_claiming_root_cause(self):
+        permission = diagnose_module("Defender", "not_available", "HTTP 403; insufficient privileges")
+        timeout = diagnose_module("Sign-ins", "partial", "TimeoutError: read timed out")
+        configured = diagnose_module("Azure DevOps", "not_available", "Configure AZDO_ORG_URL")
+        self.assertEqual(permission["limitation_category"], "permission_or_role")
+        self.assertIn("pode", permission["likely_cause"])
+        self.assertEqual(timeout["limitation_category"], "timeout")
+        self.assertEqual(configured["limitation_category"], "configuration")
 
     def test_safe_collect_records_duration_and_attempt(self):
         name, result = safe_collect("graph", lambda: {"metadata": {"modules": {"graph": "success"}}, "discovery": {"collection_log": [{"status": "success"}]}}, {})
@@ -402,12 +430,22 @@ class EngineContractTests(unittest.TestCase):
         self.assertEqual(result["metadata"]["scope"]["users_assessed"], len(result["discovery"]["users"]))
 
     def test_demo_scenarios_recalculate_posture_and_coverage(self):
-        summaries = [simulate(self.mock, scenario, 10 if scenario == "large" else 1) for scenario in ("small", "limited", "full", "large")]
+        summaries = [simulate(self.mock, scenario, 10 if scenario == "large" else 1) for scenario in ("small", "medium", "limited", "full", "large")]
         scores = {item["metadata"]["overall_score"] for item in summaries}
         coverages = {item["metadata"]["coverage"] for item in summaries}
         self.assertGreaterEqual(len(scores), 3)
         self.assertGreaterEqual(len(coverages), 2)
         self.assertTrue(all(item["metadata"]["contract_status"] == "valid" for item in summaries))
+
+    def test_medium_simulation_has_intermediate_scope_and_explicit_limitations(self):
+        result = simulate(self.mock, "medium")
+        scope = result["metadata"]["scope"]
+        self.assertEqual(scope["users_assessed"], 200)
+        self.assertEqual(scope["resources_assessed"], 250)
+        self.assertEqual(result["metadata"]["simulation"]["scenario"], "medium")
+        statuses = {item["status"] for item in result["discovery"]["collection_log"]}
+        self.assertIn("partial", statuses)
+        self.assertIn("not_available", statuses)
 
     def test_readonly_cost_query_allows_only_azure_cost_query_endpoint(self):
         allowed = "https://management.azure.com/subscriptions/12345678-1234-1234-1234-123456789abc/providers/Microsoft.CostManagement/query?api-version=2023-03-01"
@@ -937,14 +975,19 @@ class EngineContractTests(unittest.TestCase):
             for profile in ("security", "governance", "full"):
                 folder = root / profile
                 folder.mkdir()
-                (folder / "pilot-validation.json").write_text(json.dumps({"status": "ready_for_pilot_review", "quality_audit": {"metrics": {"coverage": 80}}, "modules_unavailable_or_error": 1, "warnings": ["limited"]}), encoding="utf-8")
+                (folder / "pilot-validation.json").write_text(json.dumps({"status": "ready_for_pilot_review", "quality_audit": {"metrics": {"coverage": 80, "overall_score": 34.5}}, "modules_unavailable_or_error": 1, "warnings": ["limited"]}), encoding="utf-8")
                 (folder / "manifest-validation.json").write_text(json.dumps({"status": "valid"}), encoding="utf-8")
+                (folder / "assessment.json").write_text(json.dumps({"discovery": {"collection_log": [{"module": "Módulo teste", "status": "not_available", "records": 0, "note": "user@example.com"}]}}), encoding="utf-8")
             result = summarize_lab_validation(root)
             self.assertTrue(result["read_only"])
             self.assertEqual(set(result["profiles"]), {"security", "governance", "full"})
             self.assertEqual(result["overall_status"], "warning")
             self.assertEqual(result["profiles"]["governance"]["readiness"], "warning")
             self.assertEqual(result["profiles"]["full"]["artifact_integrity"], "valid")
+            self.assertEqual(result["profiles"]["full"]["control_coverage_percent"], 80)
+            self.assertTrue(result["profiles"]["full"]["score_is_provisional"])
+            self.assertEqual(result["profiles"]["full"]["collection_issues"], [{"module": "Módulo teste", "status": "not_available", "records": 0}])
+            self.assertNotIn("user@example.com", json.dumps(result))
 
     def test_lab_validation_summary_blocks_on_invalid_artifact(self):
         with tempfile.TemporaryDirectory() as temporary:

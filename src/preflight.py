@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -24,7 +25,7 @@ def check(name: str, label: str, category: str, status: str, detail: str,
 
 def check_command(name: str) -> dict:
     try:
-        result = subprocess.run([name, "--version"], capture_output=True, text=True, timeout=15)
+        result = subprocess.run(command_line([name, "--version"]), capture_output=True, text=True, timeout=15)
         status = "pass" if result.returncode == 0 else "blocked"
         return check(name, name, "local", status,
                      (result.stdout or result.stderr).strip()[:200],
@@ -42,10 +43,24 @@ def check_command(name: str) -> dict:
 
 def run_cli(arguments: list[str], timeout: int = 30) -> tuple[int, str]:
     try:
-        result = subprocess.run(arguments, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(command_line(arguments), capture_output=True, text=True, timeout=timeout)
         return result.returncode, (result.stdout or result.stderr).strip()
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
         return 1, type(exc).__name__
+
+
+def command_line(arguments: list[str]) -> list[str]:
+    """Resolve Azure CLI launcher on Windows, where it is commonly az.cmd."""
+    if not arguments:
+        return arguments
+    executable = shutil.which(arguments[0])
+    if executable and os.name == "nt" and Path(executable).suffix.lower() in {".cmd", ".bat"}:
+        # Ask cmd.exe to resolve the launcher through PATH instead of passing
+        # its absolute path (usually under "Program Files") through another
+        # layer of Windows command-line quoting.
+        launcher = Path(executable).name
+        return [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", launcher, *arguments[1:]]
+    return [executable or arguments[0], *arguments[1:]]
 
 
 def permission_check(subscription_ids: list[str]) -> dict:
@@ -113,7 +128,7 @@ def module_readiness(profile: str) -> list[dict]:
     modules = [
         ("Azure inventory", "Governança", ["Reader"]),
         ("Azure Policy / hierarchy", "Governança", ["Reader"]),
-        ("RBAC / PIM", "Governança", ["Reader", "RoleManagement.Read.Directory", "Directory.Read.All"]),
+        ("RBAC / PIM", "Governança", ["Reader", "RoleAssignmentSchedule.Read.Directory", "RoleEligibilitySchedule.Read.Directory", "RoleManagement.Read.Directory", "Directory.Read.All"]),
         ("Identity / users", "Identidade", ["User.Read.All"]),
         ("MFA / registration", "Identidade", ["Reports.Read.All"]),
         ("Conditional Access", "Segurança", ["Policy.Read.All"]),
@@ -194,10 +209,11 @@ def main() -> int:
                         "Validação detalhada ocorre durante cada coletor",
                         "Módulos sem licença/consentimento serão marcados como não disponíveis, sem dados inventados.",
                         "Conceda somente os escopos aprovados se quiser ampliar a cobertura."))
+    pim_read = ["RoleAssignmentSchedule.Read.Directory", "RoleEligibilitySchedule.Read.Directory", "RoleManagement.Read.Directory", "Directory.Read.All"]
     required = {"security": ["User.Read.All", "Reports.Read.All", "Policy.Read.All", "AuditLog.Read.All", "SecurityIncident.Read.All", "Reader"],
-                "governance": ["Reader", "RoleManagement.Read.Directory", "Directory.Read.All"],
-                "full": ["Reader", "Cost Management Reader", "User.Read.All", "Reports.Read.All", "Policy.Read.All", "AuditLog.Read.All", "RoleManagement.Read.Directory", "Directory.Read.All"]}[options.profile]
-    optional = ["Group.Read.All", "Application.Read.All", "DelegatedPermissionGrant.Read.All", "Organization.Read.All", "Device.Read.All", "DeviceManagementManagedDevices.Read.All", "SecurityEvents.Read.All", "SecurityIncident.Read.All", "Vulnerability.Read.All", "Fabric admin/Tenant.Read.All", "Azure DevOps PAT read-only", "Purview-specific read integration"]
+                "governance": ["Reader", *pim_read],
+                "full": ["Reader", "Cost Management Reader", "User.Read.All", "Reports.Read.All", "Policy.Read.All", "AuditLog.Read.All", *pim_read]}[options.profile]
+    optional = ["Group.Read.All", "Application.Read.All", "DelegatedPermissionGrant.Read.All", "LicenseAssignment.Read.All", "Device.Read.All", "DeviceManagementManagedDevices.Read.All", "SecurityEvents.Read.All", "SecurityIncident.Read.All", "Vulnerability.Read.All", "Fabric admin/Tenant.Read.All", "Azure DevOps PAT read-only", "Purview-specific read integration"]
     blocking = [item for item in checks if item.get("blocking") and item["status"] == "blocked"]
     warnings = [item for item in checks if item["status"] == "warning"]
     result = {"version": "1.0", "profile": options.profile, "subscriptions_requested": subscription_ids,

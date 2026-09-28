@@ -1,6 +1,6 @@
 # Assessment Automatizado de Segurança & Governança
 
-Para conhecer o produto de ponta a ponta, consulte o [Product Tour](docs/PRODUCT-TOUR.md). Para gerar uma demonstração com tenant pequeno, limitado e completo sem acessar nenhum ambiente, execute `./scripts/run-product-tour.sh`.
+Para conhecer o produto de ponta a ponta, consulte o [Product Tour](docs/PRODUCT-TOUR.md). Para gerar uma demonstração com cenários pequeno, médio, limitado, completo e grande sem acessar nenhum ambiente, execute `./scripts/run-product-tour.sh`.
 
 MVP inicial para validar o formato do assessment antes da conexão com um tenant real.
 
@@ -49,6 +49,75 @@ O relatório será criado em:
 ```text
 dist/assessment-demo.html
 ```
+
+### Guia rápido para outro consultor ou time
+
+Se você recebeu acesso ao repositório Git, o fluxo recomendado é:
+
+```bash
+git clone <URL_DO_REPOSITORIO> assessment-engine
+cd assessment-engine
+python3 -m pip install -r requirements.txt
+az login
+az account set --subscription "<subscription-id>"
+az account show --query '{tenantId:tenantId,subscriptionId:id}' -o table
+```
+
+No PowerShell 7, use `python` no lugar de `python3` quando esse for o comando
+disponível. O `tenantId` exibido deve ser confirmado antes de continuar.
+
+Execute primeiro o Readiness Gate:
+
+```bash
+python3 src/preflight.py \
+  --subscriptions "<subscription-id>" \
+  --profile security \
+  --output runtime/preflight-security.json
+```
+
+O preflight somente verifica o ambiente; ele não concede permissões e não
+altera o tenant. Se houver `blocked`, a execução deve parar até o responsável
+autorizar ou corrigir o pré-requisito.
+
+Para a primeira coleta, use o perfil de Segurança:
+
+```bash
+./scripts/run-focused-pilot.sh "<subscription-id>"
+```
+
+Depois de revisar o resultado, o perfil completo pode ser executado somente se
+o escopo estiver autorizado:
+
+```bash
+./scripts/run-assessment.sh "<subscription-id>" full
+```
+
+No PowerShell 7, use:
+
+```powershell
+.\scripts\run-focused-pilot.ps1 -Subscriptions "<subscription-id>"
+.\scripts\run-assessment.ps1 -Subscriptions "<subscription-id>" -Profile full
+```
+
+Os principais resultados ficam em `dist/` e `runtime/`:
+
+- `dist/assessment.html`: relatório offline autocontido;
+- `dist/assessment-executive-summary.pdf`: resumo executivo;
+- `dist/assessment-executive-summary.pptx`: apresentação;
+- `dist/assessment-action-plan.xlsx`: plano de ação;
+- `runtime/assessment.json`: evidência técnica confidencial;
+- `runtime/pilot-validation.json`: validação de contrato, integridade e
+  guardrails;
+- `runtime/ai-payload.json`: agregados protegidos contra PII.
+
+Os estados `not_available` e `partial` são resultados válidos quando uma API
+depende de licença, permissão, retenção ou throttling. Eles não devem ser
+alterados manualmente nem interpretados como conformidade.
+
+O roteiro completo para uma execução autorizada em outro ambiente está em
+[`docs/LAB-HANDOFF-FOR-REVIEWER.md`](docs/LAB-HANDOFF-FOR-REVIEWER.md). Os
+cenários sintéticos para testar a ferramenta sem tenant estão em
+[`docs/SIMULATION-RUNBOOK.md`](docs/SIMULATION-RUNBOOK.md).
 
 ### Importar relatório Microsoft Zero Trust (opcional)
 
@@ -235,6 +304,26 @@ Por padrão, os sign-ins percorrem todas as páginas disponíveis dentro da jane
 configurada. Em tenants muito grandes, `ASSESSMENT_SIGNIN_MAX_PAGES` permite
 limitar conscientemente a duração; nesse caso o coletor registra `partial` e o
 relatório informa a limitação.
+
+Auditoria de diretório também usa paginação limitada para evitar que tenants
+extensos esgotem o tempo de execução: `ASSESSMENT_AUDIT_MAX_PAGES` é 10 por
+padrão e `0` remove o limite conscientemente. Se uma página falhar após páginas
+válidas, os registros recebidos são mantidos e o módulo é marcado como
+`partial`. No resumo do laboratório, `control_coverage_percent` é cobertura do
+catálogo de controles, não percentual de APIs/coletas concluídas; o score é
+marcado como provisório quando há módulos indisponíveis ou parciais.
+
+Limites operacionais configuráveis: `ASSESSMENT_GRAPH_REQUEST_TIMEOUT_SECONDS`
+(60 s, faixa 5–300), `ASSESSMENT_GRAPH_MAX_RETRIES` (3, faixa 0–5),
+`ASSESSMENT_COST_REQUEST_TIMEOUT_SECONDS` (60 s, faixa 5–300),
+`ASSESSMENT_COST_MAX_RETRIES` (3, faixa 0–5), `ASSESSMENT_ARG_MAX_ATTEMPTS`
+(3, faixa 1–6) e `ASSESSMENT_CHECKPOINT_MAX_AGE_HOURS` (168 h, faixa 1–8760).
+Limites fora da faixa são ajustados para o intervalo aceito; valor inválido usa
+o padrão seguro.
+
+O script `scripts/run-beta-demo.ps1 -Scenario limited` inclui o PDF de briefing
+de uma página, guia de reunião e template de feedback. Os dados da demo são
+sintéticos e a geração não autentica nem consulta tenant.
 
 O inventário de Power Platform consulta somente metadados publicados no Azure
 Resource Graph. Fórmulas, conteúdo de fluxos, mensagens, dados de negócio e

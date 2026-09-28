@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
-for scenario in small limited full; do
+for scenario in small medium limited full large; do
   mkdir -p "runtime/tour/$scenario" "dist/tour/$scenario"
   python3 src/simulate_tenant.py --scenario "$scenario" --output "runtime/tour/$scenario/assessment.json"
   python3 src/generate_report.py --data "runtime/tour/$scenario/assessment.json" --output "dist/tour/$scenario/assessment.html"

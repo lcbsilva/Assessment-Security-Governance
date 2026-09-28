@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import statistics
 import time
 import urllib.error
@@ -32,7 +33,7 @@ def is_readonly_cost_query_url(url: str) -> bool:
     )
 
 
-def query_cost(url: str, token: str, body: dict, attempts: int = 3) -> tuple[list[dict], str | None]:
+def query_cost(url: str, token: str, body: dict, attempts: int = 3, timeout_seconds: int = 60) -> tuple[list[dict], str | None]:
     if not is_readonly_cost_query_url(url):
         return [], "Refused non-allowlisted read-only Cost Management query endpoint"
     if not isinstance(body, dict) or not {"type", "timeframe", "dataset"}.issubset(body):
@@ -40,7 +41,7 @@ def query_cost(url: str, token: str, body: dict, attempts: int = 3) -> tuple[lis
     request = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, method="POST")
     for attempt in range(attempts):
         try:
-            with urllib.request.urlopen(request, timeout=60) as response:
+            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
                 payload = json.load(response)
             columns = [item.get("name") for item in payload.get("properties", {}).get("columns", [])]
             return [dict(zip(columns, values)) for values in payload.get("properties", {}).get("rows", [])], None
@@ -86,19 +87,24 @@ def collect(subscription_ids: list[str]) -> dict:
     rows: list[dict] = []
     history_rows: list[dict] = []
     logs: list[dict] = []
+    try:
+        request_timeout = min(300, max(5, int(os.getenv("ASSESSMENT_COST_REQUEST_TIMEOUT_SECONDS", "60"))))
+        max_retries = min(5, max(0, int(os.getenv("ASSESSMENT_COST_MAX_RETRIES", "3"))))
+    except ValueError:
+        request_timeout, max_retries = 60, 3
     total_url = "https://management.azure.com/subscriptions/{}/providers/Microsoft.CostManagement/query?api-version=2023-03-01"
     now = datetime.now(timezone.utc)
     for subscription_id in subscription_ids:
         url = total_url.format(subscription_id)
         current_body = {"type": "ActualCost", "timeframe": "BillingMonthToDate", "dataset": {"granularity": "None", "aggregation": {"totalCost": {"name": "PreTaxCost", "function": "Sum"}}, "grouping": [{"type": "Dimension", "name": "ResourceId"}, {"type": "Dimension", "name": "ResourceGroupName"}, {"type": "Dimension", "name": "ResourceType"}]}}
-        current, error = query_cost(url, token, current_body)
+        current, error = query_cost(url, token, current_body, max_retries + 1, request_timeout)
         if error:
             logs.append({"module": "Cost Management", "source": "Azure Cost Management API", "status": "partial" if "429" in error else "not_available", "records": 0, "note": f"{error}; valide Cost Management Reader e throttling no escopo da subscription."})
             continue
         rows.extend(current)
         logs.append({"module": "Cost Management", "source": "Azure Cost Management API", "status": "success", "records": len(current), "note": "Custo agregado do mês corrente; sem detalhamento de PII."})
         history_body = {"type": "ActualCost", "timeframe": "Custom", "timePeriod": {"from": (now - timedelta(days=30)).strftime("%Y-%m-%dT00:00:00Z"), "to": now.strftime("%Y-%m-%dT00:00:00Z")}, "dataset": {"granularity": "Daily", "aggregation": {"totalCost": {"name": "PreTaxCost", "function": "Sum"}}, "grouping": [{"type": "Dimension", "name": "ServiceName"}]}}
-        history, history_error = query_cost(url, token, history_body)
+        history, history_error = query_cost(url, token, history_body, max_retries + 1, request_timeout)
         if not history_error:
             history_rows.extend(history)
 

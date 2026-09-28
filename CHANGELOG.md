@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.2.0-beta.70
+
+- Reorganiza a navegação do HTML em faixas centralizadas e consistentes,
+  incluindo comportamento responsivo sem rolagem lateral dos controles.
+- Adiciona cenário sintético `medium` para validar porte intermediário entre
+  `small` e `large`.
+- Corrige o wrapper Bash para respeitar cenário e escala informados.
+- Inclui handoff para revisão autorizada por outro consultor, com preflight,
+  consentimento, validação de fontes e tratamento confidencial dos artefatos.
+- Mantém read-only, ausência de PII no payload de IA e ausência de remediação.
+
+## 0.2.0-beta.69
+
+- Classifica limitações por módulo com causa provável e próximo passo; linguagem não declara causa confirmada sem evidência.
+- Torna configuráveis timeout/tentativas Graph e Cost, tentativas ARG e validade do checkpoint; checkpoints parciais, indisponíveis ou com erro são refeitos.
+- Cria briefing executivo PDF de uma página com score provisório, cobertura de controles, saúde das coletas, riscos e limitações; valida que o PDF possui exatamente uma página.
+- Acrescenta kit de demonstração e template de feedback do time; pacotes sintéticos os incluem sem autenticar ou consultar tenant.
+- Mantém os artefatos e metadados locais confidenciais e a execução tenant somente leitura.
+
+## 0.2.0-beta.68
+
+- Usa permissões Graph de menor privilégio para consulta de licenças M365 e instâncias PIM; mantém permissões separadas para definições e associação de funções.
+- Limita por padrão a paginação de auditoria de diretório para reduzir timeouts em tenants extensos; `ASSESSMENT_AUDIT_MAX_PAGES=0` remove o limite explicitamente.
+- Preserva registros já coletados quando uma página posterior falha e registra o módulo como `partial`.
+- O resumo de laboratório explicita que a cobertura é cobertura de controles, marca scores como provisórios quando há módulos incompletos e lista módulos/estados sem expor notas potencialmente sensíveis.
+- Sem alterações no tenant; execução permanece somente leitura.
+
 ## 0.2.0-beta.64 a beta.67
 
 - Beta 64: restringe permissões POSIX de diretórios locais de saída, ignora `dist-shareable/` no Git e oferece prévia/remoção manual de arquivos antigos de runtime e relatórios.

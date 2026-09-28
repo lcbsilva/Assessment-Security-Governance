@@ -15,6 +15,7 @@ import yaml
 from insight_engine import executive_actions, cross_domain_insights, prioritize_findings
 from local_privacy import protect_output_parent
 from report_context import build as build_report_context
+from module_diagnostics import diagnose
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -499,14 +500,18 @@ def render_scope_coverage(data: dict) -> str:
     logs = data.get("discovery", {}).get("collection_log", [])
     modules = data.get("metadata", {}).get("modules", {})
 
-    def status(tokens: tuple[str, ...], module_key: str | None = None) -> tuple[str, str]:
+    def status(tokens: tuple[str, ...], module_key: str | None = None) -> tuple[str, str, str, str]:
         if module_key and module_key in modules:
             value = str(modules[module_key])
-            return value, "Módulo executado; ver manifesto de evidências."
+            match = next((item for item in logs if any(token.lower() in str(item.get("module", "")).lower() for token in tokens)), {})
+            diagnostic = diagnose(name, value, str(match.get("note", "")))
+            return value, "Módulo executado; ver manifesto de evidências.", diagnostic["likely_cause"], diagnostic["next_step"]
         match = next((item for item in logs if any(token.lower() in str(item.get("module", "")).lower() for token in tokens)), None)
         if match:
-            return str(match.get("status", "not_available")), str(match.get("note", "Evidência registrada no manifesto."))
-        return "roadmap", "Integração planejada; não é evidência desta execução."
+            value = str(match.get("status", "not_available"))
+            diagnostic = diagnose(name, value, str(match.get("note", "")))
+            return value, str(match.get("note", "Evidência registrada no manifesto.")), diagnostic["likely_cause"], diagnostic["next_step"]
+        return "roadmap", "Integração planejada; não é evidência desta execução.", "Integração ainda não executada.", "Confirmar se o domínio faz parte do escopo acordado."
 
     areas = [
         ("Azure / Portal", "Governança, inventário, hierarquia, RBAC, Policy, Advisor e exposição.", ("Azure inventory", "Azure hierarchy", "RBAC", "Policy"), "governance"),
@@ -525,8 +530,8 @@ def render_scope_coverage(data: dict) -> str:
     labels = {"success": "Coletado", "partial": "Parcial", "not_available": "Indisponível", "error": "Erro controlado", "not_run": "Não executado", "roadmap": "Próxima integração"}
     cards = []
     for name, description, tokens, key in areas:
-        value, note = status(tokens, key)
-        cards.append(f'<article class="scope-card scope-{esc(value)}"><div class="scope-top"><b>{esc(name)}</b><span class="status {esc(value)}">{esc(labels.get(value, value.replace("_", " ").title()))}</span></div><p>{esc(description)}</p><small>{esc(note)}</small></article>')
+        value, note, cause, next_step = status(tokens, key)
+        cards.append(f'<article class="scope-card scope-{esc(value)}"><div class="scope-top"><b>{esc(name)}</b><span class="status {esc(value)}">{esc(labels.get(value, value.replace("_", " ").title()))}</span></div><p>{esc(description)}</p><small><b>Causa provável:</b> {esc(cause)}<br><b>Próximo passo:</b> {esc(next_step)}<br>{esc(note)}</small></article>')
     return f'''<section class="section" id="coverage"><div class="section-heading"><div><div class="eyebrow">Visão 360 do ecossistema</div><h2>O que este assessment contempla</h2></div><span class="section-intro">Cada card diferencia evidência coletada de integração futura.</span></div><div class="scope-grid">{"".join(cards)}</div></section>'''
 
 
@@ -689,7 +694,7 @@ def render_discovery(data: dict) -> str:
       ("non_compliant", "Não conformes"), ("exemptions", "Isenções"), ("last_evaluated", "Avaliado em")])}</div>
   <div class="panel"><h3>Execução e cobertura dos coletores</h3>
     <div class="table-scroll"><table data-filterable="true"><thead><tr><th>Módulo</th><th>Status</th></tr></thead><tbody>{module_rows}</tbody></table></div>
-    {render_table(collection_log, [("module", "Módulo"), ("source", "Fonte"), ("status", "Status"), ("records", "Registros"), ("started_at", "Início UTC"), ("finished_at", "Fim UTC"), ("duration_seconds", "Duração (s)"), ("note", "Observação")])}
+    {render_table(collection_log, [("module", "Módulo"), ("source", "Fonte"), ("status", "Status"), ("limitation_category", "Categoria"), ("likely_cause", "Causa provável"), ("next_step", "Próximo passo"), ("records", "Registros"), ("started_at", "Início UTC"), ("finished_at", "Fim UTC"), ("duration_seconds", "Duração (s)"), ("note", "Observação técnica")])}
   </div>
 </section>'''
 
@@ -781,8 +786,10 @@ def render(catalog: dict, data: dict, runbooks: dict) -> str:
     strengths_text = ", ".join(item["name"] for item in strengths) or "Nenhum domínio atingiu 80 pontos nesta execução"
     unavailable_or_error = int(manifest_totals.get("unavailable_or_error", 0) or 0)
     out_of_profile = int(manifest_totals.get("out_of_profile", 0) or 0)
-    if coverage < 100 or unavailable_or_error or out_of_profile:
-        coverage_notice = f'<div class="notice top-coverage-banner"><b>Limites desta leitura:</b> {coverage:.0f}% dos controles possuem evidência. Há {unavailable_or_error} módulos indisponíveis/erro e {out_of_profile} fora do perfil. Ausência de evidência não é conformidade; o score é provisório e deve ser interpretado com o mapa de cobertura.</div>'
+    partial_modules = sum(1 for item in data.get("discovery", {}).get("collection_log", []) if item.get("status") == "partial")
+    score_provisional = coverage < 100 or unavailable_or_error > 0 or partial_modules > 0 or out_of_profile > 0
+    if score_provisional:
+        coverage_notice = f'<div class="notice top-coverage-banner"><b>Limites desta leitura:</b> {coverage:.0f}% dos controles possuem evidência. Há {partial_modules} módulos parciais, {unavailable_or_error} indisponíveis/erro e {out_of_profile} fora do perfil. Ausência de evidência não é conformidade; o score é <b>provisório</b> e deve ser interpretado com o mapa de cobertura.</div>'
     else:
         coverage_notice = '<div class="notice top-coverage-banner"><b>Cobertura da leitura:</b> Todos os controles e módulos previstos para este perfil possuem evidência nesta execução. Validações do owner continuam obrigatórias.</div>'
     return f'''<!doctype html>
@@ -844,13 +851,29 @@ th{{background:#eef7fb;color:#075985}}
 .readiness-banner{{display:flex;gap:18px;align-items:center;flex-wrap:wrap;background:#111827;color:#fff;border-radius:12px;padding:15px 18px;margin-bottom:12px}}.readiness-banner b{{color:#62d6ff}}.readiness-banner span{{font-size:12px;color:#d0d5dd}}.readiness-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}}.readiness-card{{background:#fff;border:1px solid var(--line);border-left:4px solid #98a2b3;border-radius:10px;padding:13px;min-height:150px}}.readiness-pass{{border-left-color:#12b76a}}.readiness-warning{{border-left-color:#f79009}}.readiness-blocked{{border-left-color:#b42318}}.readiness-top{{display:flex;align-items:center;gap:7px}}.readiness-top b{{flex:1;font-size:13px}}.readiness-icon{{width:23px;height:23px;border-radius:50%;display:grid;place-items:center;background:#eef2f6;color:#475467;font-weight:800}}.readiness-pass .readiness-icon{{background:#dcfae6;color:#087443}}.readiness-warning .readiness-icon{{background:#fef0c7;color:#b54708}}.readiness-blocked .readiness-icon{{background:#fee4e2;color:#b42318}}.readiness-card p{{font-size:11px;color:#475467;margin:12px 0 8px;line-height:1.4}}.readiness-card small{{display:block;color:var(--muted);font-size:10px;line-height:1.35;margin-top:5px}}
 .health-banner{{display:flex;gap:16px;align-items:center;flex-wrap:wrap;background:#eef7fb;border:1px solid #b9e6f5;border-radius:12px;padding:14px 16px;color:#075985}}.health-banner b{{font-size:16px;color:#111827}}.health-banner span{{font-size:12px}}.execution-health .notice{{margin:12px 0}}
 .nav-group{{position:relative}}.nav-group>summary{{list-style:none;cursor:pointer;color:#075985;background:#fff;border:1px solid #d0d5dd;border-radius:99px;padding:7px 12px;font-size:12px;font-weight:700;white-space:nowrap}}.nav-group>summary::-webkit-details-marker{{display:none}}.nav-group[open]>summary{{border-color:#00aeea;color:#006f9f}}.nav-group>div{{position:absolute;top:calc(100% + 7px);left:0;min-width:190px;padding:7px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 28px #10182822;display:grid;gap:4px;z-index:40}}.nav-group>div a{{border:0;padding:8px 10px;border-radius:7px}}.nav-group>div a:hover{{background:#f0f9ff;transform:none}}.external-assessment{{border:1px solid #d9d6fe;border-radius:16px;background:linear-gradient(180deg,#fbfaff,#fff);padding:20px}}.external-summary{{grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}}.external-meta{{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}}.external-meta span{{font-size:11px;color:#475467;background:#f2f4f7;border-radius:8px;padding:6px 9px;overflow-wrap:anywhere}}.external-notice{{margin:12px 0}}.external-pillars{{display:grid;gap:9px;margin-top:14px}}.external-pillar{{background:#fff;border:1px solid var(--line);border-radius:12px;padding:0 14px}}.external-pillar>summary{{display:flex;align-items:center;gap:12px;list-style:none;cursor:pointer;padding:13px 0;color:var(--deep);font-weight:750}}.external-pillar>summary::-webkit-details-marker{{display:none}}.external-pillar>summary:after{{content:'＋';margin-left:auto;color:var(--purple)}}.external-pillar[open]>summary:after{{content:'−'}}.external-count{{font-size:11px;color:var(--muted);font-weight:500}}.external-chips{{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 12px}}.external-chip{{border-radius:99px;padding:4px 8px;font-size:10px;font-weight:700;background:#f2f4f7;color:#475467}}.external-chip.pass{{background:#e4f5ed;color:var(--green)}}.external-chip.fail,.external-chip.error{{background:#fde3e7;color:var(--red)}}.external-chip.partial{{background:#fff0d6;color:var(--orange)}}.external-chip.not_available{{background:#eeeaf1;color:var(--muted)}}.external-pillar .table-scroll{{margin-bottom:14px}}.external-footnote{{font-size:11px;color:var(--muted);margin:12px 2px 0}}
-@media(max-width:800px){{.nav{{top:0;overflow-x:auto;flex-wrap:nowrap}}.nav a{{white-space:nowrap}}}}
+.nav{{position:sticky;top:0;z-index:20;display:grid;justify-items:center;gap:7px;width:max-content;max-width:100%;box-sizing:border-box;margin:16px auto 22px;padding:10px 12px;background:#fff;border:1px solid #dce3ea;border-radius:16px;box-shadow:0 6px 20px #10182812;backdrop-filter:blur(12px)}}
+.nav-row{{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap}}
+.nav a,.nav-group>summary{{display:inline-flex;align-items:center;justify-content:center;min-height:36px;box-sizing:border-box;padding:0 12px;border:1px solid #d8e1e8;border-radius:10px;background:#f8fafc;color:#344054;text-decoration:none;font-size:12px;font-weight:650;line-height:1;white-space:nowrap;transition:background .15s ease,border-color .15s ease,color .15s ease,box-shadow .15s ease}}
+.nav a:hover,.nav-group>summary:hover{{background:#eff8fc;border-color:#82cde5;color:#075985;transform:none}}
+.view-switcher{{display:flex;align-items:center;gap:3px;padding:3px;border:1px solid #d8e1e8;border-radius:11px;background:#f1f4f7;box-shadow:none}}
+.view-button{{display:inline-flex;align-items:center;justify-content:center;min-height:30px;padding:0 11px;border:0;border-radius:8px;background:transparent;color:#475467;font:650 12px Inter,Segoe UI,Arial,sans-serif;white-space:nowrap;cursor:pointer;transition:background .15s ease,color .15s ease,box-shadow .15s ease}}
+.view-button:hover{{background:#e4edf2;color:#075985}}
+.view-button.active{{background:#075985;color:#fff;box-shadow:0 2px 5px #07598533}}
+.nav-divider{{height:24px;width:1px;flex:0 0 1px;background:#dce3ea;margin:0 2px}}
+.nav-group{{position:relative;flex:0 0 auto}}
+.nav-group>summary{{list-style:none;cursor:pointer}}
+.nav-group>summary::-webkit-details-marker{{display:none}}
+.nav-group[open]>summary{{background:#eff8fc;border-color:#82cde5;color:#075985}}
+.nav-group>div{{position:absolute;top:calc(100% + 8px);left:0;min-width:205px;padding:7px;background:#fff;border:1px solid #dce3ea;border-radius:12px;box-shadow:0 12px 28px #10182822;display:grid;gap:4px;z-index:40}}
+.nav-group>div a{{justify-content:flex-start;min-height:34px;padding:0 10px;border:0;border-radius:8px;background:transparent}}
+.nav-group>div a:hover{{background:#f0f8fb}}
+@media(max-width:800px){{.nav{{top:0;width:100%;margin:8px 0 18px;padding:9px;border-radius:12px}}.nav-row{{gap:6px}}.nav a{{white-space:nowrap}}.nav-divider{{margin:0 1px}}.nav-group>div{{position:absolute;top:calc(100% + 6px);left:auto;right:0;max-width:min(80vw,280px);max-height:65vh;overflow:auto}}}}
 </style></head><body class="exec-view">
 <header><div class="wrap hero"><div class="brand"><span class="brand-mark">SWO</span><span class="brand-name">Software<em>One</em></span><span>·</span><span>SECURITY & GOVERNANCE</span></div><div class="hero-label">{esc(meta.get("classification", "Confidencial — Security & Governance Assessment"))}</div><h1>Visibilidade para decidir. Evidência para agir.</h1><p>{esc(meta.get("engagement_name", "Assessment Executivo de Segurança e Governança"))}</p><div class="hero-pillars"><span><b>Descobrir</b> exposição</span><span><b>Governar</b> identidades e recursos</span><span><b>Otimizar</b> risco e investimento</span></div><div class="hero-meta"><span>{esc(meta["customer_name"])}</span><span>{esc(meta.get("consultant_name", "Consultor não informado"))}</span><span>Execução: {esc(meta["collected_at"])} UTC</span><span>Run ID: {esc(meta["run_id"])}</span></div></div></header>
 <main class="wrap">
 {coverage_notice}
 {execution_context_html}
-<nav class="nav"><div class="view-switcher" role="group" aria-label="Modo de leitura"><button class="view-button active" type="button" data-view-target="executive">Executivo</button><button class="view-button" type="button" data-view-target="technical">Técnico</button><button class="view-button" type="button" data-view-target="full">Completo</button></div><span class="nav-divider"></span><a href="#executive-summary">Resumo</a><a href="#coverage">Domínios</a><a href="#risks">Riscos</a>{zero_trust_nav}<details class="nav-group"><summary>Plano de ação</summary><div><a href="#priority-matrix">Matriz de prioridade</a><a href="#decision-layer">Decisões</a><a href="#analysis">Plano 30/60/90</a><a href="#lifecycle">FinOps e ciclo de vida</a></div></details><details class="nav-group"><summary>Evidências</summary><div><a href="#discovery">Discovery técnico</a><a href="#controls">Controles do engine</a><a href="#runbooks">Runbooks</a><a href="#transparency">Limitações</a></div></details><details class="nav-group"><summary>Execução</summary><div>{readiness_nav}<a href="#inventory-overview">Números do escopo</a></div></details></nav>
+<nav class="nav"><div class="nav-row"><div class="view-switcher" role="group" aria-label="Modo de leitura"><button class="view-button active" type="button" data-view-target="executive">Executivo</button><button class="view-button" type="button" data-view-target="technical">Técnico</button><button class="view-button" type="button" data-view-target="full">Completo</button></div><span class="nav-divider"></span><a href="#executive-summary">Resumo</a><a href="#coverage">Domínios</a><a href="#risks">Riscos</a>{zero_trust_nav}</div><div class="nav-row"><details class="nav-group"><summary>Plano de ação</summary><div><a href="#priority-matrix">Matriz de prioridade</a><a href="#decision-layer">Decisões</a><a href="#analysis">Plano 30/60/90</a><a href="#lifecycle">FinOps e ciclo de vida</a></div></details><details class="nav-group"><summary>Evidências</summary><div><a href="#discovery">Discovery técnico</a><a href="#controls">Controles do engine</a><a href="#runbooks">Runbooks</a><a href="#transparency">Limitações</a></div></details><details class="nav-group"><summary>Execução</summary><div>{readiness_nav}<a href="#inventory-overview">Números do escopo</a></div></details></div></nav>
 <section class="section summary-grid" id="executive-summary"><div class="executive"><div class="eyebrow">Leitura executiva</div><h2>O que este resultado significa</h2><p>A postura atual apresenta <b>{score_text.lower()}</b>, com maior necessidade de atenção em <b>{esc(priority_domain)}</b>. O assessment identificou <b>{len(findings)} riscos priorizados</b> e <b>{len(quick_wins)} ações de baixo esforço</b> que podem iniciar a evolução imediatamente.</p><p><b>Ponto forte:</b> {esc(strengths_text)}.</p><div class="notice"><b>Mensagem para liderança:</b> o maior risco deve ser interpretado junto com a cobertura, as limitações e a qualidade da evidência desta execução.</div></div><div class="score-panel"><div class="score-ring"><div><b>{score_display}</b><span>{"/ 100" if overall is not None else "sem score"}</span></div></div><div class="score-copy"><h3>{score_text}</h3><p>{esc(score_methodology.get("name", "Score ponderado pelos controles disponíveis"))}. Cobertura geral: <b>{coverage:.0f}%</b>. {esc(score_methodology.get("coverage_rule", "A interpretação deve considerar licenças e limitações."))}</p></div></div></section>
 {executive_security_kpis}
 {preflight_html}

@@ -14,6 +14,7 @@ from pathlib import Path
 from insight_engine import prioritize_findings
 from local_privacy import protect_output_directory
 from report_context import build as build_report_context
+from quality_audit import audit
 
 
 def main() -> None:
@@ -27,6 +28,8 @@ def main() -> None:
     write_xlsx(data, args.output_dir / "assessment-action-plan.xlsx")
     write_pptx(data, args.output_dir / "assessment-executive-summary.pptx")
     write_pdf(data, args.output_dir / "assessment-executive-summary.pdf")
+    catalog = __import__("yaml").safe_load((Path(__file__).resolve().parents[1] / "catalog" / "controls.yaml").read_text(encoding="utf-8"))
+    write_one_page_brief(data, args.output_dir / "assessment-one-page-brief.pdf", catalog)
     print(f"Artefatos exportados em {args.output_dir}")
 
 
@@ -58,7 +61,7 @@ def write_xlsx(data: dict, path: Path) -> None:
     cover.append([])
     cover.append(["Módulos com limitação", "Estado · quantidade · interpretação"])
     for item in context["limitations"]:
-        cover.append([item["module"], f"{item['status']} · {item['records']} · {item['summary']}"])
+        cover.append([item["module"], f"{item['status']} · {item['records']} · provável: {item['likely_cause']} Próximo passo: {item['next_step']}"])
     for column in cover.columns:
         cover.column_dimensions[column[0].column_letter].width = 42
     for cell in cover[1]:
@@ -143,8 +146,12 @@ def write_pptx(data: dict, path: Path) -> None:
     box.text_frame.paragraphs[0].font.bold = True
     sub = slide.shapes.add_textbox(Inches(0.7), Inches(2.0), Inches(11), Inches(0.8))
     context = build_report_context(data)
+    meta = data.get("metadata", {})
+    profile = context["profile"]
+    if profile in {"não informado", "unknown", ""} and meta.get("simulation", {}).get("is_simulation") is True:
+        profile = "Demonstração sintética"
     scope_text = " · ".join(f"{row['label']}: {row['value']}" for row in context["scope_rows"][:4])
-    sub.text_frame.text = f"{customer} · {consultant} · {classification} · Execução {context['started_at']} · Perfil {context['profile']}\n{scope_text}\nConfidencial · compartilhar somente com pessoas autorizadas"
+    sub.text_frame.text = f"{customer} · {consultant} · {classification} · Execução {context['started_at']} · Perfil {profile}\n{scope_text}\nConfidencial · compartilhar somente com pessoas autorizadas"
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     title = slide.shapes.add_textbox(Inches(0.7), Inches(0.5), Inches(11), Inches(0.6))
     title.text_frame.text = "Riscos prioritários"
@@ -164,7 +171,7 @@ def write_pptx(data: dict, path: Path) -> None:
     title.text_frame.text = "Cobertura e limitações da execução"
     title.text_frame.paragraphs[0].font.size = Pt(22)
     status_text = " · ".join(f"{status}: {count}" for status, count in context["status_counts"].items()) or "Sem manifesto de coletores"
-    limitation_lines = [f"• {item['module']} — {item['status']}: {item['summary']}" for item in context["limitations"][:10]]
+    limitation_lines = [f"• {item['module']} — {item['status']} ({item['limitation_category']}): {item['likely_cause']} Próximo passo: {item['next_step']}" for item in context["limitations"][:8]]
     body = slide.shapes.add_textbox(Inches(0.9), Inches(1.4), Inches(11.2), Inches(4.8))
     body.text_frame.text = f"Perfil {context['profile']} · contrato {context['contract_status']}\nMódulos: {status_text}\n\n" + ("\n".join(limitation_lines) if limitation_lines else "Nenhuma limitação de módulo registrada.") + "\n\nContagens de alcance não comprovam impacto operacional; validar com os owners."
     body.text_frame.paragraphs[0].font.size = Pt(14)
@@ -214,7 +221,7 @@ def write_pdf(data: dict, path: Path) -> None:
     if context["limitations"]:
         story.append(Paragraph("Limitações da execução", styles["Heading2"]))
         for item in context["limitations"][:12]:
-            story.append(Paragraph(f"{item['module']} — {item['status']}: {item['summary']}", styles["BodyText"]))
+            story.append(Paragraph(f"{item['module']} — {item['status']} ({item['limitation_category']}): {item['likely_cause']} Próximo passo: {item['next_step']}", styles["BodyText"]))
     external = data.get("discovery", {}).get("external_assessments", {}).get("microsoft_zero_trust")
     if external:
         story.append(Spacer(1, 14))
@@ -225,6 +232,57 @@ def write_pdf(data: dict, path: Path) -> None:
         for pillar in external.get("pillars", []):
             pillar_status = " · ".join(f"{key}: {value}" for key, value in pillar.get("statuses", {}).items())
             story.append(Paragraph(f"{pillar.get('name')}: {pillar.get('tests')} verificações — {pillar_status}", styles["BodyText"]))
+    document.build(story)
+
+
+def write_one_page_brief(data: dict, path: Path, catalog: dict) -> None:
+    """Gera briefing paisagem de uma página para abrir conversas com stakeholders."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from xml.sax.saxutils import escape
+
+    context = build_report_context(data)
+    meta = data.get("metadata", {})
+    profile = context["profile"]
+    if profile in {"não informado", "unknown", ""} and meta.get("simulation", {}).get("is_simulation") is True:
+        profile = "Demonstração sintética"
+    quality = audit(data, catalog)["metrics"]
+    logs = data.get("discovery", {}).get("collection_log", []) or []
+    provisional = (quality.get("coverage", 0) < 100 or
+                   any(item.get("status") in {"partial", "not_available", "error", "not_run"} for item in logs))
+    score = quality.get("overall_score")
+    score_label = f"{score:.1f}/100" if isinstance(score, (int, float)) else "N/D"
+    findings = sorted(data.get("findings", []), key=lambda row: row.get("risk_score", 0), reverse=True)
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("BriefTitle", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=20, leading=24, textColor=colors.HexColor("#40205f"), spaceAfter=4)
+    body_style = ParagraphStyle("BriefBody", parent=styles["BodyText"], fontSize=9, leading=12, spaceAfter=4)
+    heading_style = ParagraphStyle("BriefHeading", parent=styles["Heading2"], fontSize=12, leading=15, textColor=colors.HexColor("#40205f"), spaceBefore=7, spaceAfter=5)
+    small_style = ParagraphStyle("BriefSmall", parent=body_style, fontSize=8, leading=10)
+    document = SimpleDocTemplate(str(path), pagesize=landscape(A4), leftMargin=30, rightMargin=30, topMargin=25, bottomMargin=25, title="Assessment — briefing de uma página", author="SoftwareOne Security & Governance Assessment")
+    story = [Paragraph("Security &amp; Governance Assessment — briefing executivo", title_style)]
+    story.append(Paragraph(f"{escape(str(meta.get('customer_name', 'Tenant')))} · Perfil {escape(str(profile))} · Execução {escape(str(context['started_at']))} · {escape(str(context['classification']))}", small_style))
+    count_line = " · ".join(f"{escape(str(key))}: {value}" for key, value in context["status_counts"].items()) or "Sem registros de coletores"
+    module_count = f"{context['status_counts'].get('success', 0)} concluídos · {context['status_counts'].get('partial', 0)} parciais · {context['status_counts'].get('not_available', 0) + context['status_counts'].get('error', 0)} indisponíveis/erro · {context['status_counts'].get('not_run', 0)} fora do perfil"
+    coverage_value = quality.get("coverage")
+    coverage_label = f"{coverage_value:.1f}% dos controles" if isinstance(coverage_value, (int, float)) else "N/D"
+    score_cell = f"Score: {score_label}" + (" · PROVISÓRIO" if provisional else "")
+    metrics = Table([[Paragraph(f"<b>{escape(score_cell)}</b>", body_style), Paragraph(f"<b>Cobertura:</b> {escape(coverage_label)}", body_style), Paragraph(f"<b>Achados:</b> {len(findings)}", body_style), Paragraph(f"<b>Duração:</b> {escape(str(context['duration_seconds'] or 'N/D'))} s", body_style)]], colWidths=[185, 165, 110, 130])
+    metrics.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#f1f6fa")), ("BOX", (0,0), (-1,-1), .5, colors.HexColor("#cbd5e1")), ("INNERGRID", (0,0), (-1,-1), .3, colors.HexColor("#dbe3eb")), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("LEFTPADDING", (0,0), (-1,-1), 8), ("RIGHTPADDING", (0,0), (-1,-1), 8), ("TOPPADDING", (0,0), (-1,-1), 7), ("BOTTOMPADDING", (0,0), (-1,-1), 7)]))
+    story.extend([Spacer(1, 8), metrics, Paragraph("Saúde da coleta", heading_style), Paragraph(escape(module_count), body_style), Paragraph(f"<font size='7'>{count_line}</font>", small_style)])
+    story.append(Paragraph("Riscos para discussão", heading_style))
+    for item in findings[:3]:
+        story.append(Paragraph(f"• <b>{escape(str(item.get('title', 'Achado')))}</b> — risco {escape(str(item.get('risk_score', 'N/D')))} · alcance {escape(str(item.get('affected', 'N/D')))} {escape(str(item.get('affected_unit', 'itens')))} · confiança {escape(str(item.get('evidence_confidence', 'não avaliada')))}", body_style))
+    if not findings:
+        story.append(Paragraph("Sem achados priorizados disponíveis nesta execução.", body_style))
+    story.append(Paragraph("Limitações que afetam a leitura", heading_style))
+    if context["limitations"]:
+        for item in context["limitations"][:4]:
+            story.append(Paragraph(f"• <b>{escape(str(item['module']))}</b> — {escape(str(item['status']))} / {escape(str(item['limitation_category']))}: {escape(str(item['likely_cause']))} Próximo passo: {escape(str(item['next_step']))}", small_style))
+    else:
+        story.append(Paragraph("Nenhuma limitação de coletor registrada. Confirme o escopo e os owners antes de conclusões.", body_style))
+    story.extend([Spacer(1, 7), Paragraph("Uso em reunião: validar escopo, explicar evidências insuficientes, escolher owners e acordar próximos passos. Este briefing não aprova remediação.", small_style), Paragraph("CONFIDENCIAL · Somente leitura · Compartilhar apenas com participantes autorizados · Ausência de evidência não é conformidade.", small_style)])
     document.build(story)
 
 

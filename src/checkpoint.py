@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from local_privacy import protect_output_directory
@@ -49,7 +49,13 @@ def load(root: Path, module: str, key: str) -> dict | None:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         valid_scope = data.get("module") == module and data.get("scope_key") == key
-        return data.get("result") if valid_scope and data.get("resume_eligible") is True and isinstance(data.get("result"), dict) else None
+        try:
+            max_age_hours = min(8760, max(1, int(os.getenv("ASSESSMENT_CHECKPOINT_MAX_AGE_HOURS", "168"))))
+            written_at = datetime.fromisoformat(str(data.get("written_at", "")).replace("Z", "+00:00"))
+            fresh = datetime.now(timezone.utc) - written_at <= timedelta(hours=max_age_hours)
+        except (ValueError, TypeError):
+            fresh = False
+        return data.get("result") if valid_scope and fresh and data.get("resume_eligible") is True and isinstance(data.get("result"), dict) else None
     except (OSError, json.JSONDecodeError):
         return None
 
@@ -58,9 +64,9 @@ def _resume_eligible(result: dict) -> bool:
     """Só reutiliza coleta que não terminou em erro ou indisponibilidade total."""
     metadata = result.get("metadata", {}) if isinstance(result, dict) else {}
     modules = metadata.get("modules", {}) if isinstance(metadata, dict) else {}
-    if any(str(status).lower() in {"error", "failed"} for status in modules.values()):
+    if any(str(status).lower() in {"error", "failed", "partial", "not_available"} for status in modules.values()):
         return False
     logs = result.get("discovery", {}).get("collection_log", []) if isinstance(result, dict) else []
-    if logs and all(str(item.get("status", "")).lower() in {"error", "not_available", "not_run"} for item in logs):
+    if any(str(item.get("status", "")).lower() in {"error", "not_available", "partial"} for item in logs):
         return False
     return bool(logs or modules)

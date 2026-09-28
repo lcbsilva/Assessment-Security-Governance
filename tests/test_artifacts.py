@@ -8,6 +8,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 from pptx import Presentation
+from pypdf import PdfReader
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -55,6 +56,8 @@ class ArtifactTests(unittest.TestCase):
         self.assertIn("risk-matrix", html)
         self.assertIn("top-coverage-banner", html)
         self.assertIn("Limites desta leitura", html)
+        self.assertIn("Causa provável", html)
+        self.assertIn("Próximo passo", html)
 
     def test_spreadsheets_and_deck_open(self):
         workbook = load_workbook(self.artifact_dir / "assessment-action-plan.xlsx", read_only=True)
@@ -64,6 +67,9 @@ class ArtifactTests(unittest.TestCase):
         deck = Presentation(self.artifact_dir / "assessment-executive-summary.pptx")
         self.assertEqual(len(deck.slides), 4)
         self.assertIn("Cobertura e limitações da execução", " ".join(shape.text for shape in deck.slides[3].shapes if shape.has_text_frame))
+        brief = self.artifact_dir / "assessment-one-page-brief.pdf"
+        self.assertTrue(brief.exists())
+        self.assertEqual(len(PdfReader(str(brief)).pages), 1)
 
     def test_action_plan_contains_cross_domain_insight_rows(self):
         source = json.loads((ROOT / "mock/assessment.json").read_text(encoding="utf-8"))

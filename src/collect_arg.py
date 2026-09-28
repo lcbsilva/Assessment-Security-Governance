@@ -28,8 +28,13 @@ def retryable_arg_error(error: Exception) -> bool:
     return code in {429, 500, 502, 503, 504}
 
 
-def query_arg_with_retry(client: object, request: object, attempts: int = 3) -> object:
+def query_arg_with_retry(client: object, request: object, attempts: int | None = None) -> object:
     """Repete apenas consultas ARG idempotentes; nunca repete operação de escrita."""
+    if attempts is None:
+        try:
+            attempts = min(6, max(1, int(os.getenv("ASSESSMENT_ARG_MAX_ATTEMPTS", "3"))))
+        except ValueError:
+            attempts = 3
     for attempt in range(attempts):
         try:
             return client.resources(request)

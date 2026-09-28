@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from module_diagnostics import diagnose
 
 
 SCOPE_LABELS = {
@@ -43,6 +44,9 @@ def build(data: dict) -> dict:
             "status": item.get("status", "unknown"),
             "records": item.get("records", 0),
             "summary": status_limitations.get(str(item.get("status")), "Validar observações no manifesto técnico."),
+            "limitation_category": item.get("limitation_category", diagnose(str(item.get("module", "")), str(item.get("status", "unknown")), str(item.get("note", "")))["limitation_category"]),
+            "likely_cause": item.get("likely_cause", diagnose(str(item.get("module", "")), str(item.get("status", "unknown")), str(item.get("note", "")))["likely_cause"]),
+            "next_step": item.get("next_step", diagnose(str(item.get("module", "")), str(item.get("status", "unknown")), str(item.get("note", "")))["next_step"]),
         }
         for item in logs if str(item.get("status")) in status_limitations
     ]

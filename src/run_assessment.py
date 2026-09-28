@@ -31,6 +31,7 @@ from version import engine_version
 from execution_health import summarize as summarize_execution, coverage_map, build_execution_manifest
 from checkpoint import load as load_checkpoint, scope_key, write as write_checkpoint
 from local_privacy import protect_output_directory
+from module_diagnostics import diagnose
 
 
 def args() -> argparse.Namespace:
@@ -182,6 +183,8 @@ def main() -> None:
         payload["discovery"].update({key: value for key, value in module.get("discovery", {}).items() if key != "collection_log"})
         payload["discovery"]["collection_log"].extend(module.get("discovery", {}).get("collection_log", []))
     payload["metadata"]["scope"]["subscriptions"] = len(subscription_ids)
+    for item in payload["discovery"]["collection_log"]:
+        item.update(diagnose(str(item.get("module", "—")), str(item.get("status", "unknown")), str(item.get("note", ""))))
     payload["metadata"]["modules"].setdefault("security", "not_available")
     payload["metadata"]["modules"].setdefault("compliance", "not_available")
     payload["metadata"]["modules"].setdefault("cost", "not_available")

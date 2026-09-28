@@ -11,21 +11,29 @@ if (-not (Get-Command az -ErrorAction SilentlyContinue)) { throw "Azure CLI não
 az account show | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Execute 'az login' antes de continuar." }
 
+function Invoke-PythonChecked {
+    param([Parameter(Mandatory=$true)][string[]]$Arguments)
+    & python @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Comando Python falhou (exit code $LASTEXITCODE): python $($Arguments -join ' ')"
+    }
+}
+
 New-Item -ItemType Directory -Force -Path "runtime/lab-validation", "dist/lab-validation" | Out-Null
 foreach ($Profile in @("security", "governance", "full")) {
     $out = Join-Path "runtime/lab-validation" $Profile
     $dist = Join-Path "dist/lab-validation" $Profile
     New-Item -ItemType Directory -Force -Path $out, $dist | Out-Null
-    python src/preflight.py --subscriptions $Subscriptions --profile $Profile --output (Join-Path $out "preflight.json")
-    python src/run_assessment.py --subscriptions $Subscriptions --profile $Profile --output (Join-Path $out "assessment.json")
-    python src/generate_report.py --data (Join-Path $out "assessment.json") --output (Join-Path $dist "assessment.html")
-    python src/export_artifacts.py --data (Join-Path $out "assessment.json") --output-dir $dist
-    python src/ai_payload.py --data (Join-Path $out "assessment.json") --output (Join-Path $out "ai-payload.json")
-    python src/validate_artifacts.py --output-dir $dist --ai-payload (Join-Path $out "ai-payload.json") --output (Join-Path $out "artifact-validation.json")
-    python src/artifact_manifest.py --output-dir $dist --assessment (Join-Path $out "assessment.json") --input (Join-Path $out "ai-payload.json") --output (Join-Path $out "artifact-manifest.json")
-    python src/validate_manifest.py --manifest (Join-Path $out "artifact-manifest.json") --output-dir $dist --input-dir $out --output (Join-Path $out "manifest-validation.json")
-    python src/validate_pilot.py --data (Join-Path $out "assessment.json") --manifest-validation (Join-Path $out "manifest-validation.json") --output (Join-Path $out "pilot-validation.json")
+    Invoke-PythonChecked @("src/preflight.py", "--subscriptions", $Subscriptions, "--profile", $Profile, "--output", (Join-Path $out "preflight.json"))
+    Invoke-PythonChecked @("src/run_assessment.py", "--subscriptions", $Subscriptions, "--profile", $Profile, "--output", (Join-Path $out "assessment.json"))
+    Invoke-PythonChecked @("src/generate_report.py", "--data", (Join-Path $out "assessment.json"), "--output", (Join-Path $dist "assessment.html"))
+    Invoke-PythonChecked @("src/export_artifacts.py", "--data", (Join-Path $out "assessment.json"), "--output-dir", $dist)
+    Invoke-PythonChecked @("src/ai_payload.py", "--data", (Join-Path $out "assessment.json"), "--output", (Join-Path $out "ai-payload.json"))
+    Invoke-PythonChecked @("src/validate_artifacts.py", "--output-dir", $dist, "--ai-payload", (Join-Path $out "ai-payload.json"), "--output", (Join-Path $out "artifact-validation.json"))
+    Invoke-PythonChecked @("src/artifact_manifest.py", "--output-dir", $dist, "--assessment", (Join-Path $out "assessment.json"), "--input", (Join-Path $out "ai-payload.json"), "--output", (Join-Path $out "artifact-manifest.json"))
+    Invoke-PythonChecked @("src/validate_manifest.py", "--manifest", (Join-Path $out "artifact-manifest.json"), "--output-dir", $dist, "--input-dir", $out, "--output", (Join-Path $out "manifest-validation.json"))
+    Invoke-PythonChecked @("src/validate_pilot.py", "--data", (Join-Path $out "assessment.json"), "--manifest-validation", (Join-Path $out "manifest-validation.json"), "--output", (Join-Path $out "pilot-validation.json"))
 }
 
-python src/summarize_lab_validation.py --root "runtime/lab-validation" --output "runtime/lab-validation/summary.json"
+Invoke-PythonChecked @("src/summarize_lab_validation.py", "--root", "runtime/lab-validation", "--output", "runtime/lab-validation/summary.json")
 Write-Host "Validação de laboratório concluída. Consulte runtime/lab-validation/summary.json"

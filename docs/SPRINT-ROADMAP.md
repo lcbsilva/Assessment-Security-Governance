@@ -1,5 +1,27 @@
 # Roadmap de sprints — Assessment Security & Governance
 
+## Beta 70 — fechamento para revisão interna
+
+- [x] Navegação do relatório reorganizada em faixas centralizadas e responsivas.
+- [x] Cenário sintético `medium` adicionado entre `small` e `large`.
+- [x] Wrapper Bash corrigido para respeitar cenário e escala.
+- [x] Handoff de execução autorizada preparado para revisão em ambiente com
+  licenças ampliadas.
+- [x] Suíte de testes, gates e geração de artefatos executados nos cenários
+  pequeno, intermediário, limitado, completo e grande.
+- [ ] Revisão humana do time e autorização formal do piloto.
+
+## Beta 69 — apresentação e colaboração interna
+
+- [x] Diagnóstico por módulo com causa provável e próximo passo.
+- [x] Limites configuráveis para timeout/tentativas e retomada segura de checkpoints.
+- [x] Briefing executivo de uma página com score provisório e saúde da coleta.
+- [x] Guia de demonstração e template para feedback estruturado do time.
+- [x] Testes de regressão, validação do pacote e gates técnicos.
+- [ ] Revisão humana do time e eventual autorização formal para um piloto controlado.
+
+Detalhes em [`SPRINT-DELIVERY-BETA69.md`](SPRINT-DELIVERY-BETA69.md). A revisão interna e aprovação de piloto não são inferidas pelos gates técnicos.
+
 ## Beta 64–67 — confiança, privacidade e contexto
 
 - [x] Beta 64 — proteger arquivos locais, documentar retenção e fornecer limpeza manual com prévia.

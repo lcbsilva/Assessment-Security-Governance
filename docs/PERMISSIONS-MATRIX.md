@@ -18,14 +18,16 @@ forem executados.
 | Registro de MFA em lote | Microsoft Graph Reports | `Reports.Read.All` | Tenant | Endpoint `userRegistrationDetails`; preferir esta consulta a N chamadas por usuário |
 | Conditional Access | Microsoft Graph | `Policy.Read.All` | Tenant | Leitura de políticas; não inclui `Policy.ReadWrite.ConditionalAccess` |
 | Sign-in e risco | Microsoft Graph | `AuditLog.Read.All`, `IdentityRiskyUser.Read.All` | Tenant | Pode depender de licença e retenção; a janela de sign-in é limitada e a indisponibilidade vira `not_available` |
-| Funções privilegiadas | Microsoft Graph | `RoleManagement.Read.Directory`, `Directory.Read.All` | Tenant | Identifica membros de funções privilegiadas para calcular MFA de administradores; endpoint opcional |
+| PIM — atribuições ativas | Microsoft Graph | `RoleAssignmentSchedule.Read.Directory` | Tenant | Menor permissão de leitura para instâncias; acesso delegado também exige função Entra compatível (por exemplo, Global Reader ou Security Reader) |
+| PIM — elegibilidade | Microsoft Graph | `RoleEligibilitySchedule.Read.Directory` | Tenant | Menor permissão de leitura para instâncias; acesso delegado também exige função Entra compatível |
+| Definições/funções e membros | Microsoft Graph | `RoleManagement.Read.Directory`, `Directory.Read.All` | Tenant | Usado separadamente para resolver definições e associação de funções; opcional para cobertura de MFA privilegiada |
 | Grupos e convidados | Microsoft Graph | `Group.Read.All`, `User.Read.All` | Tenant | Preferir coleta mínima e mascarar na camada executiva |
 | Secure Score | Microsoft Graph | `SecurityEvents.Read.All` | Tenant | Validar disponibilidade e escopo efetivo do endpoint |
 | Defender alertas | Microsoft Graph | `SecurityIncident.Read.All` | Tenant | Opcional; falha controlada quando Defender/API não estiver disponível |
 | Defender vulnerabilidades | Microsoft Graph | `Vulnerability.Read.All` | Tenant | Opcional; retorna apenas metadados e severidade |
 | Grupos Entra/M365 | Microsoft Graph | `Group.Read.All` | Tenant | Inventário de grupos; não coleta membros neste módulo |
 | Consentimentos de aplicações | Microsoft Graph | `DelegatedPermissionGrant.Read.All` | Tenant | Permissões delegadas e consentimento; não altera grants nem coleta tokens |
-| Licenças M365 | Microsoft Graph | `Organization.Read.All` | Tenant | Somente consumo agregado por SKU |
+| Licenças M365 | Microsoft Graph | `LicenseAssignment.Read.All` | Tenant | Menor permissão para leitura agregada de SKUs; sem consultar atribuições por usuário |
 | Dispositivos Entra ID | Microsoft Graph | `Device.Read.All` | Tenant | Inventário read-only de sistema operacional, confiança, gerenciamento e conformidade |
 | Dispositivos Intune | Microsoft Graph | `DeviceManagementManagedDevices.Read.All` | Tenant | Opcional; requer Intune/licença e pode retornar `not_available` sem quebrar o assessment |
 | Power Platform | Azure Resource Graph | `Reader` | Subscriptions/Management Group | Inventário de metadados; não lê fórmulas, conteúdo, prompts ou dados de negócio |
