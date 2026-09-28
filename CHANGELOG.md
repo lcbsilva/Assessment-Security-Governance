@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0-beta.72
+
+- Adiciona dashboard histórico offline baseado em snapshots locais agregados.
+- Exibe evolução de score, cobertura, versão e status dos módulos sem nova
+  coleta e sem acesso ao tenant.
+- Adiciona wrappers Bash e PowerShell para gerar a visão contínua local.
+- Adiciona teste para garantir que o dashboard não replique evidência textual,
+  IDs ou campos potencialmente sensíveis.
+
 ## 0.2.0-beta.71
 
 - Adiciona matriz reproduzível de validação sintética para os cenários `small`,

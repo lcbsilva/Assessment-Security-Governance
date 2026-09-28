@@ -33,6 +33,7 @@ from beta_gate import run_gate
 from release_gate import read_only_source_scan, release_checks
 from checkpoint import load as load_checkpoint, scope_key, write as write_checkpoint
 from schema_contract import load_schema, validate_schema
+from history_dashboard import load_history, render as render_history_dashboard
 from collect_m365_posture import analyze_domain, collect as collect_m365, capability_manifest
 from quality_audit import audit
 from review_checklist import build as build_review_checklist
@@ -1054,6 +1055,30 @@ class EngineContractTests(unittest.TestCase):
             raise HTTPError("https://dev.azure.com/example", 403, "denied", {}, None)
         result = collect_devops(org_url="https://dev.azure.com/example", pat="super-secret", opener=denied)
         self.assertNotIn("super-secret", json.dumps(result))
+
+    def test_history_dashboard_is_aggregate_only_and_handles_snapshots(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            history = Path(temporary)
+            (history / "run-1.json").write_text(json.dumps({
+                "run_id": "run-1",
+                "collected_at": "2026-09-28T12:00:00Z",
+                "engine_version": "0.2.0-beta.72",
+                "overall_score": 61.2,
+                "coverage": 80.0,
+                "scope": {"users": 10, "secret_scope": "ignored"},
+                "modules": {"identity": {"status": "ok"}, "defender": {"status": "not_available"}},
+                "controls": [{"id": "c1", "score": 1, "status": "pass", "confidence": "high"}],
+                "findings": [{"id": "f1", "control_id": "c1", "severity": "high", "risk_score": 8, "title": "private"}],
+            }), encoding="utf-8")
+            rows = load_history(history)
+            output = render_history_dashboard(history)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["scope"], {"users": 10})
+        self.assertIn("61.2", output)
+        self.assertIn("not_available: 1", output)
+        self.assertNotIn("private", output)
+        self.assertNotIn("secret_scope", output)
+        self.assertIn("nenhum tenant foi acessado", output.lower())
 
 
 if __name__ == "__main__":

@@ -1,5 +1,16 @@
 # Roadmap de sprints — Assessment Security & Governance
 
+## Beta 72 — acompanhamento contínuo local
+
+- [x] Dashboard offline baseado nos snapshots já existentes em `runtime/history/`.
+- [x] Exibição de score, cobertura, versão e status agregado dos módulos.
+- [x] Wrappers Bash e PowerShell para gerar a visão histórica sem nova coleta.
+- [x] Sem dados de usuários, recursos, IDs ou evidências textuais no dashboard.
+- [ ] Validar a tendência com duas ou mais execuções reais autorizadas.
+
+Detalhes: o modo contínuo é uma visão local de snapshots; a coleta permanece
+disparada explicitamente pelo fluxo autorizado e continua somente leitura.
+
 ## Beta 71 — matriz de validação e fechamento técnico
 
 - [x] Matriz offline para cenários `small`, `medium`, `limited`, `full` e `large`.
