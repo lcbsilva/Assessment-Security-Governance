@@ -94,7 +94,7 @@ def validate_payload(path: Path) -> list[str]:
     return sorted(set(errors))
 
 
-def validate(output_dir: Path, ai_payload: Path | None = None) -> dict:
+def validate(output_dir: Path, ai_payload: Path | None = None, assessment: Path | None = None) -> dict:
     pdf_path = output_dir / "assessment-executive-summary.pdf"
     brief_path = output_dir / "assessment-one-page-brief.pdf"
     brief_errors = []
@@ -106,7 +106,16 @@ def validate(output_dir: Path, ai_payload: Path | None = None) -> dict:
             brief_errors.append("Briefing executivo deve conter exatamente uma página")
     except Exception as exc:
         brief_errors.append(f"Briefing PDF não pôde ser validado: {type(exc).__name__}")
+    contract_errors: list[str] = []
+    if assessment is not None and assessment.exists():
+        try:
+            assessment_data = json.loads(assessment.read_text(encoding="utf-8"))
+            if assessment_data.get("metadata", {}).get("contract_status") == "invalid":
+                contract_errors.append("Assessment com metadata.contract_status=invalid")
+        except (OSError, json.JSONDecodeError) as exc:
+            contract_errors.append(f"Assessment não pôde ser lido: {type(exc).__name__}")
     checks = {
+        "contract": contract_errors,
         "html": validate_html(output_dir / "assessment.html") if (output_dir / "assessment.html").exists() else ["assessment.html ausente"],
         "pdf": [] if pdf_path.exists() and pdf_path.read_bytes()[:4] == b"%PDF" and pdf_path.read_bytes().rstrip().endswith(b"%%EOF") else ["PDF ausente, sem assinatura ou incompleto"],
         "one_page_brief": brief_errors,
@@ -123,9 +132,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Valida artefatos gerados sem acessar o tenant")
     parser.add_argument("--output-dir", type=Path, default=Path("dist"))
     parser.add_argument("--ai-payload", type=Path, default=Path("runtime/ai-payload.json"))
+    parser.add_argument("--assessment", type=Path, default=None)
     parser.add_argument("--output", type=Path, default=Path("runtime/artifact-validation.json"))
     args = parser.parse_args()
-    result = validate(args.output_dir, args.ai_payload if args.ai_payload.exists() else None)
+    result = validate(args.output_dir, args.ai_payload if args.ai_payload.exists() else None, args.assessment)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False, indent=2))

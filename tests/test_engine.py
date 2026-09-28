@@ -1,7 +1,9 @@
 import json
 import sys
 import tempfile
+import subprocess
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,7 +26,7 @@ from evidence_quality import classify, summarize
 from insight_engine import risk_intersections, control_evidence, enrich_rbac_identity, cross_domain_insights, prioritize_findings
 from run_assessment import skipped_module, safe_collect
 from run_assessment import load_engagement
-from preflight import estimate, check, module_readiness
+from preflight import estimate, check, module_readiness, permission_check
 from execution_health import summarize as summarize_execution, coverage_map, build_execution_manifest
 from collect_analytics import category, resource_row as analytics_resource_row, powerbi_row
 from collect_cost import anomaly_summary, is_readonly_cost_query_url, query_cost
@@ -311,8 +313,24 @@ class EngineContractTests(unittest.TestCase):
         preflight = (ROOT / "src" / "preflight.py").read_text(encoding="utf-8")
         self.assertIn("preflight.json", preflight)
         self.assertIn("não altera o tenant", preflight)
-        self.assertIn('"[0].id"', preflight)
+        self.assertIn('"[0].name"', preflight)
         self.assertNotIn('"--top", "1"', preflight)
+
+    def test_preflight_permission_probe_timeout_is_warning(self):
+        with patch("preflight.subprocess.run", side_effect=subprocess.TimeoutExpired(["az"], 30)):
+            result = permission_check(["sub-1"])
+        self.assertEqual(result["status"], "warning")
+        self.assertFalse(result["blocking"])
+        self.assertIn("inconclusiva por tempo", result["detail"])
+        decision = "blocked" if result.get("blocking") and result["status"] == "blocked" else "run_full_with_limitations"
+        self.assertNotEqual(decision, "blocked")
+
+    def test_preflight_permission_probe_real_failure_is_blocked(self):
+        failed = subprocess.CompletedProcess(["az"], 1, "", "Forbidden")
+        with patch("preflight.subprocess.run", return_value=failed):
+            result = permission_check(["sub-1"])
+        self.assertEqual(result["status"], "blocked")
+        self.assertTrue(result["blocking"])
 
     def test_readiness_gate_distinguishes_blocking_and_optional_warning(self):
         essential = check("reader", "Leitura", "azure", "blocked", "403", "sem evidência", "conceder Reader", True)

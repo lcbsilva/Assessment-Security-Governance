@@ -29,7 +29,7 @@ foreach ($Profile in @("security", "governance", "full")) {
     Invoke-PythonChecked @("src/generate_report.py", "--data", (Join-Path $out "assessment.json"), "--output", (Join-Path $dist "assessment.html"))
     Invoke-PythonChecked @("src/export_artifacts.py", "--data", (Join-Path $out "assessment.json"), "--output-dir", $dist)
     Invoke-PythonChecked @("src/ai_payload.py", "--data", (Join-Path $out "assessment.json"), "--output", (Join-Path $out "ai-payload.json"))
-    Invoke-PythonChecked @("src/validate_artifacts.py", "--output-dir", $dist, "--ai-payload", (Join-Path $out "ai-payload.json"), "--output", (Join-Path $out "artifact-validation.json"))
+    Invoke-PythonChecked @("src/validate_artifacts.py", "--output-dir", $dist, "--ai-payload", (Join-Path $out "ai-payload.json"), "--assessment", (Join-Path $out "assessment.json"), "--output", (Join-Path $out "artifact-validation.json"))
     Invoke-PythonChecked @("src/artifact_manifest.py", "--output-dir", $dist, "--assessment", (Join-Path $out "assessment.json"), "--input", (Join-Path $out "ai-payload.json"), "--output", (Join-Path $out "artifact-manifest.json"))
     Invoke-PythonChecked @("src/validate_manifest.py", "--manifest", (Join-Path $out "artifact-manifest.json"), "--output-dir", $dist, "--input-dir", $out, "--output", (Join-Path $out "manifest-validation.json"))
     Invoke-PythonChecked @("src/validate_pilot.py", "--data", (Join-Path $out "assessment.json"), "--manifest-validation", (Join-Path $out "manifest-validation.json"), "--output", (Join-Path $out "pilot-validation.json"))
