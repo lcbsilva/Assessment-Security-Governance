@@ -42,7 +42,7 @@ def build_demo(output_root: Path, scenario: str = "full", scale: int = 1) -> dic
     ai_path = runtime / "ai-payload.json"
     run([sys.executable, "src/ai_payload.py", "--data", str(assessment_path), "--output", str(ai_path)])
     artifact_validation = runtime / "artifact-validation.json"
-    run([sys.executable, "src/validate_artifacts.py", "--output-dir", str(dist), "--ai-payload", str(ai_path), "--output", str(artifact_validation)])
+    run([sys.executable, "src/validate_artifacts.py", "--output-dir", str(dist), "--ai-payload", str(ai_path), "--assessment", str(assessment_path), "--output", str(artifact_validation)])
     manifest = runtime / "artifact-manifest.json"
     run([sys.executable, "src/artifact_manifest.py", "--output-dir", str(dist), "--assessment", str(assessment_path), "--input", str(ai_path), "--output", str(manifest)])
     manifest_validation = runtime / "manifest-validation.json"

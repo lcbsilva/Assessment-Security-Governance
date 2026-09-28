@@ -55,7 +55,7 @@ python3 src/export_artifacts.py --data "$REPORT_JSON" --output-dir dist || exit 
 progress "Etapa 4/6 concluída · artefatos gerados"
 progress "Etapa 5/6 · preparando payload de IA agregado e validando artefatos"
 python3 src/ai_payload.py --data "$JSON" --output runtime/ai-payload.json || exit 1
-python3 src/validate_artifacts.py --output-dir dist --ai-payload runtime/ai-payload.json --output runtime/artifact-validation.json
+python3 src/validate_artifacts.py --output-dir dist --ai-payload runtime/ai-payload.json --assessment "$REPORT_JSON" --output runtime/artifact-validation.json
 progress "Etapa 5/6 concluída · validação de artefatos finalizada"
 progress "Etapa 6/6 · gerando manifesto e validando piloto"
 python3 src/artifact_manifest.py --output-dir dist --assessment "$REPORT_JSON" --input runtime/ai-payload.json --output runtime/artifact-manifest.json || exit 1

@@ -13,7 +13,7 @@ from pypdf import PdfReader
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from ai_payload import build
+from ai_payload import SENSITIVE_VALUE_PATTERNS, build
 from validate_artifacts import validate, validate_payload
 
 
@@ -145,6 +145,24 @@ class ArtifactTests(unittest.TestCase):
         result = validate(self.artifact_dir, self.ai_payload)
         self.assertEqual(result["status"], "valid", result["errors"])
         self.assertTrue(result["read_only"])
+
+    def test_artifact_validator_blocks_invalid_contract(self):
+        assessment = json.loads((ROOT / "mock/assessment.json").read_text(encoding="utf-8"))
+        assessment["metadata"]["contract_status"] = "invalid"
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "assessment.json"
+            path.write_text(json.dumps(assessment), encoding="utf-8")
+            result = validate(self.artifact_dir, self.ai_payload, path)
+        self.assertEqual(result["status"], "invalid")
+        self.assertTrue(result["checks"]["contract"])
+
+    def test_executive_artifacts_contain_no_sensitive_patterns(self):
+        pdf_text = "\n".join(page.extract_text() or "" for page in PdfReader(self.artifact_dir / "assessment-executive-summary.pdf").pages)
+        deck = Presentation(self.artifact_dir / "assessment-executive-summary.pptx")
+        pptx_text = " ".join(shape.text for slide in deck.slides for shape in slide.shapes if shape.has_text_frame)
+        for pattern in SENSITIVE_VALUE_PATTERNS:
+            self.assertIsNone(pattern.search(pdf_text), f"Padrão sensível no PDF: {pattern.pattern}")
+            self.assertIsNone(pattern.search(pptx_text), f"Padrão sensível no PPTX: {pattern.pattern}")
 
     def test_ai_payload_validator_rejects_identity_fields(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", encoding="utf-8") as handle:

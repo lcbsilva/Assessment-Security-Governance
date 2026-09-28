@@ -15,6 +15,8 @@ from pathlib import Path
 
 from local_privacy import protect_output_parent
 
+CLI_TIMEOUT = -2
+
 
 def check(name: str, label: str, category: str, status: str, detail: str,
           impact: str, remediation: str, blocking: bool = False) -> dict:
@@ -45,8 +47,10 @@ def run_cli(arguments: list[str], timeout: int = 30) -> tuple[int, str]:
     try:
         result = subprocess.run(command_line(arguments), capture_output=True, text=True, timeout=timeout)
         return result.returncode, (result.stdout or result.stderr).strip()
-    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        return 1, type(exc).__name__
+    except subprocess.TimeoutExpired:
+        return CLI_TIMEOUT, "TimeoutExpired"
+    except FileNotFoundError:
+        return 1, "FileNotFoundError"
 
 
 def command_line(arguments: list[str]) -> list[str]:
@@ -71,17 +75,22 @@ def permission_check(subscription_ids: list[str]) -> dict:
                      "Informe uma ou mais subscription IDs.", True)
     results = []
     for subscription_id in subscription_ids:
-        # O Azure CLI não aceita --top neste comando em algumas versões do
-        # Cloud Shell. A query limita a resposta ao primeiro ID sem depender
-        # de paginação manual e continua sendo uma leitura mínima.
-        code, output = run_cli(["az", "resource", "list", "--subscription", subscription_id, "--query", "[0].id", "--output", "tsv"])
+        code, output = run_cli(["az", "group", "list", "--subscription", subscription_id, "--query", "[0].name", "--output", "tsv"])
         results.append((subscription_id, code, output))
     accessible = [item for item in results if item[1] == 0]
+    timed_out = [item for item in results if item[1] == CLI_TIMEOUT]
+    real_failures = [item for item in results if item[1] != 0 and item[1] != CLI_TIMEOUT]
     if len(accessible) == len(results):
         return check("azure_reader", "Leitura Azure", "azure", "pass",
                      f"Subscription acessível ({len(subscription_ids)} no escopo)",
                      "O inventário e as consultas ARG podem ser executados.",
                      "Nenhuma ação necessária.")
+    if timed_out and not (real_failures and not accessible):
+        scope = ", ".join(item[0] for item in timed_out[:5])
+        detail = f"Sonda inconclusiva por tempo em: {scope}; os coletores revalidam acesso por módulo."
+        return check("azure_reader", "Leitura Azure", "azure", "warning", detail,
+                     "A sonda não confirmou todo o escopo dentro do tempo limite.",
+                     "Revise o resultado por módulo; não é necessário bloquear a coleta por esta sonda.")
     inaccessible = [item[0] for item in results if item[1] != 0]
     detail = f"{len(accessible)}/{len(results)} subscriptions acessíveis; inacessíveis: {', '.join(inaccessible[:5])}"
     if accessible:

@@ -24,7 +24,7 @@ for PROFILE in security governance full; do
   python3 src/generate_report.py --data "$OUT/assessment.json" --output "$DIST/assessment.html"
   python3 src/export_artifacts.py --data "$OUT/assessment.json" --output-dir "$DIST"
   python3 src/ai_payload.py --data "$OUT/assessment.json" --output "$OUT/ai-payload.json"
-  python3 src/validate_artifacts.py --output-dir "$DIST" --ai-payload "$OUT/ai-payload.json" --output "$OUT/artifact-validation.json"
+  python3 src/validate_artifacts.py --output-dir "$DIST" --ai-payload "$OUT/ai-payload.json" --assessment "$OUT/assessment.json" --output "$OUT/artifact-validation.json"
   python3 src/artifact_manifest.py --output-dir "$DIST" --assessment "$OUT/assessment.json" --input "$OUT/ai-payload.json" --output "$OUT/artifact-manifest.json"
   python3 src/validate_manifest.py --manifest "$OUT/artifact-manifest.json" --output-dir "$DIST" --input-dir "$OUT" --output "$OUT/manifest-validation.json"
   python3 src/validate_pilot.py --data "$OUT/assessment.json" --manifest-validation "$OUT/manifest-validation.json" --output "$OUT/pilot-validation.json"

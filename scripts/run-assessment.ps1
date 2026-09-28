@@ -66,7 +66,7 @@ Write-ProgressStage "Etapa 4/6 concluída · artefatos gerados"
 Write-ProgressStage "Etapa 5/6 · preparando payload de IA agregado e validando artefatos"
 python src/ai_payload.py --data $json --output (Join-Path $OutputRoot "ai-payload.json")
 if ($LASTEXITCODE -ne 0) { throw "A geração do payload de IA falhou." }
-python src/validate_artifacts.py --output-dir dist --ai-payload (Join-Path $OutputRoot "ai-payload.json") --output (Join-Path $OutputRoot "artifact-validation.json")
+python src/validate_artifacts.py --output-dir dist --ai-payload (Join-Path $OutputRoot "ai-payload.json") --assessment $reportJson --output (Join-Path $OutputRoot "artifact-validation.json")
 if ($LASTEXITCODE -ne 0) {
     throw "Validação dos artefatos falhou. Consulte $(Join-Path $OutputRoot 'artifact-validation.json')."
 }
