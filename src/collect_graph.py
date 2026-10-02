@@ -66,7 +66,7 @@ def user_posture(user: dict) -> tuple[str, str]:
     signals = []
     if user.get("privileged") and user.get("mfa_status") == "Not registered":
         signals.append("Privilegiado sem MFA")
-    if user.get("account_type", "").lower() == "guest":
+    if str(user.get("account_type") or "").lower() == "guest":
         signals.append("Convidado externo")
     if user.get("account_enabled") is False:
         signals.append("Conta desabilitada")
@@ -173,6 +173,7 @@ def enrich_pim_rows(rows: list[dict], users: list[dict]) -> list[dict]:
     for row in rows:
         scope = str(row.get("scope", "—"))
         row["principal_name"] = names.get(str(row.get("principal_id")), "Principal não resolvido")
+        row["principal_resolution"] = "resolved" if row["principal_name"] != "Principal não resolvido" else "insufficient_evidence"
         row["scope_kind"] = (
             "Tenant" if scope in {"/", "—"} else
             "Administrative unit" if scope.lower().startswith("/administrativeunits/") else
