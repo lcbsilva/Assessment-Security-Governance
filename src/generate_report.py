@@ -105,7 +105,7 @@ def calculate(catalog: dict, data: dict) -> tuple[dict, float, float]:
     return domain_scores, overall, coverage
 
 
-def render_table(items: list[dict], columns: list[tuple[str, str]]) -> str:
+def render_table(items: list[dict], columns: list[tuple[str, str]], table_class: str = "") -> str:
     """Renderiza tabelas de discovery usando somente dados normalizados."""
     if not items:
         return '<div class="empty">Nenhum registro disponível neste módulo.</div>'
@@ -113,9 +113,10 @@ def render_table(items: list[dict], columns: list[tuple[str, str]]) -> str:
     headers = "".join(f"<th>{esc(label)}</th>" for _, label in columns)
     rows = []
     for item in items:
-        cells = "".join(f"<td>{esc(item.get(key, '—'))}</td>" for key, _ in columns)
+        cells = "".join(f"<td>{esc('—' if item.get(key) is None else item.get(key, '—'))}</td>" for key, _ in columns)
         rows.append(f"<tr>{cells}</tr>")
-    return f'<div class="table-scroll"><table data-filterable="true"><thead><tr>{headers}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>'
+    class_attr = f' class="{esc(table_class)}"' if table_class else ""
+    return f'<div class="table-scroll"><table{class_attr} data-filterable="true"><thead><tr>{headers}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>'
 
 
 def render_microsoft_zero_trust(data: dict, catalog: dict) -> str:
@@ -421,26 +422,49 @@ def render_lifecycle(data: dict) -> str:
     cost_rows = data.get("discovery", {}).get("cost_summary", [])
     finops = data.get("discovery", {}).get("finops_summary", {})
     benefits = data.get("discovery", {}).get("benefits", [])
+    has_cloud_shell_cost = any(
+        str(item.get("ResourceGroupName", "")).lower().startswith("cloud-shell-storage")
+        for item in cost_rows
+    )
+    cost_note = (
+        "A amostra inclui armazenamento do Cloud Shell; trate esse valor como custo operacional do laboratório, "
+        "não como oportunidade de otimização do cliente."
+        if has_cloud_shell_cost
+        else "Valores observados no período configurado; confirme escopo, moeda e janela antes de propor economia."
+    )
+    def known_age(item: dict) -> bool:
+        try:
+            count = int(item.get("resources", 0) or 0)
+        except (TypeError, ValueError):
+            count = 0
+        return str(item.get("age_band", "")).lower() not in {"data desconhecida", "unknown", "—"} and count > 0
+
+    age_has_known_data = any(known_age(item) for item in age_rows)
+    advisor_context = (
+        f"{len(advisor_rows)} recomendação(ões) única(s) foram retornadas; confirme owner, impacto e dependências antes de encaminhar."
+        if advisor_rows
+        else "Nenhuma recomendação do Advisor foi retornada nesta execução."
+    )
     return f'''<section class="section" id="lifecycle">
   <h2>FinOps e ciclo de vida</h2>
-  <p class="section-intro">Identificação de desperdícios potenciais, recursos antigos e serviços em aposentadoria. O assessment somente recomenda e documenta ações; não exclui nem altera recursos.</p>
+  <p class="section-intro">Evidências para decidir onde investigar custo, dependência e ciclo de vida. O assessment somente recomenda e documenta ações; não exclui nem altera recursos.</p>
   <div class="mini-grid">{metrics}</div>
-  <div class="panel"><h3>Recursos órfãos e custo potencial</h3>{render_table(orphan_rows, [
+  <div class="panel"><h3>Recursos sem associação demonstrada</h3><p class="section-intro">Nenhum registro aqui significa que nenhum órfão foi demonstrado nesta execução; não significa que todo recurso esteja validado.</p>{render_table(orphan_rows, [
       ("name", "Recurso"), ("type", "Tipo"), ("subscription", "Subscription"),
       ("resource_group", "Resource group"), ("reason", "Motivo"), ("monthly_cost", "Custo/mês"),
-      ("last_activity", "Última atividade"), ("owner", "Owner"), ("recommended_action", "Ação recomendada")])}</div>
-  <div class="panel"><h3>Recomendações oficiais do Azure Advisor</h3><p class="section-intro">Recomendações ativas retornadas pelo Azure Advisor. O assessment apenas organiza evidências e não aplica as ações.</p>{render_table(advisor_rows, [
+      ("last_activity", "Última atividade"), ("owner", "Owner"), ("recommended_action", "Ação recomendada")], "finops-table")}</div>
+  <div class="panel"><h3>Recomendações oficiais do Azure Advisor</h3><p class="section-intro">{esc(advisor_context)} O assessment apenas organiza evidências e não aplica as ações.</p>{render_table(advisor_rows, [
       ("category", "Categoria"), ("impact", "Impacto"), ("description", "Recomendação"),
       ("subscription", "Subscription"), ("resource_group", "Resource group"), ("resource_id", "Recurso afetado"),
-      ("annual_savings", "Economia anual"), ("currency", "Moeda"), ("last_updated", "Atualizada em"), ("status", "Status")])}</div>
-  <div class="panel"><h3>Custos por recurso — Cost Management</h3><p class="section-intro">Consulta agregada do período configurado, agrupada por recurso quando a API e a permissão permitem. Valores não representam economia garantida.</p>{render_table(cost_rows, [("ResourceId", "Resource ID"), ("ResourceGroupName", "Resource group"), ("PreTaxCost", "Custo"), ("Currency", "Moeda")])}</div>
-  <div class="panel"><h3>FinOps avançado: distribuição e anomalias</h3><p class="section-intro">Consolida custo por resource group e tipo de recurso, além de uma heurística conservadora de picos diários. Não é alerta oficial nem promessa de economia.</p>{render_table([finops] if finops else [], [("cost_total_period", "Custo no período"), ("currency", "Moeda"), ("resource_groups", "Resource groups"), ("resource_types", "Tipos de recurso"), ("reservations", "Reservas"), ("savings_plans", "Savings Plans")])}{render_table(finops.get("cost_by_resource_group", []), [("resource_group", "Resource group"), ("cost", "Custo")])}{render_table(finops.get("cost_by_resource_type", []), [("resource_type", "Tipo de recurso"), ("cost", "Custo")])}{render_table((finops.get("anomalies") or {}).get("anomaly_days", []), [("date", "Data"), ("cost", "Custo"), ("baseline", "Mediana"), ("signal", "Sinal")])}</div>
-  <div class="panel"><h3>Reservas e Savings Plans — inventário</h3><p class="section-intro">Metadados expostos pelo Resource Graph. Quantidade zero significa que nenhum recurso foi retornado neste escopo, não que não exista benefício em outro contrato ou billing account.</p>{render_table(benefits, [("name", "Nome"), ("benefit_kind", "Tipo"), ("type", "Resource type"), ("subscription", "Subscription"), ("resource_group", "Resource group"), ("region", "Região")])}</div>
+      ("annual_savings", "Economia anual"), ("currency", "Moeda"), ("last_updated", "Atualizada em"), ("status", "Status")], "finops-table")}</div>
+  <div class="panel"><h3>Custos por recurso — Cost Management</h3><p class="section-intro">Consulta agregada do período configurado, agrupada por recurso quando a API e a permissão permitem. {esc(cost_note)}</p>{render_table(cost_rows, [("ResourceId", "Resource ID"), ("ResourceGroupName", "Resource group"), ("PreTaxCost", "Custo"), ("Currency", "Moeda")], "finops-table")}</div>
+  <div class="panel"><h3>FinOps avançado: distribuição e anomalias</h3><p class="section-intro">Distribuição por resource group e tipo de recurso, com heurística conservadora de picos diários. É sinal para investigação, não alerta oficial nem promessa de economia.</p>{render_table([finops] if finops else [], [("cost_total_period", "Custo no período"), ("currency", "Moeda"), ("resource_groups", "Resource groups"), ("resource_types", "Tipos de recurso"), ("reservations", "Reservas"), ("savings_plans", "Savings Plans")], "finops-table")}{render_table(finops.get("cost_by_resource_group", []), [("resource_group", "Resource group"), ("cost", "Custo")], "finops-table")}{render_table(finops.get("cost_by_resource_type", []), [("resource_type", "Tipo de recurso"), ("cost", "Custo")], "finops-table")}{render_table((finops.get("anomalies") or {}).get("anomaly_days", []), [("date", "Data"), ("cost", "Custo"), ("baseline", "Mediana"), ("signal", "Sinal")], "finops-table")}</div>
+  <div class="panel"><h3>Reservas e Savings Plans — inventário</h3><p class="section-intro">Metadados expostos pelo Resource Graph. Quantidade zero significa que nenhum recurso foi retornado neste escopo, não que não exista benefício em outro contrato ou billing account.</p>{render_table(benefits, [("name", "Nome"), ("benefit_kind", "Tipo"), ("type", "Resource type"), ("subscription", "Subscription"), ("resource_group", "Resource group"), ("region", "Região")], "finops-table")}</div>
   <div class="panel"><h3>Serviços e features em aposentadoria</h3>{render_table(retirement_rows, [
       ("service", "Serviço"), ("feature", "Feature"), ("retirement_date", "Data de aposentadoria"),
       ("days_remaining", "Dias restantes"), ("impacted_resources", "Recursos impactados"),
       ("action", "Ação"), ("owner", "Owner"), ("status", "Status")])}</div>
-  <div class="panel"><h3>Idade dos recursos</h3>{render_table(age_rows, [("age_band", "Faixa de idade"), ("resources", "Recursos"), ("percentage", "% do inventário")])}</div>
+  <div class="panel"><h3>Idade dos recursos</h3><p class="section-intro">A idade só é exibida como evidência quando a data de criação está disponível no inventário; data desconhecida não é interpretada como recurso antigo.</p>{render_table(age_rows if age_has_known_data else [], [("age_band", "Faixa de idade"), ("resources", "Recursos"), ("percentage", "% do inventário")], "finops-table")}</div>
   <div class="notice"><b>Runbook seguro:</b> primeiro confirmar dependência, owner, criticidade, backup e janela de mudança. Somente depois registrar aprovação para anexar, mover, atualizar ou descomissionar.</div>
 </section>'''
 
@@ -471,7 +495,10 @@ def render_comparison(data: dict) -> str:
         return ""
     score = comparison.get("overall_score", {})
     coverage = comparison.get("coverage", {})
-    rows = [{"metric": "Score geral", "previous": score.get("previous", "N/D"), "current": score.get("current", "N/D"), "delta": "—" if score.get("previous") is None or score.get("current") is None else round(score["current"] - score["previous"], 2)}, {"metric": "Cobertura", "previous": coverage.get("previous", "N/D"), "current": coverage.get("current", "N/D"), "delta": coverage.get("delta", "—")}, {"metric": "Score no conjunto comparável", "previous": "—", "current": comparison.get("comparability", {}).get("average_delta_on_overlap", "N/D"), "delta": "variação média"}]
+    def display(value: object) -> object:
+        return "N/D" if value is None else value
+
+    rows = [{"metric": "Score geral", "previous": display(score.get("previous")), "current": display(score.get("current")), "delta": "—" if score.get("previous") is None or score.get("current") is None else round(score["current"] - score["previous"], 2)}, {"metric": "Cobertura", "previous": display(coverage.get("previous")), "current": display(coverage.get("current")), "delta": display(coverage.get("delta"))}, {"metric": "Score no conjunto comparável", "previous": "—", "current": display(comparison.get("comparability", {}).get("average_delta_on_overlap")), "delta": "variação média"}]
     comparability = comparison.get("comparability", {})
     notice = "A cobertura mudou; use a variação média no conjunto comparável para interpretar tendência." if comparability.get("coverage_changed") else "A cobertura permaneceu estável; a variação média usa controles avaliados nas duas execuções."
     return f'''<section class="section panel" id="trend"><h2>Evolução entre execuções</h2><p class="section-intro">Comparação histórica de métricas agregadas. Mudanças de permissão, escopo ou licença podem alterar a cobertura sem representar evolução real.</p>{render_table(rows, [("metric", "Métrica"), ("previous", "Anterior"), ("current", "Atual"), ("delta", "Variação")])}<div class="notice"><b>Comparabilidade:</b> {esc(comparability.get("comparable_controls", 0))} controles avaliados nas duas execuções. {esc(notice)}</div><p><b>Achados novos:</b> {esc(len(comparison.get("findings_new", [])))} · <b>Achados resolvidos:</b> {esc(len(comparison.get("findings_resolved", [])))}</p></section>'''
@@ -907,12 +934,17 @@ header{{background:linear-gradient(120deg,#102a43 0%,#174a5b 58%,#1f7a8c 100%)}}
 .value-strip{{background:#102a43}}
 .finding-actions button{{color:#0f5b78}}
 .finding-actions button:hover{{border-color:#5eb7c6;background:#f0fafb}}
+.finops-table{{min-width:900px;table-layout:auto}}
+.finops-table th,.finops-table td{{vertical-align:top}}
+.finops-table td{{overflow-wrap:anywhere;word-break:break-word;white-space:normal}}
+.finops-table td:first-child{{min-width:150px}}
+.finops-table td:nth-child(6){{min-width:220px;max-width:440px}}
+.panel .table-scroll{{border:1px solid var(--line);border-radius:10px;background:#fff}}
 @media(max-width:800px){{.nav{{top:0;width:calc(100vw - 32px);margin:8px auto 18px;padding:8px;border-radius:12px;gap:6px}}.nav a,.nav-group>summary{{min-height:34px;padding:0 10px}}.nav-row{{gap:6px}}.nav a{{white-space:nowrap}}.nav-divider{{margin:0 1px}}.nav-group>div{{position:absolute;top:calc(100% + 6px);left:auto;right:0;max-width:min(80vw,280px);max-height:65vh;overflow:auto}}.to-top{{right:16px;bottom:16px}}.to-top span{{display:none}}}}
 </style></head><body class="exec-view">
 <header><div class="wrap hero"><div class="brand"><span class="brand-mark">SWO</span><span class="brand-name">Software<em>One</em></span><span>·</span><span>SECURITY & GOVERNANCE</span></div><div class="hero-label">{esc(meta.get("classification", "Confidencial — Security & Governance Assessment"))}</div><h1>Visibilidade para decidir. Evidência para agir.</h1><p>{esc(meta.get("engagement_name", "Assessment Executivo de Segurança e Governança"))}</p><div class="hero-pillars"><span><b>Descobrir</b> exposição</span><span><b>Governar</b> identidades e recursos</span><span><b>Otimizar</b> risco e investimento</span></div><div class="hero-meta"><span>{esc(meta["customer_name"])}</span><span>{esc(meta.get("consultant_name", "Consultor não informado"))}</span><span>Execução: {esc(meta["collected_at"])} UTC</span><span>Run ID: {esc(meta["run_id"])}</span></div></div></header>
 <main class="wrap">
 {coverage_notice}
-<nav class="nav" aria-label="Navegação do relatório"><div class="nav-row"><div class="view-switcher" role="group" aria-label="Modo de leitura"><button class="view-button active" type="button" data-view-target="executive">Executivo</button><button class="view-button" type="button" data-view-target="technical">Técnico</button><button class="view-button" type="button" data-view-target="full">Completo</button></div><span class="nav-divider"></span><a href="#executive-summary">Resumo</a><a href="#coverage">Domínios</a><a href="#risks">Riscos</a>{zero_trust_nav}</div><div class="nav-row"><details class="nav-group"><summary>Plano de ação</summary><div><a href="#priority-matrix">Matriz de prioridade</a><a href="#decision-layer">Decisões</a><a href="#analysis">Plano 30/60/90</a><a href="#lifecycle">FinOps e ciclo de vida</a></div></details><details class="nav-group"><summary>Evidências</summary><div><a href="#discovery">Discovery técnico</a><a href="#controls">Controles do engine</a><a href="#runbooks">Runbooks</a><a href="#transparency">Limitações</a></div></details><details class="nav-group"><summary>Execução</summary><div>{readiness_nav}<a href="#inventory-overview">Números do escopo</a></div></details></div></nav><button class="to-top" type="button" aria-label="Voltar ao topo">↑ <span>Topo</span></button>
 <nav class="nav" aria-label="Navegação do relatório"><div class="nav-row"><div class="view-switcher" role="group" aria-label="Modo de leitura"><button class="view-button active" type="button" data-view-target="executive">Executivo</button><button class="view-button" type="button" data-view-target="technical">Técnico</button><button class="view-button" type="button" data-view-target="full">Completo</button></div><span class="nav-divider"></span><a href="#executive-summary">Resumo</a><a href="#coverage">Domínios</a><a href="#risks">Riscos</a>{zero_trust_nav}</div><div class="nav-row"><details class="nav-group"><summary>Plano de ação</summary><div><a href="#priority-matrix">Matriz de prioridade</a><a href="#decision-layer">Decisões</a><a href="#analysis">Plano 30/60/90</a><a href="#lifecycle">FinOps e ciclo de vida</a></div></details><details class="nav-group"><summary>Evidências</summary><div><a href="#discovery">Discovery técnico</a><a href="#controls">Controles do engine</a><a href="#runbooks">Runbooks</a><a href="#transparency">Limitações</a></div></details><details class="nav-group"><summary>Execução</summary><div>{readiness_nav}<a href="#inventory-overview">Números do escopo</a></div></details></div></nav><button class="to-top" type="button" aria-label="Voltar ao topo">↑ <span>Topo</span></button>
 <section class="section summary-grid" id="executive-summary"><div class="executive"><div class="eyebrow">Leitura executiva</div><h2>O que este resultado significa</h2><p>A postura atual apresenta <b>{score_text.lower()}</b>, com maior necessidade de atenção em <b>{esc(priority_domain)}</b>. O assessment identificou <b>{len(findings)} riscos priorizados</b> e <b>{len(quick_wins)} ações de baixo esforço</b> que podem iniciar a evolução imediatamente.</p><p><b>Ponto forte:</b> {esc(strengths_text)}.</p><div class="notice"><b>Mensagem para liderança:</b> o maior risco deve ser interpretado junto com a cobertura, as limitações e a qualidade da evidência desta execução.</div></div><div class="score-panel"><div class="score-ring"><div><b>{score_display}</b><span>{"/ 100" if overall is not None else "sem score"}</span></div></div><div class="score-copy"><h3>{score_text}</h3><p>{esc(score_methodology.get("name", "Score ponderado pelos controles disponíveis"))}. Cobertura geral: <b>{coverage:.0f}%</b>. {esc(score_methodology.get("coverage_rule", "A interpretação deve considerar licenças e limitações."))}</p></div></div></section>
 {executive_security_kpis}
