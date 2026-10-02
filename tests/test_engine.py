@@ -743,6 +743,7 @@ class EngineContractTests(unittest.TestCase):
         self.assertIn('aria-label="Navegação do relatório"', html)
         self.assertIn('class="to-top"', html)
         self.assertIn(".nav-row{display:contents}", html)
+        self.assertNotIn("Radar de maturidade", html)
 
     def test_report_findings_have_local_decision_actions(self):
         from generate_report import render
