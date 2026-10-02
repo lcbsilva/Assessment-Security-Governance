@@ -95,10 +95,10 @@ def risk_intersections(discovery: dict) -> list[dict]:
     missing_admin_mfa = sum(1 for user in users if user.get("privileged") is True and user.get("mfa_status") == "Not registered")
     if missing_admin_mfa:
         intersections.append({"id": "X-001", "title": "Privilégio administrativo combinado com ausência de MFA", "severity": "critical", "risk": 92, "affected": missing_admin_mfa, "evidence": f"{missing_admin_mfa} contas privilegiadas sem MFA registrado", "action": "Proteger administradores com MFA resistente a phishing e revisar exceções."})
-    public_unowned = [item for item in resources if str(item.get("exposure", "")).lower().startswith("public") and (not item.get("owner") or item.get("owner") == "A definir")]
+    public_unowned = [item for item in resources if str(item.get("exposure", "")).lower().startswith("public") and item.get("exposure_class", "confirmed") in {"confirmed", "heuristic"} and (not item.get("owner") or item.get("owner") == "A definir")]
     if public_unowned:
         intersections.append({"id": "X-002", "title": "Exposição pública sem owner identificado", "severity": "high", "risk": 88, "affected": len(public_unowned), "evidence": f"{len(public_unowned)} recursos públicos sem owner identificado", "action": "Confirmar criticidade, owner e necessidade de exposição antes de qualquer correção."})
-    public_untagged = [item for item in resources if str(item.get("exposure", "")).lower().startswith("public") and ("Nenhuma" in str(item.get("tags", "")) or "env" not in str(item.get("tags", "")).lower())]
+    public_untagged = [item for item in resources if str(item.get("exposure", "")).lower().startswith("public") and item.get("exposure_class", "confirmed") in {"confirmed", "heuristic"} and ("Nenhuma" in str(item.get("tags", "")) or "env" not in str(item.get("tags", "")).lower())]
     if public_untagged:
         intersections.append({"id": "X-003", "title": "Exposição pública com governança de tags incompleta", "severity": "high", "risk": 84, "affected": len(public_untagged), "evidence": f"{len(public_untagged)} recursos públicos sem taxonomia mínima demonstrada", "action": "Associar owner, ambiente e criticidade ao inventário para priorizar proteção."})
     privileged_rbac_without_mfa = [item for item in discovery.get("rbac", []) if item.get("access_risk") in {"Crítico", "Alto"} and item.get("principal_mfa") == "Not registered"]
@@ -239,7 +239,7 @@ def cross_domain_insights(discovery: dict) -> list[dict]:
     if high_consent:
         insights.append({"id": "I-006", "domain": "Application Governance", "severity": "high", "risk": 87, "affected": len(high_consent), "title": "Consentimentos OAuth de alto impacto", "evidence": f"{len(high_consent)} consentimentos demonstram escopos de alto impacto.", "action": "Validar publisher, owner, justificativa e menor privilégio do consentimento."})
 
-    public_no_owner = [r for r in resources if str(r.get("exposure", "")).lower().startswith("public") and r.get("owner") in {None, "", "A definir"}]
+    public_no_owner = [r for r in resources if str(r.get("exposure", "")).lower().startswith("public") and r.get("exposure_class", "confirmed") in {"confirmed", "heuristic"} and r.get("owner") in {None, "", "A definir"}]
     if public_no_owner:
         insights.append({"id": "I-007", "domain": "Azure Security + Governance", "severity": "critical", "risk": 93, "affected": len(public_no_owner), "title": "Exposição pública sem responsabilização demonstrada", "evidence": f"{len(public_no_owner)} recursos públicos não demonstram owner.", "action": "Priorizar validação de criticidade, owner e necessidade de exposição."})
 
