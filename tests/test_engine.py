@@ -744,6 +744,13 @@ class EngineContractTests(unittest.TestCase):
         self.assertIn('class="to-top"', html)
         self.assertIn(".nav-row{display:contents}", html)
 
+    def test_report_findings_have_local_decision_actions(self):
+        from generate_report import render
+        html = render(self.catalog, json.loads(json.dumps(self.mock)), {"runbooks": []})
+        self.assertIn("data-review-status=\"in_review\"", html)
+        self.assertIn("data-copy-finding", html)
+        self.assertIn("Marcar resolvido", html)
+
     def test_resource_exposure_distinguishes_confirmed_and_heuristic(self):
         confirmed = resource_row({"id": "/subscriptions/x", "type": "Microsoft.Network/publicIPAddresses", "properties": {}, "tags": {}})
         heuristic = resource_row({"id": "/subscriptions/x", "type": "Microsoft.Web/sites", "properties": {}, "tags": {}})
