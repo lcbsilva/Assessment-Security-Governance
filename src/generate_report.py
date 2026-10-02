@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import html
 import json
-import math
 import argparse
 from collections import Counter
 from datetime import datetime
@@ -104,40 +103,6 @@ def calculate(catalog: dict, data: dict) -> tuple[dict, float, float]:
     evaluated_controls = sum(1 for item in controls if item["status"] not in {"not_available", "error", "not_run"} and item.get("evidence_state") != "INSUFFICIENT_EVIDENCE")
     coverage = evaluated_controls / len(catalog["controls"]) * 100 if catalog["controls"] else 0
     return domain_scores, overall, coverage
-
-
-def radar_svg(domain_scores: dict) -> str:
-    labels = list(domain_scores.values())
-    cx, cy, radius = 180, 150, 105
-    points = []
-    for index, item in enumerate(labels):
-        angle = -math.pi / 2 + (2 * math.pi * index / len(labels))
-        value = (item["score"] or 0) / 100
-        x = cx + radius * value * math.cos(angle)
-        y = cy + radius * value * math.sin(angle)
-        points.append(f"{x:.1f},{y:.1f}")
-    grid = []
-    for level in (0.25, 0.5, 0.75, 1):
-        ring = []
-        for index in range(len(labels)):
-            angle = -math.pi / 2 + (2 * math.pi * index / len(labels))
-            ring.append(f"{cx + radius * level * math.cos(angle):.1f},{cy + radius * level * math.sin(angle):.1f}")
-        grid.append(f'<polygon points="{" ".join(ring)}" class="radar-grid" />')
-    axes = []
-    texts = []
-    for index, item in enumerate(labels):
-        angle = -math.pi / 2 + (2 * math.pi * index / len(labels))
-        x2 = cx + radius * math.cos(angle)
-        y2 = cy + radius * math.sin(angle)
-        tx = cx + (radius + 28) * math.cos(angle)
-        ty = cy + (radius + 28) * math.sin(angle) + 4
-        axes.append(f'<line x1="{cx}" y1="{cy}" x2="{x2:.1f}" y2="{y2:.1f}" class="radar-axis" />')
-        texts.append(f'<text x="{tx:.1f}" y="{ty:.1f}" class="radar-label" text-anchor="middle">{esc(item["name"])}</text>')
-    return f'''<svg viewBox="0 0 360 300" role="img" aria-label="Radar de scores por domínio">
-      {"".join(grid)}{"".join(axes)}
-      <polygon points="{" ".join(points)}" class="radar-value" />
-      {"".join(texts)}
-    </svg>'''
 
 
 def render_table(items: list[dict], columns: list[tuple[str, str]]) -> str:
@@ -829,7 +794,6 @@ header:after{{content:"";position:absolute;width:380px;height:380px;border:1px s
 .card{{position:relative;overflow:hidden}}.card:before{{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(var(--purple),var(--magenta))}}.metric-label{{color:var(--muted);font-size:12px}}.metric{{font-size:34px;font-weight:800;color:var(--purple);letter-spacing:-1px}}.metric small{{font-size:14px;color:var(--muted);letter-spacing:0}}.metric-note{{display:block;color:var(--muted);font-size:11px;margin-top:2px}}
 .dashboard{{display:grid;grid-template-columns:1fr 1.2fr;gap:16px}}.domains{{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}}.domain-name{{font-weight:700}}.domain-score{{font-size:28px;font-weight:700;margin:5px 0}}.good{{color:var(--green)}}.warn{{color:var(--orange)}}.bad{{color:var(--red)}}.bar{{height:7px;background:#eee8f1;border-radius:8px;overflow:hidden}}.bar span{{display:block;height:100%;background:linear-gradient(90deg,var(--purple),var(--magenta));border-radius:8px}}
 .domain-score.unavailable{{color:#a49cab;font-size:22px}}.domain-card:has(.unavailable){{background:#faf9fb}}
-.radar svg{{width:100%;height:285px}}.radar-grid{{fill:none;stroke:#ded5e5;stroke-width:1}}.radar-axis{{stroke:#e5dfea;stroke-width:1}}.radar-value{{fill:#5b2a8644;stroke:var(--magenta);stroke-width:2}}.radar-label{{fill:var(--muted);font-size:10px}}
 .finding-list{{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}}.finding{{border-top:4px solid var(--red)}}.finding-top{{display:flex;justify-content:space-between;align-items:center}}.severity,.status{{border-radius:99px;padding:4px 9px;font-size:11px;font-weight:700}}.severity.critical,.severity.high{{background:#fde3e7;color:var(--red)}}.severity.medium{{background:#fff0d6;color:var(--orange)}}.severity.low{{background:#e4f5ed;color:var(--green)}}.risk{{font-size:12px;color:var(--muted)}}details{{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}}summary{{cursor:pointer;color:var(--purple);font-weight:700}}
 .finding-meta{{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;color:var(--muted);font-size:11px}}.finding-meta span{{background:#f7f4f8;border-radius:6px;padding:4px 7px}}
 .execution-context-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}}.execution-context .panel p{{margin:8px 0;font-size:12px;overflow-wrap:anywhere}}.execution-limitations{{background:#fff;border:1px solid var(--line);border-radius:10px;padding:0 14px 12px}}.impact-note{{font-size:12px;color:#475467;background:#f8fafc;border-left:3px solid #00aeea;padding:9px 11px}}
@@ -852,7 +816,6 @@ header:after{{border-color:#ffffff22;box-shadow:0 0 0 28px #00aeea12,0 0 0 58px 
 .card:before{{background:linear-gradient(var(--purple),var(--magenta))}}
 .metric,.mini b{{color:var(--deep)}}
 .bar span{{background:linear-gradient(90deg,#00aeea,var(--magenta))}}
-.radar-value{{fill:#00aeea26;stroke:var(--magenta)}}
 th{{background:#eef7fb;color:#075985}}
 .nav{{position:sticky;top:0;z-index:20;padding:10px 0;background:#f6f7f9ee;backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}}
 .view-switcher{{display:flex;gap:4px;background:#111827;border-radius:10px;padding:4px;box-shadow:0 4px 12px #10182818}}.view-button{{border:0;background:transparent;color:#cbd5e1;border-radius:7px;padding:7px 11px;font:700 11px Inter,Segoe UI,Arial,sans-serif;cursor:pointer}}.view-button:hover,.view-button.active{{background:#00aeea;color:#fff}}.nav-divider{{width:1px;background:#d0d5dd;margin:0 3px}}body.exec-view .technical-only{{display:none!important}}body.technical-view .executive-only{{display:none!important}}body.exec-view .section-caption{{display:inline}}.section-caption{{color:#667085;font-size:11px;font-weight:600}}.executive-matrix{{margin-top:24px}}.risk-matrix{{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;position:relative}}.matrix-quadrant{{min-height:150px;border:1px solid var(--line);border-radius:13px;padding:15px;background:#fff;border-left:4px solid #98a2b3}}.matrix-quadrant h4{{margin:0 0 8px;color:#172b4d;font-size:13px}}.matrix-quadrant ul{{margin:0;padding-left:18px}}.matrix-quadrant li{{font-size:12px;margin:5px 0;color:#344054}}.matrix-quadrant li span{{display:block;color:#667085;font-size:10px;margin-top:1px}}.matrix-quadrant.quick{{border-left-color:#12b76a;background:linear-gradient(135deg,#fff,#f0fdf4)}}.matrix-quadrant.strategic{{border-left-color:#e6007e;background:linear-gradient(135deg,#fff,#fff1f7)}}.matrix-quadrant.planned{{border-left-color:#00aeea;background:linear-gradient(135deg,#fff,#effaff)}}.matrix-quadrant.backlog{{border-left-color:#98a2b3;background:#fafafa}}.matrix-empty{{color:#98a2b3!important;font-style:italic}}.nav a{{transition:color .15s ease,border-color .15s ease,transform .15s ease}}.nav a:hover{{transform:translateY(-1px)}}
@@ -911,12 +874,45 @@ th{{background:#eef7fb;color:#075985}}
 .finding[data-review-status="shared"] .review-state{{background:#e0f2fe;color:#075985}}
 .finding[data-review-status="resolved"]{{border-top-color:#12b76a;opacity:.86}}
 .finding[data-review-status="resolved"] .review-state{{background:#dcfae6;color:#087443}}
+/* Final visual system: neutral canvas, navy structure, teal action, status colors only. */
+:root{{--ink:#243447;--muted:#66788a;--purple:#0f5b78;--deep:#102a43;--magenta:#1f7a8c;--pink:#5eb7c6;--bg:#f4f6f8;--card:#fff;--line:#d9e2ec;--green:#157a6e;--orange:#b7791f;--red:#b42318}}
+body{{background:var(--bg);color:var(--ink)}}
+header{{background:linear-gradient(120deg,#102a43 0%,#174a5b 58%,#1f7a8c 100%)}}
+.hero{{padding-top:28px;padding-bottom:30px}}
+.hero-label{{margin-top:30px;color:#d8edf0}}
+.hero-pillars span{{border-color:#ffffff2e;background:#ffffff10}}
+.hero-pillars b,.brand-name em{{color:#8bd3dc}}
+.eyebrow{{color:#0f7180}}
+.executive{{background:#fff;border-color:#d9e2ec;box-shadow:0 8px 24px #102a4314}}
+.score-panel{{background:#102a43;box-shadow:0 8px 24px #102a4326}}
+.score-ring{{background:conic-gradient(var(--pink) 0 {score_fill:.0f}%,#ffffff18 0)}}
+.score-ring:after{{background:#102a43}}
+.panel,.card,.finding,.insights{{box-shadow:0 6px 18px #102a4310}}
+.panel{{border-radius:12px}}
+.domain-overview{{background:#fff}}
+.domains{{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}}
+.domain-card{{border-radius:10px;padding:14px}}
+.bar span{{background:var(--magenta)}}
+.risk-matrix{{gap:10px}}
+.matrix-quadrant.strategic{{border-left-color:#1f7a8c;background:#f0fafb}}
+.matrix-quadrant.quick{{background:#f2fbf8}}
+.matrix-quadrant.planned{{background:#f0f7fb}}
+.nav{{background:#fff;border:1px solid #d9e2ec;box-shadow:0 6px 18px #102a4312}}
+.nav a,.nav-group>summary{{color:#334e68}}
+.nav a:hover,.nav-group>summary:hover{{background:#eef8fa;border-color:#91d1d8;color:#0f5b78}}
+.nav-group[open]>summary{{background:#0f5b78;border-color:#0f5b78;color:#fff}}
+.view-switcher{{background:#eaf1f4;border-color:#d9e2ec}}
+.view-button{{color:#486581}}
+.view-button:hover,.view-button.active{{background:#0f5b78;color:#fff}}
+.value-strip{{background:#102a43}}
+.finding-actions button{{color:#0f5b78}}
+.finding-actions button:hover{{border-color:#5eb7c6;background:#f0fafb}}
 @media(max-width:800px){{.nav{{top:0;width:calc(100vw - 32px);margin:8px auto 18px;padding:8px;border-radius:12px;gap:6px}}.nav a,.nav-group>summary{{min-height:34px;padding:0 10px}}.nav-row{{gap:6px}}.nav a{{white-space:nowrap}}.nav-divider{{margin:0 1px}}.nav-group>div{{position:absolute;top:calc(100% + 6px);left:auto;right:0;max-width:min(80vw,280px);max-height:65vh;overflow:auto}}.to-top{{right:16px;bottom:16px}}.to-top span{{display:none}}}}
 </style></head><body class="exec-view">
 <header><div class="wrap hero"><div class="brand"><span class="brand-mark">SWO</span><span class="brand-name">Software<em>One</em></span><span>·</span><span>SECURITY & GOVERNANCE</span></div><div class="hero-label">{esc(meta.get("classification", "Confidencial — Security & Governance Assessment"))}</div><h1>Visibilidade para decidir. Evidência para agir.</h1><p>{esc(meta.get("engagement_name", "Assessment Executivo de Segurança e Governança"))}</p><div class="hero-pillars"><span><b>Descobrir</b> exposição</span><span><b>Governar</b> identidades e recursos</span><span><b>Otimizar</b> risco e investimento</span></div><div class="hero-meta"><span>{esc(meta["customer_name"])}</span><span>{esc(meta.get("consultant_name", "Consultor não informado"))}</span><span>Execução: {esc(meta["collected_at"])} UTC</span><span>Run ID: {esc(meta["run_id"])}</span></div></div></header>
 <main class="wrap">
 {coverage_notice}
-{execution_context_html}
+<nav class="nav" aria-label="Navegação do relatório"><div class="nav-row"><div class="view-switcher" role="group" aria-label="Modo de leitura"><button class="view-button active" type="button" data-view-target="executive">Executivo</button><button class="view-button" type="button" data-view-target="technical">Técnico</button><button class="view-button" type="button" data-view-target="full">Completo</button></div><span class="nav-divider"></span><a href="#executive-summary">Resumo</a><a href="#coverage">Domínios</a><a href="#risks">Riscos</a>{zero_trust_nav}</div><div class="nav-row"><details class="nav-group"><summary>Plano de ação</summary><div><a href="#priority-matrix">Matriz de prioridade</a><a href="#decision-layer">Decisões</a><a href="#analysis">Plano 30/60/90</a><a href="#lifecycle">FinOps e ciclo de vida</a></div></details><details class="nav-group"><summary>Evidências</summary><div><a href="#discovery">Discovery técnico</a><a href="#controls">Controles do engine</a><a href="#runbooks">Runbooks</a><a href="#transparency">Limitações</a></div></details><details class="nav-group"><summary>Execução</summary><div>{readiness_nav}<a href="#inventory-overview">Números do escopo</a></div></details></div></nav><button class="to-top" type="button" aria-label="Voltar ao topo">↑ <span>Topo</span></button>
 <nav class="nav" aria-label="Navegação do relatório"><div class="nav-row"><div class="view-switcher" role="group" aria-label="Modo de leitura"><button class="view-button active" type="button" data-view-target="executive">Executivo</button><button class="view-button" type="button" data-view-target="technical">Técnico</button><button class="view-button" type="button" data-view-target="full">Completo</button></div><span class="nav-divider"></span><a href="#executive-summary">Resumo</a><a href="#coverage">Domínios</a><a href="#risks">Riscos</a>{zero_trust_nav}</div><div class="nav-row"><details class="nav-group"><summary>Plano de ação</summary><div><a href="#priority-matrix">Matriz de prioridade</a><a href="#decision-layer">Decisões</a><a href="#analysis">Plano 30/60/90</a><a href="#lifecycle">FinOps e ciclo de vida</a></div></details><details class="nav-group"><summary>Evidências</summary><div><a href="#discovery">Discovery técnico</a><a href="#controls">Controles do engine</a><a href="#runbooks">Runbooks</a><a href="#transparency">Limitações</a></div></details><details class="nav-group"><summary>Execução</summary><div>{readiness_nav}<a href="#inventory-overview">Números do escopo</a></div></details></div></nav><button class="to-top" type="button" aria-label="Voltar ao topo">↑ <span>Topo</span></button>
 <section class="section summary-grid" id="executive-summary"><div class="executive"><div class="eyebrow">Leitura executiva</div><h2>O que este resultado significa</h2><p>A postura atual apresenta <b>{score_text.lower()}</b>, com maior necessidade de atenção em <b>{esc(priority_domain)}</b>. O assessment identificou <b>{len(findings)} riscos priorizados</b> e <b>{len(quick_wins)} ações de baixo esforço</b> que podem iniciar a evolução imediatamente.</p><p><b>Ponto forte:</b> {esc(strengths_text)}.</p><div class="notice"><b>Mensagem para liderança:</b> o maior risco deve ser interpretado junto com a cobertura, as limitações e a qualidade da evidência desta execução.</div></div><div class="score-panel"><div class="score-ring"><div><b>{score_display}</b><span>{"/ 100" if overall is not None else "sem score"}</span></div></div><div class="score-copy"><h3>{score_text}</h3><p>{esc(score_methodology.get("name", "Score ponderado pelos controles disponíveis"))}. Cobertura geral: <b>{coverage:.0f}%</b>. {esc(score_methodology.get("coverage_rule", "A interpretação deve considerar licenças e limitações."))}</p></div></div></section>
 {executive_security_kpis}
@@ -924,9 +920,8 @@ th{{background:#eef7fb;color:#075985}}
 {execution_health_html}
 {render_scope_coverage(data)}
 {render_inventory_overview(data)}
-<section class="section value-strip"><div><b>Avaliar</b><span>evidências do tenant</span></div><i>→</i><div><b>Priorizar</b><span>risco, esforço e impacto</span></div><i>→</i><div><b>Otimizar</b><span>roadmap para decisão</span></div></section>
-<section class="section"><div class="grid"><div class="card"><div class="metric-label">Controles avaliados</div><div class="metric">{coverage:.0f}<small>%</small></div><span class="metric-note">{evaluated_control_count} de {len(catalog["controls"])} controles com evidência</span></div><div class="card"><div class="metric-label">Módulos executados</div><div class="metric">{executed_modules}<small>/{total_modules}</small></div><span class="metric-note">Módulos success ou partial</span></div><div class="card"><div class="metric-label">Achados priorizados</div><div class="metric">{len(findings)}</div><span class="metric-note">Ordenados por risco</span></div><div class="card"><div class="metric-label">Quick wins</div><div class="metric">{len(quick_wins)}</div><span class="metric-note">Alto impacto e baixo esforço</span></div><div class="card"><div class="metric-label">Qualidade da evidência</div><div class="metric">{esc(evidence_quality.get("score", "N/D"))}<small>/100</small></div><span class="metric-note">Permissões, licenças e execução</span></div></div></section>
-<section class="section dashboard"><div class="panel"><h2>Score por domínio</h2><div class="domains">{domain_cards}</div><div class="notice" style="margin-top:16px"><b>Confiança por controle:</b> derive da evidência específica; consulte fonte, janela, licença, permissões e limitações no manifesto. Nenhuma evidência insuficiente é tratada como conformidade.</div></div><div class="panel radar"><h2>Radar de maturidade</h2>{radar_svg(domain_scores)}</div></section>
+<section class="section panel domain-overview" id="domain-overview"><div class="section-heading"><div><div class="eyebrow">Leitura por frente</div><h2>Onde está o impacto</h2></div><span class="section-caption">Score somente onde há evidência suficiente</span></div><div class="domains">{domain_cards}</div><div class="notice" style="margin-top:16px"><b>Como interpretar:</b> uma frente sem evidência aparece como insuficiente; isso não significa conformidade nem falha confirmada.</div></section>
+{execution_context_html}
 <section class="section summary-grid" id="risks"><div><h2>Principais riscos</h2><div class="finding-list">{finding_cards}</div></div><div class="insights"><h3>Top 3 para decisão</h3>{top_findings}</div></section>
 <section class="section panel"><h2>Quick wins</h2><ul>{quick_win_list or '<li>Nenhum quick win identificado.</li>'}</ul></section>
 {risk_matrix_html}
