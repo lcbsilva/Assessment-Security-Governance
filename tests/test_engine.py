@@ -16,7 +16,7 @@ from score_normalized import derive, evidence_state, license_gate_status
 from readonly_guard import assert_read_only, execution_metadata
 from compare_runs import compare
 from history import snapshot
-from collect_arg import resource_row, exposure_details, resource_security_posture, power_platform_row, summarize_power_platform, retirement_row
+from collect_arg import resource_row, exposure_details, resource_security_posture, power_platform_row, summarize_power_platform, retirement_row, advisor_row, deduplicate_advisor_rows
 from collect_arg import policy_row, summarize_policy_compliance, summarize_security_posture, summarize_governance_posture
 from collect_arg import retryable_arg_error
 from collect_graph import sign_in_path, permission_grant_row, build_identity_summary, enrich_pim_rows, conditional_access_row, credential_posture, user_posture, retryable_graph_status, secure_score_summary, license_posture, directory_audit_summary
@@ -744,6 +744,26 @@ class EngineContractTests(unittest.TestCase):
         self.assertIn('class="to-top"', html)
         self.assertIn(".nav-row{display:contents}", html)
         self.assertNotIn("Radar de maturidade", html)
+
+    def test_report_comparison_does_not_render_python_none(self):
+        from generate_report import render_comparison
+        html = render_comparison({
+            "comparison": {
+                "overall_score": {"previous": None, "current": None},
+                "coverage": {"previous": None, "current": None, "delta": None},
+                "comparability": {"comparable_controls": 0, "average_delta_on_overlap": None},
+            }
+        })
+        self.assertNotIn(">None<", html)
+        self.assertGreaterEqual(html.count("N/D"), 4)
+
+    def test_advisor_rows_are_deduplicated_and_keep_latest(self):
+        rows = deduplicate_advisor_rows([
+            advisor_row({"resourceId": "/subscriptions/s1/r1", "category": "HighAvailability", "lastUpdated": "2026-09-19T00:00:00Z"}),
+            advisor_row({"resourceId": "/subscriptions/s1/r1", "category": "HighAvailability", "lastUpdated": "2026-09-20T00:00:00Z"}),
+        ])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["last_updated"], "2026-09-20T00:00:00Z")
 
     def test_report_findings_have_local_decision_actions(self):
         from generate_report import render
