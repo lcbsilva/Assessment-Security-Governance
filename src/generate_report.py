@@ -747,10 +747,11 @@ def render(catalog: dict, data: dict, runbooks: dict) -> str:
     finding_cards = "".join(
         # O control_id é usado apenas para classificação e rastreabilidade.
         # Nenhum dado adicional do tenant é enviado para essa camada.
-        f'''<article class="finding">
+        f'''<article class="finding" id="finding-{esc(item.get("control_id", "finding"))}" data-finding-id="{esc(item.get("control_id", "finding"))}" data-owner="{esc(item.get("owner", "A definir"))}" data-recommendation="{esc(item.get("recommendation", "Validar evidência com o owner."))}">
           <div class="finding-top"><span class="severity {esc(item["severity"])}">{esc(item["severity"].upper())}</span>
           <span class="risk">Risco {item["risk_score"]}/100</span></div>
           <h3>{esc(item["title"])}</h3><div class="finding-meta"><span>Frente: {esc(workstream(definitions.get(item.get("control_id"), {})))}</span><span>Responsável: {esc(item.get("owner", "A definir"))}</span><span>Escopo observado: {esc(item.get("affected", "N/D"))} {esc(item.get("affected_unit", "itens"))}</span><span>Esforço: {esc(item.get("effort_band", effort_label(item.get("effort"))))}</span><span>Prioridade: {esc(item.get("priority", "P3"))}</span><span>Confiança da evidência: {esc(item.get("evidence_confidence", "não avaliada"))}</span></div><p>{esc(item["summary"])}</p><p class="impact-note"><b>Impacto em usuários:</b> {esc(item.get("user_impact", "Não determinado pela evidência; validar com o owner."))}</p>
+          <div class="finding-actions"><span class="review-state" data-review-label>Não triado</span><button type="button" data-review-status="in_review">Analisar</button><button type="button" data-copy-finding>Copiar para o time</button><button type="button" data-review-status="resolved">Marcar resolvido</button></div>
           <details><summary>Ver evidências e recomendação</summary>
             <h4>Evidências</h4><ul>{"".join(f"<li>{esc(ev)}</li>" for ev in item["evidence"])}</ul>
             <h4>Rastreabilidade e decisão</h4><p><b>Fonte:</b> {esc(item.get("evidence_lineage", {}).get("source", item.get("source", "—")))} · <b>Módulo:</b> {esc(item.get("evidence_lineage", {}).get("module", "Não vinculado"))} · <b>Estado da coleta:</b> {esc(item.get("evidence_lineage", {}).get("source_status", "Não informado"))}</p><p><b>Janela de coleta:</b> {esc(item.get("evidence_lineage", {}).get("collection_window", {}).get("started_at") or "Não informada")} → {esc(item.get("evidence_lineage", {}).get("collection_window", {}).get("finished_at") or "Não informada")}</p><p><b>Limite da fonte:</b> {esc(item.get("evidence_lineage", {}).get("limitation", "Validar fonte e cobertura no manifesto."))}</p><p><b>Por que esta prioridade:</b> {esc(item.get("priority_rationale", "Risco, esforço e impacto devem ser validados."))}</p><p><b>Dependências:</b> {esc("; ".join(item.get("remediation_dependencies", [])) or "Validar com o owner")}</p>
@@ -896,6 +897,20 @@ th{{background:#eef7fb;color:#075985}}
 .to-top{{position:fixed;right:24px;bottom:24px;z-index:25;border:1px solid #b9e6f5;background:#075985;color:#fff;border-radius:12px;padding:9px 12px;font:700 12px Inter,Segoe UI,Arial,sans-serif;box-shadow:0 8px 20px #1018282e;cursor:pointer;opacity:0;transform:translateY(8px);pointer-events:none;transition:opacity .2s ease,transform .2s ease}}
 .to-top.visible{{opacity:1;transform:translateY(0);pointer-events:auto}}
 .to-top:hover{{background:#00aeea}}
+.nav{{background:#111827;border:0;border-radius:12px;box-shadow:0 10px 24px #10182824;padding:8px 10px;color:#fff;gap:6px}}
+.nav a,.nav-group>summary{{border-color:transparent;background:transparent;color:#cbd5e1;border-radius:8px;font-weight:700}}
+.nav a:hover,.nav-group>summary:hover{{background:#1e3a4f;border-color:#2f6f8b;color:#fff}}
+.nav-divider{{background:#475467}}
+.nav-group[open]>summary{{background:#075985;border-color:#00aeea;color:#fff}}
+.finding-actions{{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}
+.finding-actions button{{border:1px solid #cbd5e1;background:#fff;color:#075985;border-radius:8px;padding:7px 10px;font:700 11px Inter,Segoe UI,Arial,sans-serif;cursor:pointer}}
+.finding-actions button:hover{{border-color:#00aeea;background:#effaff}}
+.finding-actions button[data-review-status="resolved"]{{color:#087443}}
+.review-state{{margin-right:auto;border-radius:99px;padding:5px 9px;background:#f2f4f7;color:#667085;font-size:10px;font-weight:800}}
+.finding[data-review-status="in_review"] .review-state{{background:#fff0d6;color:#b54708}}
+.finding[data-review-status="shared"] .review-state{{background:#e0f2fe;color:#075985}}
+.finding[data-review-status="resolved"]{{border-top-color:#12b76a;opacity:.86}}
+.finding[data-review-status="resolved"] .review-state{{background:#dcfae6;color:#087443}}
 @media(max-width:800px){{.nav{{top:0;width:calc(100vw - 32px);margin:8px auto 18px;padding:8px;border-radius:12px;gap:6px}}.nav a,.nav-group>summary{{min-height:34px;padding:0 10px}}.nav-row{{gap:6px}}.nav a{{white-space:nowrap}}.nav-divider{{margin:0 1px}}.nav-group>div{{position:absolute;top:calc(100% + 6px);left:auto;right:0;max-width:min(80vw,280px);max-height:65vh;overflow:auto}}.to-top{{right:16px;bottom:16px}}.to-top span{{display:none}}}}
 </style></head><body class="exec-view">
 <header><div class="wrap hero"><div class="brand"><span class="brand-mark">SWO</span><span class="brand-name">Software<em>One</em></span><span>·</span><span>SECURITY & GOVERNANCE</span></div><div class="hero-label">{esc(meta.get("classification", "Confidencial — Security & Governance Assessment"))}</div><h1>Visibilidade para decidir. Evidência para agir.</h1><p>{esc(meta.get("engagement_name", "Assessment Executivo de Segurança e Governança"))}</p><div class="hero-pillars"><span><b>Descobrir</b> exposição</span><span><b>Governar</b> identidades e recursos</span><span><b>Otimizar</b> risco e investimento</span></div><div class="hero-meta"><span>{esc(meta["customer_name"])}</span><span>{esc(meta.get("consultant_name", "Consultor não informado"))}</span><span>Execução: {esc(meta["collected_at"])} UTC</span><span>Run ID: {esc(meta["run_id"])}</span></div></div></header>
@@ -948,6 +963,33 @@ th{{background:#eef7fb;color:#075985}}
     toTop.addEventListener('click', () => window.scrollTo({{top: 0, behavior: 'smooth'}}));
     updateTopButton();
   }}
+  const reviewLabels = {{in_review: 'Em análise', shared: 'Pronto para compartilhar', resolved: 'Resolvido'}};
+  const reviewKey = 'assessment-review-' + (document.querySelector('footer')?.textContent || document.title).slice(-120);
+  const saveReview = (card, status) => {{
+    const id = card.dataset.findingId || card.id;
+    try {{ localStorage.setItem(reviewKey + '-' + id, status); }} catch (error) {{ /* armazenamento local opcional */ }}
+    const label = card.querySelector('[data-review-label]');
+    if (label) label.textContent = reviewLabels[status] || 'Não triado';
+    card.dataset.reviewStatus = status;
+  }};
+  document.querySelectorAll('.finding[data-finding-id]').forEach(card => {{
+    let stored = '';
+    try {{ stored = localStorage.getItem(reviewKey + '-' + card.dataset.findingId) || ''; }} catch (error) {{ stored = ''; }}
+    if (stored) saveReview(card, stored);
+    card.querySelectorAll('[data-review-status]').forEach(button => button.addEventListener('click', () => saveReview(card, button.dataset.reviewStatus)));
+    const copy = card.querySelector('[data-copy-finding]');
+    if (copy) copy.addEventListener('click', async () => {{
+      const title = card.querySelector('h3')?.textContent.trim() || 'Achado do assessment';
+      const summary = card.querySelector(':scope > p:not(.impact-note)')?.textContent.trim() || '';
+      const impact = card.querySelector('.impact-note')?.textContent.trim() || '';
+      const owner = card.dataset.owner || 'A definir';
+      const recommendation = card.dataset.recommendation || 'Validar com o owner.';
+      const message = `Problema: ${{title}}\\n\\nImpacto: ${{summary}}\\n${{impact}}\\n\\nPróximo passo: ${{recommendation}}\\nResponsável sugerido: ${{owner}}`;
+      try {{ await navigator.clipboard.writeText(message); copy.textContent = 'Copiado'; }} catch (error) {{ window.prompt('Copie o resumo para o time:', message); }}
+      saveReview(card, 'shared');
+      setTimeout(() => {{ copy.textContent = 'Copiar para o time'; }}, 1600);
+    }});
+  }});
   const root = document.getElementById('discovery');
   const input = document.getElementById('discoverySearch');
   const count = document.getElementById('discoveryCount');
