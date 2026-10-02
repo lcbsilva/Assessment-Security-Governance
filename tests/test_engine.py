@@ -737,6 +737,13 @@ class EngineContractTests(unittest.TestCase):
         html = render(self.catalog, data, {"runbooks": []})
         self.assertIn("Evidência insuficiente", html)
 
+    def test_report_navigation_is_compact_and_has_return_to_top(self):
+        from generate_report import render
+        html = render(self.catalog, json.loads(json.dumps(self.mock)), {"runbooks": []})
+        self.assertIn('aria-label="Navegação do relatório"', html)
+        self.assertIn('class="to-top"', html)
+        self.assertIn(".nav-row{display:contents}", html)
+
     def test_resource_exposure_distinguishes_confirmed_and_heuristic(self):
         confirmed = resource_row({"id": "/subscriptions/x", "type": "Microsoft.Network/publicIPAddresses", "properties": {}, "tags": {}})
         heuristic = resource_row({"id": "/subscriptions/x", "type": "Microsoft.Web/sites", "properties": {}, "tags": {}})
