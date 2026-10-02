@@ -58,6 +58,22 @@ def load_data(data_path: Path = DATA_PATH) -> tuple[dict, dict, dict]:
     return catalog, data, runbooks
 
 
+def tenant_display_label(metadata: dict, discovery: dict | None = None) -> str:
+    """Retorna rótulo identificável sem exigir nome comercial do tenant."""
+    explicit = metadata.get("tenant_label") or metadata.get("tenant_name")
+    if explicit:
+        return str(explicit)
+    tenant_id = metadata.get("tenant_id") or metadata.get("tenantId")
+    if not tenant_id:
+        for container in (discovery or {}).get("containers", []):
+            tenant_id = container.get("tenant")
+            if tenant_id:
+                break
+    if tenant_id:
+        return f"Tenant identificado — {str(tenant_id)[:8]}…"
+    return "Tenant não identificado"
+
+
 def calculate(catalog: dict, data: dict) -> tuple[dict, float, float]:
     results = {str(item.get("id")): item for item in data.get("controls", []) if isinstance(item, dict)}
     controls = []
@@ -414,12 +430,13 @@ def render_executive_security_kpis(data: dict) -> str:
     value = lambda label, fallback: user_summary.get(label, fallback)
     mfa_gap = sum(1 for item in users if item.get("mfa_status") == "Not registered")
     privileged_gap = sum(1 for item in users if item.get("privileged") and item.get("mfa_status") == "Not registered")
-    public_resources = sum(1 for item in discovery.get("resources", []) if str(item.get("exposure", "")).lower().startswith("public"))
+    confirmed_public = sum(1 for item in discovery.get("resources", []) if item.get("exposure_class") == "confirmed")
+    heuristic_public = sum(1 for item in discovery.get("resources", []) if item.get("exposure_class") == "heuristic")
     policy_gap = sum(int(item.get("non_compliant", 0) or 0) for item in discovery.get("policy_compliance", []))
     high_rbac = sum(1 for item in discovery.get("rbac", []) if item.get("access_risk") in {"Crítico", "Alto"})
     device_summary = discovery.get("device_summary", {})
     endpoint_gap = int(device_summary.get("non_compliant", 0) or 0) + int(device_summary.get("unmanaged", 0) or 0)
-    metrics = [("Sem MFA", value("Usuários sem MFA", mfa_gap), "Identidade"), ("Privilegiados sem MFA", value("Privilegiados sem MFA", privileged_gap), "Crítico"), ("Convidados externos", value("Convidados externos", 0), "Governança"), ("RBAC alto risco", high_rbac, "Acesso"), ("Recursos públicos", public_resources, "Exposição"), ("Não conformidades", policy_gap, "Azure Policy"), ("Endpoints em atenção", endpoint_gap, "Endpoint")]
+    metrics = [("Sem MFA", value("Usuários sem MFA", mfa_gap), "Identidade"), ("Privilegiados sem MFA", value("Privilegiados sem MFA", privileged_gap), "Crítico"), ("Convidados externos", value("Convidados externos", 0), "Governança"), ("RBAC alto risco", high_rbac, "Acesso"), ("Exposição confirmada", confirmed_public, "Sinal explícito"), ("Exposição a validar", heuristic_public, "Heurística"), ("Não conformidades", policy_gap, "Azure Policy"), ("Endpoints em atenção", endpoint_gap, "Endpoint")]
     cards = "".join(f'<div class="exec-kpi"><span>{esc(label)}</span><b>{esc(amount)}</b><small>{esc(context)}</small></div>' for label, amount, context in metrics)
     return f'<section class="section exec-kpi-section"><div class="section-heading"><div><div class="eyebrow">Sinais prioritários</div><h2>Onde concentrar a atenção</h2></div><span class="section-intro">Indicadores derivados das evidências desta execução</span></div><div class="exec-kpis">{cards}</div></section>'
 
@@ -549,7 +566,8 @@ def render_inventory_overview(data: dict) -> str:
         "Recursos Azure": len(resources),
         "Usuários avaliados": len(users),
         "Não conformidades Policy": sum(1 for row in policies if str(row.get("compliance_state", "")).lower() != "compliant"),
-        "Recursos públicos": sum(1 for row in resources if str(row.get("exposure", "")).lower().startswith("public")),
+        "Exposição confirmada": sum(1 for row in resources if row.get("exposure_class") == "confirmed"),
+        "Exposição a validar": sum(1 for row in resources if row.get("exposure_class") == "heuristic"),
         "RBAC alto risco": sum(1 for row in rbac if row.get("access_risk") in {"Crítico", "Alto"}),
         "Credenciais expiradas": sum(int(row.get("expired_credentials", 0) or 0) for row in registrations),
         "Recomendações Advisor": len(lifecycle.get("advisor_recommendations", [])),
@@ -656,7 +674,7 @@ def render_discovery(data: dict) -> str:
       ("mfa_status", "MFA"), ("privileged_roles", "Funções privilegiadas"), ("ca_coverage", "Conditional Access"), ("risk", "Risco Entra"), ("posture_level", "Postura"), ("posture_signal", "Sinais"),
       ("last_sign_in", "Último sign-in")])}</div>
   <div class="panel"><h3>Funções privilegiadas do Entra ID</h3>{render_table(discovery.get("directory_roles", []), [("role", "Função"), ("role_id", "ID técnico")])}</div>
-  <div class="panel"><h3>PIM: elegível versus ativo</h3><p class="section-intro">A coleta diferencia atribuições elegíveis de ativações/atribuições ativas, resolve o principal quando possível e classifica o nível do escopo. O relatório não altera funções nem ativa acessos.</p>{render_table(pim_assignments, [("principal_name", "Principal"), ("principal_id", "ID do principal"), ("role", "Função"), ("role_id", "ID da função"), ("assignment_type", "Tipo"), ("member_type", "Membro"), ("scope_kind", "Nível"), ("scope", "Escopo"), ("start", "Início"), ("end", "Fim")])}</div>
+  <div class="panel"><h3>PIM: elegível versus ativo</h3><p class="section-intro">A coleta diferencia atribuições elegíveis de ativações/atribuições ativas, resolve o principal quando possível e classifica o nível do escopo. Principal não resolvido é evidência insuficiente, não um achado por si só. O relatório não altera funções nem ativa acessos.</p>{render_table(pim_assignments, [("principal_name", "Principal"), ("principal_resolution", "Resolução"), ("principal_id", "ID do principal"), ("role", "Função"), ("role_id", "ID da função"), ("assignment_type", "Tipo"), ("member_type", "Membro"), ("scope_kind", "Nível"), ("scope", "Escopo"), ("start", "Início"), ("end", "Fim")])}</div>
   <div class="panel"><h3>Políticas de Conditional Access</h3>{render_table(policies, [
       ("display_name", "Política"), ("state", "Estado"), ("users_scope", "Usuários"),
       ("included", "Incluídos"), ("excluded", "Exclusões"), ("grant_controls", "Controles"), ("coverage", "Cobertura"), ("risk_signal", "Sinal")])}</div>
@@ -681,7 +699,7 @@ def render_discovery(data: dict) -> str:
   <div class="panel"><h3>Insights cruzados — segurança × governança</h3><p class="section-intro">Correlações indicativas entre fontes diferentes para priorizar revisão consultiva. Um insight não é declaração de incidente e não executa remediação.</p>{render_table(discovery.get("cross_domain_insights") or cross_domain_insights(discovery), [("priority", "Prioridade"), ("severity", "Severidade"), ("domain", "Domínio"), ("title", "Insight"), ("risk", "Risco"), ("affected", "Afetados"), ("suggested_owner", "Responsável sugerido"), ("effort_band", "Esforço"), ("evidence", "Evidência"), ("action", "Ação recomendada")])}</div>
   <div class="panel"><h3>Inventário de recursos Azure</h3>{render_table(resources, [
       ("name", "Recurso"), ("type", "Tipo"), ("subscription", "Subscription"),
-      ("resource_group", "Resource group"), ("region", "Região"), ("exposure", "Exposição"), ("exposure_reason", "Evidência de exposição"),
+      ("resource_group", "Resource group"), ("region", "Região"), ("exposure", "Exposição"), ("exposure_class", "Classe da evidência"), ("exposure_reason", "Evidência de exposição"),
       ("security_signal", "Sinal de segurança"), ("governance_signal", "Sinal de governança"),
       ("security_posture", "Postura de segurança"), ("posture_signals", "Sinais"), ("owner", "Owner"), ("tags", "Tags"), ("created_at", "Criado em"), ("age_days", "Idade (dias)")])}</div>
   <div class="panel"><h3>Hierarquia Azure</h3>{render_table(discovery.get("containers", []), [("name", "Nome"), ("type", "Tipo"), ("subscription", "Subscription"), ("tenant", "Tenant")])}</div>
@@ -710,7 +728,7 @@ def render(catalog: dict, data: dict, runbooks: dict) -> str:
         **data.get("metadata", {}),
     }
     if not meta.get("customer_name") or meta["customer_name"] == "Tenant não identificado":
-        meta["customer_name"] = metadata.get("tenant_label") or "Tenant não identificado"
+        meta["customer_name"] = tenant_display_label(metadata, data.get("discovery", {}))
     data.setdefault("findings", [])
     data.setdefault("controls", [])
     control_results = {str(item.get("id")): item for item in data["controls"] if isinstance(item, dict)}
@@ -746,7 +764,7 @@ def render(catalog: dict, data: dict, runbooks: dict) -> str:
     quick_win_list = "".join(f"<li><b>{esc(item['title'])}</b> — esforço baixo, risco {item['risk_score']}/100.</li>" for item in quick_wins)
     control_rows = "".join(
         f'''<tr><td>{esc(item["id"])}</td><td>{esc(item["title"])}</td><td>{esc(item["domain"])}</td><td>{esc(workstream(item))}</td>
-        <td><span class="status {esc(item["status"])}">{status_labels.get(item["status"], item["status"])}</span></td><td>{esc(item.get("evidence_state", "LEGACY_FIXTURE"))}</td><td>{esc(item.get("license_gate_status", "não declarado"))}</td>
+        <td><span class="status {esc(item["status"] if item.get("evidence_state") != "INSUFFICIENT_EVIDENCE" else "not_available")}">{"Evidência insuficiente" if item.get("evidence_state") == "INSUFFICIENT_EVIDENCE" else status_labels.get(item["status"], item["status"])}</span></td><td>{esc(item.get("evidence_state", "LEGACY_FIXTURE"))}</td><td>{esc(item.get("license_gate_status", "não declarado"))}</td>
         <td>{"N/D" if item["status"] in {"not_available", "error"} else f'{item["score"]}/100'}</td><td>{esc(item["confidence"])}</td></tr>'''
         for result in data["controls"]
         for item in [{**next(d for d in catalog["controls"] if d["id"] == result["id"]), **result}]
