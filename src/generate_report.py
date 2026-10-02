@@ -864,8 +864,9 @@ th{{background:#eef7fb;color:#075985}}
 .panel.collapsed{{padding-bottom:14px}}
 .panel.collapsed > :not(h3){{display:none}}
 .panel h3{{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;color:#172b4d}}
-.panel h3::after{{content:'−';font-size:22px;line-height:1;color:#00aeea;font-weight:400}}
-.panel.collapsed h3::after{{content:'+'}}
+.panel h3::after{{content:none}}
+#discovery > .panel h3::after{{content:'−';font-size:22px;line-height:1;color:#00aeea;font-weight:400}}
+#discovery > .panel.collapsed h3::after{{content:'+'}}
 .collapse-note{{font-size:11px;color:var(--muted);font-weight:400;margin-left:auto}}
 .hero-pillars{{display:flex;gap:8px;flex-wrap:wrap;margin-top:24px}}.hero-pillars span{{border:1px solid #ffffff38;background:#ffffff14;border-radius:99px;padding:7px 12px;font-size:12px;color:#fff}}.hero-pillars b{{color:#62d6ff}}
 .scope-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}}.scope-card{{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;min-height:142px;border-top:3px solid #98a2b3}}.scope-card.scope-success{{border-top-color:#12b76a}}.scope-card.scope-partial{{border-top-color:#f79009}}.scope-card.scope-not_available,.scope-card.scope-roadmap{{border-top-color:#00aeea}}.scope-top{{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}}.scope-card p{{font-size:12px;color:#475467;margin:12px 0 10px;line-height:1.45}}.scope-card small{{display:block;font-size:10px;color:var(--muted);line-height:1.35}}.scope-card .status{{white-space:nowrap}}
@@ -889,13 +890,19 @@ th{{background:#eef7fb;color:#075985}}
 .nav-group>div{{position:absolute;top:calc(100% + 8px);left:0;min-width:205px;padding:7px;background:#fff;border:1px solid #dce3ea;border-radius:12px;box-shadow:0 12px 28px #10182822;display:grid;gap:4px;z-index:40}}
 .nav-group>div a{{justify-content:flex-start;min-height:34px;padding:0 10px;border:0;border-radius:8px;background:transparent}}
 .nav-group>div a:hover{{background:#f0f8fb}}
-@media(max-width:800px){{.nav{{top:0;width:100%;margin:8px 0 18px;padding:9px;border-radius:12px}}.nav-row{{gap:6px}}.nav a{{white-space:nowrap}}.nav-divider{{margin:0 1px}}.nav-group>div{{position:absolute;top:calc(100% + 6px);left:auto;right:0;max-width:min(80vw,280px);max-height:65vh;overflow:auto}}}}
+.nav{{width:100%;max-width:100%;box-sizing:border-box;margin:18px 0 24px;display:flex;align-items:center;justify-content:flex-start;flex-wrap:nowrap;overflow:visible;overflow-x:auto;scrollbar-width:thin}}
+.nav-row{{display:contents}}
+.nav-divider{{flex:0 0 1px}}
+.to-top{{position:fixed;right:24px;bottom:24px;z-index:25;border:1px solid #b9e6f5;background:#075985;color:#fff;border-radius:12px;padding:9px 12px;font:700 12px Inter,Segoe UI,Arial,sans-serif;box-shadow:0 8px 20px #1018282e;cursor:pointer;opacity:0;transform:translateY(8px);pointer-events:none;transition:opacity .2s ease,transform .2s ease}}
+.to-top.visible{{opacity:1;transform:translateY(0);pointer-events:auto}}
+.to-top:hover{{background:#00aeea}}
+@media(max-width:800px){{.nav{{top:0;width:calc(100vw - 32px);margin:8px auto 18px;padding:8px;border-radius:12px;gap:6px}}.nav a,.nav-group>summary{{min-height:34px;padding:0 10px}}.nav-row{{gap:6px}}.nav a{{white-space:nowrap}}.nav-divider{{margin:0 1px}}.nav-group>div{{position:absolute;top:calc(100% + 6px);left:auto;right:0;max-width:min(80vw,280px);max-height:65vh;overflow:auto}}.to-top{{right:16px;bottom:16px}}.to-top span{{display:none}}}}
 </style></head><body class="exec-view">
 <header><div class="wrap hero"><div class="brand"><span class="brand-mark">SWO</span><span class="brand-name">Software<em>One</em></span><span>·</span><span>SECURITY & GOVERNANCE</span></div><div class="hero-label">{esc(meta.get("classification", "Confidencial — Security & Governance Assessment"))}</div><h1>Visibilidade para decidir. Evidência para agir.</h1><p>{esc(meta.get("engagement_name", "Assessment Executivo de Segurança e Governança"))}</p><div class="hero-pillars"><span><b>Descobrir</b> exposição</span><span><b>Governar</b> identidades e recursos</span><span><b>Otimizar</b> risco e investimento</span></div><div class="hero-meta"><span>{esc(meta["customer_name"])}</span><span>{esc(meta.get("consultant_name", "Consultor não informado"))}</span><span>Execução: {esc(meta["collected_at"])} UTC</span><span>Run ID: {esc(meta["run_id"])}</span></div></div></header>
 <main class="wrap">
 {coverage_notice}
 {execution_context_html}
-<nav class="nav"><div class="nav-row"><div class="view-switcher" role="group" aria-label="Modo de leitura"><button class="view-button active" type="button" data-view-target="executive">Executivo</button><button class="view-button" type="button" data-view-target="technical">Técnico</button><button class="view-button" type="button" data-view-target="full">Completo</button></div><span class="nav-divider"></span><a href="#executive-summary">Resumo</a><a href="#coverage">Domínios</a><a href="#risks">Riscos</a>{zero_trust_nav}</div><div class="nav-row"><details class="nav-group"><summary>Plano de ação</summary><div><a href="#priority-matrix">Matriz de prioridade</a><a href="#decision-layer">Decisões</a><a href="#analysis">Plano 30/60/90</a><a href="#lifecycle">FinOps e ciclo de vida</a></div></details><details class="nav-group"><summary>Evidências</summary><div><a href="#discovery">Discovery técnico</a><a href="#controls">Controles do engine</a><a href="#runbooks">Runbooks</a><a href="#transparency">Limitações</a></div></details><details class="nav-group"><summary>Execução</summary><div>{readiness_nav}<a href="#inventory-overview">Números do escopo</a></div></details></div></nav>
+<nav class="nav" aria-label="Navegação do relatório"><div class="nav-row"><div class="view-switcher" role="group" aria-label="Modo de leitura"><button class="view-button active" type="button" data-view-target="executive">Executivo</button><button class="view-button" type="button" data-view-target="technical">Técnico</button><button class="view-button" type="button" data-view-target="full">Completo</button></div><span class="nav-divider"></span><a href="#executive-summary">Resumo</a><a href="#coverage">Domínios</a><a href="#risks">Riscos</a>{zero_trust_nav}</div><div class="nav-row"><details class="nav-group"><summary>Plano de ação</summary><div><a href="#priority-matrix">Matriz de prioridade</a><a href="#decision-layer">Decisões</a><a href="#analysis">Plano 30/60/90</a><a href="#lifecycle">FinOps e ciclo de vida</a></div></details><details class="nav-group"><summary>Evidências</summary><div><a href="#discovery">Discovery técnico</a><a href="#controls">Controles do engine</a><a href="#runbooks">Runbooks</a><a href="#transparency">Limitações</a></div></details><details class="nav-group"><summary>Execução</summary><div>{readiness_nav}<a href="#inventory-overview">Números do escopo</a></div></details></div></nav><button class="to-top" type="button" aria-label="Voltar ao topo">↑ <span>Topo</span></button>
 <section class="section summary-grid" id="executive-summary"><div class="executive"><div class="eyebrow">Leitura executiva</div><h2>O que este resultado significa</h2><p>A postura atual apresenta <b>{score_text.lower()}</b>, com maior necessidade de atenção em <b>{esc(priority_domain)}</b>. O assessment identificou <b>{len(findings)} riscos priorizados</b> e <b>{len(quick_wins)} ações de baixo esforço</b> que podem iniciar a evolução imediatamente.</p><p><b>Ponto forte:</b> {esc(strengths_text)}.</p><div class="notice"><b>Mensagem para liderança:</b> o maior risco deve ser interpretado junto com a cobertura, as limitações e a qualidade da evidência desta execução.</div></div><div class="score-panel"><div class="score-ring"><div><b>{score_display}</b><span>{"/ 100" if overall is not None else "sem score"}</span></div></div><div class="score-copy"><h3>{score_text}</h3><p>{esc(score_methodology.get("name", "Score ponderado pelos controles disponíveis"))}. Cobertura geral: <b>{coverage:.0f}%</b>. {esc(score_methodology.get("coverage_rule", "A interpretação deve considerar licenças e limitações."))}</p></div></div></section>
 {executive_security_kpis}
 {preflight_html}
@@ -934,6 +941,13 @@ th{{background:#eef7fb;color:#075985}}
     viewButtons.forEach(button => button.classList.toggle('active', button.dataset.viewTarget === view));
   }}
   viewButtons.forEach(button => button.addEventListener('click', () => setView(button.dataset.viewTarget)));
+  const toTop = document.querySelector('.to-top');
+  if (toTop) {{
+    const updateTopButton = () => toTop.classList.toggle('visible', window.scrollY > 520);
+    window.addEventListener('scroll', updateTopButton, {{passive: true}});
+    toTop.addEventListener('click', () => window.scrollTo({{top: 0, behavior: 'smooth'}}));
+    updateTopButton();
+  }}
   const root = document.getElementById('discovery');
   const input = document.getElementById('discoverySearch');
   const count = document.getElementById('discoveryCount');
