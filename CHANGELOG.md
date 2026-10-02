@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0-beta.73
+
+- Adiciona confiança operacional agregada, separada da cobertura e do score.
+- Bloqueia a validação do piloto quando `metadata.contract_status` é inválido.
+- Gera handoff local de pré-requisitos com permissões, módulos e limitações.
+- Melhora o runner PowerShell para detectar `py`, listar todos os artefatos e
+  abrir o HTML ao final quando houver sessão gráfica.
+- Usa o tenant detectado como fallback visual quando não há nome de cliente
+  configurado no engagement.
+- Mantém o fluxo read-only, sem novas dependências ou envio de PII para IA.
+
 ## 0.2.0-beta.72
 
 - Adiciona dashboard histórico offline baseado em snapshots locais agregados.
@@ -442,3 +453,4 @@
 - Perfis de execução `security`, `governance` e `full`.
 - Sinais de postura por recurso Azure.
 - 29 testes automatizados passando.
+

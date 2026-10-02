@@ -37,8 +37,8 @@ def validate(data: dict, catalog: dict, manifest_validation: dict | None = None)
     ai_warnings = [f"payload de IA contém {item}" for item in privacy_violations(build(data))]
     if metadata.get("simulation", {}).get("is_simulation") is True:
         warnings.append("execução marcada como sintética; não usar como evidência de cliente")
-    if metadata.get("contract_status") != "valid":
-        warnings.append("metadata.contract_status não está explicitamente validado")
+    if metadata.get("contract_status") == "invalid":
+        errors.append("metadata.contract_status não está validado; entrega bloqueada")
     quality = audit(data, catalog)
     errors.extend(item["message"] for item in quality["errors"])
     warnings.extend(item["message"] for item in quality["warnings"])
@@ -55,6 +55,11 @@ def validate(data: dict, catalog: dict, manifest_validation: dict | None = None)
         "collection_records": len(logs),
         "ai_warnings": sorted(set(ai_warnings)),
         "quality_audit": quality,
+        "confidence": {
+            "score": data.get("metadata", {}).get("execution_health", {}).get("confidence_score", 0),
+            "band": data.get("metadata", {}).get("execution_health", {}).get("confidence_band", "baixa"),
+            "basis": data.get("metadata", {}).get("execution_health", {}).get("confidence_basis", "Não informado"),
+        },
         "artifact_integrity": manifest_validation or {"status": "not_checked", "read_only": True},
         "review_checklist": checklist,
         "errors": errors,
@@ -84,3 +89,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

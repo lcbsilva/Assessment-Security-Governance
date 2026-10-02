@@ -63,8 +63,9 @@ az account set --subscription "<subscription-id>"
 az account show --query '{tenantId:tenantId,subscriptionId:id}' -o table
 ```
 
-No PowerShell 7, use `python` no lugar de `python3` quando esse for o comando
-disponível. O `tenantId` exibido deve ser confirmado antes de continuar.
+No PowerShell 7, use `python` ou `py -3` no lugar de `python3`. O runner
+também detecta automaticamente o launcher `py` quando `python` não está no PATH.
+O `tenantId` exibido deve ser confirmado antes de continuar.
 
 Execute primeiro o Readiness Gate:
 
@@ -98,6 +99,9 @@ No PowerShell 7, use:
 .\scripts\run-focused-pilot.ps1 -Subscriptions "<subscription-id>"
 .\scripts\run-assessment.ps1 -Subscriptions "<subscription-id>" -Profile full
 ```
+
+Ao concluir, o runner lista os caminhos do HTML, PDF, PPTX e XLSX e abre o
+HTML automaticamente no Windows quando houver uma sessão gráfica disponível.
 
 Os principais resultados ficam em `dist/` e `runtime/`:
 
@@ -366,6 +370,19 @@ No PowerShell:
 .\scripts\run-focused-pilot.ps1 -Subscriptions "<subscription-id-1>"
 ```
 
+Antes de compartilhar o escopo com o owner do tenant, gere o handoff local de
+pré-requisitos. O arquivo reúne o status do preflight, permissões de leitura,
+módulos esperados e limitações; ele não acessa nem altera o tenant:
+
+```bash
+python3 src/generate_pilot_pack.py \
+  --preflight runtime/preflight.json \
+  --output runtime/pilot-readiness-pack.md
+```
+
+No Cloud Shell, o mesmo fluxo pode usar `./scripts/generate-pilot-pack.sh`.
+No PowerShell 7, use `.\scripts\generate-pilot-pack.ps1 -Preflight runtime\preflight.json`.
+
 No Linux ou macOS:
 
 ```bash
@@ -435,3 +452,4 @@ não comandos operacionais. O MVP nunca exclui, move, altera tags ou modifica
 políticas no tenant. Cada recomendação exige validação de owner, dependências,
 criticidade, backup e janela de mudança; quando a fonte não oferece cobertura
 suficiente, o relatório marca a limitação explicitamente.
+

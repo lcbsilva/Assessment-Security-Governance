@@ -78,13 +78,27 @@ def summarize(logs: list[dict]) -> dict:
             })
     total = sum(counts.values())
     completed = counts["success"] + counts["partial"]
+    executed_total = completed + counts["not_available"] + counts["error"]
+    confidence_points = counts["success"] + (counts["partial"] * 0.5)
+    confidence_score = round(confidence_points / executed_total * 100, 1) if executed_total else 0.0
+    confidence_band = "alta" if confidence_score >= 80 else "média" if confidence_score >= 50 else "baixa"
+    limitation_categories = {}
+    for item in logs or []:
+        if item.get("status") in {"not_available", "error", "partial"}:
+            category = str(item.get("limitation_category", "unknown"))
+            limitation_categories[category] = limitation_categories.get(category, 0) + 1
     return {
         "total_modules": total,
         "completed_modules": completed,
         "coverage_percent": round(completed / total * 100, 1) if total else 0,
         "status_counts": counts,
         "health": "healthy" if total and not counts["error"] and not counts["not_available"] else "degraded" if completed else "blocked",
+        "confidence_score": confidence_score,
+        "confidence_band": confidence_band,
+        "confidence_basis": "Confiança operacional pondera sucesso=100, parcial=50 e falha/indisponibilidade=0; módulos fora do perfil não entram no denominador.",
+        "limitation_categories": limitation_categories,
         "limitations": limitations,
         "out_of_profile_modules": counts["not_run"],
         "interpretation": "Zero registros só é evidência de ausência quando o módulo terminou com sucesso; not_available/error não permitem concluir ausência; not_run significa que o módulo não pertenceu ao perfil.",
     }
+

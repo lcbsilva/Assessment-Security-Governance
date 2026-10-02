@@ -47,6 +47,7 @@ from module_diagnostics import diagnose as diagnose_module
 from build_demo_package import build_demo
 from doctor import diagnose
 from pilot_evidence import build as build_pilot_evidence
+from generate_pilot_pack import build as build_pilot_pack
 
 
 class EngineContractTests(unittest.TestCase):
@@ -356,6 +357,21 @@ class EngineContractTests(unittest.TestCase):
         self.assertEqual(result["coverage_percent"], 66.7)
         self.assertEqual(result["health"], "degraded")
         self.assertEqual(result["limitations"][0]["module"], "Defender")
+        self.assertEqual(result["confidence_band"], "média")
+        self.assertEqual(result["confidence_score"], 50.0)
+
+    def test_pilot_validation_blocks_invalid_contract_status(self):
+        from validate_pilot import validate as validate_pilot
+        data = {"metadata": {"contract_status": "invalid", "execution": {"mode": "read-only", "tenant_mutation": False}}, "controls": [], "findings": [], "discovery": {"collection_log": []}}
+        result = validate_pilot(data, self.catalog)
+        self.assertEqual(result["status"], "blocked")
+        self.assertTrue(any("contract_status" in error for error in result["errors"]))
+
+    def test_pilot_pack_is_local_read_only_and_actionable(self):
+        pack = build_pilot_pack({"profile": "security", "status": "ready", "subscriptions_requested": ["sub-1"], "required_read_scopes": ["Reader"], "optional_read_scopes": ["Reports.Read.All"], "module_readiness": [{"module": "Identity / users", "domain": "Identidade", "expected_read_scope": "User.Read.All", "status": "not_checked"}], "limitations": ["Permissões opcionais serão confirmadas pelos coletores."]})
+        self.assertIn("read-only", pack)
+        self.assertIn("User.Read.All", pack)
+        self.assertIn("não cria, altera, exclui", pack)
 
     def test_coverage_map_explains_unavailable_modules_without_claiming_success(self):
         result = coverage_map(
@@ -696,6 +712,15 @@ class EngineContractTests(unittest.TestCase):
         self.assertIn("maior necessidade de atenção em", html)
         self.assertNotIn("maior necessidade de atenção em <b>Governança Azure</b>", html)
 
+    def test_report_uses_detected_tenant_label_when_customer_is_not_configured(self):
+        from generate_report import render
+        data = json.loads(json.dumps(self.mock))
+        data["metadata"].pop("customer_name", None)
+        data["metadata"]["tenant_label"] = "lab-subscription"
+        html = render(self.catalog, data, {"runbooks": []})
+        self.assertIn("lab-subscription", html)
+        self.assertNotIn("Tenant não identificado", html.split("<h1>", 1)[0])
+
     def test_license_gate_blocks_compliance_without_entitlement_evidence(self):
         payload = derive({"metadata": {}, "discovery": {"secure_score": [{"currentScore": 80, "maxScore": 100}]}}, self.catalog)
         controls = {item["id"]: item for item in payload["controls"]}
@@ -861,6 +886,14 @@ class EngineContractTests(unittest.TestCase):
         self.assertTrue((ROOT / "scripts" / "run-focused-pilot.ps1").exists())
         self.assertTrue((ROOT / "scripts" / "run-lab-validation.sh").exists())
         self.assertTrue((ROOT / "scripts" / "run-lab-validation.ps1").exists())
+        self.assertTrue((ROOT / "scripts" / "generate-pilot-pack.sh").exists())
+        self.assertTrue((ROOT / "scripts" / "generate-pilot-pack.ps1").exists())
+
+    def test_windows_runner_supports_python_launcher_and_lists_outputs(self):
+        runner = (ROOT / "scripts" / "run-assessment.ps1").read_text(encoding="utf-8")
+        self.assertIn('Get-Command py', runner)
+        self.assertIn('Get-ChildItem (Join-Path $root "dist")', runner)
+        self.assertIn('Start-Process -FilePath $html', runner)
 
     def test_azure_exposure_detection_covers_network_properties(self):
         self.assertEqual(exposure_details("Microsoft.Storage/storageAccounts", {"publicNetworkAccess": "Disabled"})[0], "Private")
@@ -1101,3 +1134,4 @@ class EngineContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
