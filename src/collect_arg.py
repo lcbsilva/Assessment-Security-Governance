@@ -397,6 +397,23 @@ def advisor_row(item: dict) -> dict:
     }
 
 
+def deduplicate_advisor_rows(rows: list[dict]) -> list[dict]:
+    """Consolida repetições do Advisor sem perder a recomendação mais recente."""
+    grouped: dict[tuple[str, str, str], dict] = {}
+    for row in rows:
+        key = (
+            str(row.get("resource_id") or row.get("subscription") or "—").lower(),
+            str(row.get("category") or "—").lower(),
+            str(row.get("description") or "—").lower(),
+        )
+        current = grouped.get(key)
+        if current is None or str(row.get("last_updated", "")) > str(current.get("last_updated", "")):
+            grouped[key] = row
+    return sorted(grouped.values(), key=lambda item: (
+        str(item.get("impact", "")), str(item.get("resource_id", "")), str(item.get("description", ""))
+    ))
+
+
 def retirement_row(item: dict) -> dict:
     """Normaliza Service Health a partir do objeto properties sem KQL frágil."""
     properties = item.get("properties") or {}
@@ -625,7 +642,7 @@ def collect(subscription_ids: list[str]) -> dict:
             query=ADVISOR_QUERY,
             options=QueryRequestOptions(result_format="objectArray", top=5000),
         ))
-        advisor_rows = [advisor_row(item) for item in (advisor_response.data or [])]
+        advisor_rows = deduplicate_advisor_rows([advisor_row(item) for item in (advisor_response.data or [])])
         advisor_status = "success"
         advisor_note = "Recomendações ativas do Azure Advisor via Azure Resource Graph"
     except Exception as exc:
