@@ -928,6 +928,8 @@ header{{background:linear-gradient(120deg,#102a43 0%,#174a5b 58%,#1f7a8c 100%)}}
 .nav a,.nav-group>summary{{color:#334e68}}
 .nav a:hover,.nav-group>summary:hover{{background:#eef8fa;border-color:#91d1d8;color:#0f5b78}}
 .nav-group[open]>summary{{background:#0f5b78;border-color:#0f5b78;color:#fff}}
+.nav details{{margin:0;border:0;padding:0}}
+.nav details>summary{{margin:0;min-height:36px;padding:0 12px}}
 .view-switcher{{background:#eaf1f4;border-color:#d9e2ec}}
 .view-button{{color:#486581}}
 .view-button:hover,.view-button.active{{background:#0f5b78;color:#fff}}
