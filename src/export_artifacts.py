@@ -194,10 +194,16 @@ def write_pptx(data: dict, path: Path) -> None:
 
 def write_pdf(data: dict, path: Path) -> None:
     from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
     styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle("AssessmentBody", parent=styles["BodyText"], fontName="Helvetica", fontSize=9, leading=12, spaceAfter=4))
+    styles.add(ParagraphStyle("AssessmentHeading", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=14, leading=17, spaceBefore=10, spaceAfter=6))
+    styles.add(ParagraphStyle("AssessmentTitle", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=20, leading=24, spaceAfter=8))
+    body = styles["AssessmentBody"]
+    heading = styles["AssessmentHeading"]
+    title = styles["AssessmentTitle"]
     document = SimpleDocTemplate(str(path), pagesize=A4, title="Security & Governance Assessment")
     meta = data.get("metadata", {})
     context = build_report_context(data)
@@ -207,21 +213,23 @@ def write_pdf(data: dict, path: Path) -> None:
     classification = meta.get("classification") or engagement.get("classification", "Confidencial — Security & Governance Assessment")
     findings = sorted(data.get("findings", []), key=lambda item: item.get("risk_score", 0), reverse=True)
     scope_line = " · ".join(f"{row['label']}: {row['value']}" for row in context["scope_rows"])
-    story = [Paragraph(str(engagement_name), styles["Title"]), Paragraph(str(customer), styles["Heading2"]), Paragraph(str(classification), styles["BodyText"]), Paragraph("Confidencial · compartilhar somente com pessoas autorizadas", styles["BodyText"]), Paragraph(f"Perfil {context['profile']} · Run ID {context['run_id']} · Início UTC {context['started_at']} · fim UTC {context['finished_at']}", styles["BodyText"]), Paragraph(scope_line, styles["BodyText"]), Spacer(1, 18)]
-    story.append(Paragraph("Top riscos", styles["Heading2"]))
+    from xml.sax.saxutils import escape
+    safe = lambda value: escape(str(value))
+    story = [Paragraph(safe(engagement_name), title), Paragraph(safe(customer), heading), Paragraph(safe(classification), body), Paragraph("Confidencial · compartilhar somente com pessoas autorizadas", body), Paragraph(safe(f"Perfil {context['profile']} · Run ID {context['run_id']} · Início UTC {context['started_at']} · fim UTC {context['finished_at']}"), body), Paragraph(safe(scope_line), body), Spacer(1, 18)]
+    story.append(Paragraph("Top riscos", heading))
     for item in findings[:5]:
         lineage = item.get("evidence_lineage", {})
-        story.append(Paragraph(f"{item.get('title')} — risco {item.get('risk_score')}/100 · alcance: {item.get('affected', 'N/D')} {item.get('affected_unit', 'itens')} · esforço: {item.get('effort_band', 'não avaliado')} · confiança: {item.get('evidence_confidence', 'não avaliada')} · fonte: {lineage.get('source', item.get('source', 'N/D'))} ({lineage.get('source_status', 'estado N/D')})", styles["BodyText"]))
+        story.append(Paragraph(safe(f"{item.get('title')} — risco {item.get('risk_score')}/100 · alcance: {item.get('affected', 'N/D')} {item.get('affected_unit', 'itens')} · esforço: {item.get('effort_band', 'não avaliado')} · confiança: {item.get('evidence_confidence', 'não avaliada')} · fonte: {lineage.get('source', item.get('source', 'N/D'))} ({lineage.get('source_status', 'estado N/D')})"), body))
         story.append(Spacer(1, 6))
     insights = data.get("discovery", {}).get("cross_domain_insights", [])
-    story.append(Paragraph("Insights cruzados", styles["Heading2"]))
+    story.append(Paragraph("Insights cruzados", heading))
     for item in insights[:5]:
-        story.append(Paragraph(f"{item.get('priority', 'P3')} — {item.get('title')} — responsável sugerido: {item.get('suggested_owner', 'Security & Governance')}", styles["BodyText"]))
+        story.append(Paragraph(safe(f"{item.get('priority', 'P3')} — {item.get('title')} — responsável sugerido: {item.get('suggested_owner', 'Security & Governance')}"), body))
         story.append(Spacer(1, 6))
     if context["limitations"]:
-        story.append(Paragraph("Limitações da execução", styles["Heading2"]))
+        story.append(Paragraph("Limitações da execução", heading))
         for item in context["limitations"][:12]:
-            story.append(Paragraph(f"{item['module']} — {item['status']} ({item['limitation_category']}): {item['likely_cause']} Próximo passo: {item['next_step']}", styles["BodyText"]))
+            story.append(Paragraph(safe(f"{item['module']} — {item['status']} ({item['limitation_category']}): {item['likely_cause']} Próximo passo: {item['next_step']}"), body))
     external = data.get("discovery", {}).get("external_assessments", {}).get("microsoft_zero_trust")
     if external:
         story.append(Spacer(1, 14))
