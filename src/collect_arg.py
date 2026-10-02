@@ -17,7 +17,7 @@ import argparse
 import json
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from version import engine_version
 
@@ -217,6 +217,11 @@ def resource_row(item: dict) -> dict:
         except ValueError:
             pass
     exposure, exposure_reason = exposure_details(resource_type, properties)
+    exposure_class = (
+        "confirmed" if exposure == "Public"
+        else "heuristic" if "Review" in exposure or exposure == "Review"
+        else "not_observed"
+    )
     security_posture = resource_security_posture(resource_type, properties)
     posture = []
     if exposure.lower().startswith("public") or "review" in exposure.lower():
@@ -234,6 +239,7 @@ def resource_row(item: dict) -> dict:
         "resource_group": item.get("resourceGroup", "—"),
         "region": item.get("location", "—"),
         "exposure": exposure,
+        "exposure_class": exposure_class,
         "exposure_reason": exposure_reason,
         "owner": (item.get("tags") or {}).get("owner", "A definir"),
         "tags": ", ".join(sorted((item.get("tags") or {}).keys())) or "Nenhuma",
@@ -396,17 +402,43 @@ def retirement_row(item: dict) -> dict:
     properties = item.get("properties") or {}
     if not isinstance(properties, dict):
         properties = {}
+    raw_date = properties.get("ImpactStartTime") or properties.get("impactStartTime")
+    retirement_date = _normalise_retirement_date(raw_date)
+    days_remaining = "Unknown"
+    if retirement_date != "Not published":
+        try:
+            target = datetime.fromisoformat(retirement_date.replace("Z", "+00:00"))
+            days_remaining = max(0, (target - datetime.now(timezone.utc)).days)
+        except ValueError:
+            pass
     return {
         "service": properties.get("Title") or properties.get("title") or item.get("name") or "Health advisory",
         "feature": properties.get("EventType") or properties.get("eventType") or "Service Health advisory",
-        "retirement_date": properties.get("ImpactStartTime") or properties.get("impactStartTime") or "Not published",
-        "days_remaining": "Unknown",
+        "retirement_date": retirement_date,
+        "days_remaining": days_remaining,
         "impacted_resources": "Unknown",
         "action": "Review advisory and affected resources",
         "owner": "A definir",
         "status": properties.get("Status") or properties.get("status") or "Open",
         "tracking_id": properties.get("TrackingId") or properties.get("trackingId") or "—",
     }
+
+
+def _normalise_retirement_date(value: object) -> str:
+    """Normaliza ISO 8601 e ticks .NET retornados pelo Resource Graph."""
+    if value in (None, "", "Not published"):
+        return "Not published"
+    text = str(value).strip()
+    if text.isdigit():
+        try:
+            parsed = datetime(1, 1, 1, tzinfo=timezone.utc) + timedelta(microseconds=int(text) / 10)
+            return parsed.isoformat().replace("+00:00", "Z")
+        except (OverflowError, ValueError):
+            return "Not published"
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    except ValueError:
+        return "Not published"
 
 
 def power_platform_row(item: dict) -> dict:
