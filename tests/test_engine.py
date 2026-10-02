@@ -721,6 +721,37 @@ class EngineContractTests(unittest.TestCase):
         self.assertIn("lab-subscription", html)
         self.assertNotIn("Tenant não identificado", html.split("<h1>", 1)[0])
 
+    def test_report_falls_back_to_tenant_id_when_label_is_missing(self):
+        from generate_report import render
+        data = json.loads(json.dumps(self.mock))
+        data["metadata"].pop("customer_name", None)
+        data["metadata"].pop("tenant_label", None)
+        data["metadata"]["tenant_id"] = "5006cec6-aa6d-4eab-bc19-c6d69046bddd"
+        html = render(self.catalog, data, {"runbooks": []})
+        self.assertIn("Tenant identificado", html)
+
+    def test_report_labels_insufficient_evidence_without_claiming_nonconformity(self):
+        from generate_report import render
+        data = json.loads(json.dumps(self.mock))
+        data["controls"] = [{**item, "status": "fail", "evidence_state": "INSUFFICIENT_EVIDENCE"} for item in data["controls"]]
+        html = render(self.catalog, data, {"runbooks": []})
+        self.assertIn("Evidência insuficiente", html)
+
+    def test_resource_exposure_distinguishes_confirmed_and_heuristic(self):
+        confirmed = resource_row({"id": "/subscriptions/x", "type": "Microsoft.Network/publicIPAddresses", "properties": {}, "tags": {}})
+        heuristic = resource_row({"id": "/subscriptions/x", "type": "Microsoft.Web/sites", "properties": {}, "tags": {}})
+        self.assertEqual(confirmed["exposure_class"], "confirmed")
+        self.assertEqual(heuristic["exposure_class"], "heuristic")
+
+    def test_unresolved_pim_principal_is_insufficient_evidence(self):
+        rows = enrich_pim_rows([{"principal_id": "missing", "scope": "/"}], [])
+        self.assertEqual(rows[0]["principal_resolution"], "insufficient_evidence")
+
+    def test_retirement_row_normalizes_iso_date(self):
+        row = retirement_row({"properties": {"ImpactStartTime": "2026-11-10T00:00:00Z"}})
+        self.assertEqual(row["retirement_date"], "2026-11-10T00:00:00Z")
+        self.assertIsInstance(row["days_remaining"], int)
+
     def test_license_gate_blocks_compliance_without_entitlement_evidence(self):
         payload = derive({"metadata": {}, "discovery": {"secure_score": [{"currentScore": 80, "maxScore": 100}]}}, self.catalog)
         controls = {item["id"]: item for item in payload["controls"]}
@@ -1134,4 +1165,3 @@ class EngineContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
