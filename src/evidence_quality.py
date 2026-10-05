@@ -8,7 +8,10 @@ def classify(status: object, note: object = "") -> str:
     state = str(status or "").lower()
     if state in {"success", "partial"}:
         return state
-    if "429" in value or "throttl" in value or "rate limit" in value:
+    if "429" in value or "too many requests" in value or (
+        ("throttl" in value or "rate limit" in value)
+        and not any(token in value for token in ("400", "401", "403"))
+    ):
         return "throttling"
     if any(token in value for token in ("403", "401", "permission", "consent", "permiss")):
         return "permission"

@@ -11,7 +11,9 @@ def diagnose(module: str, status: str, note: str = "") -> dict:
         return {"limitation_category": "out_of_profile", "likely_cause": "Módulo fora do perfil ou não configurado para esta execução.", "next_step": "Selecione um perfil que inclua o módulo ou configure a integração opcional aprovada."}
     if any(token in text for token in ("timeout", "timed out", "deadline")):
         return {"limitation_category": "timeout", "likely_cause": "A API ou a conexão não respondeu dentro do tempo disponível.", "next_step": "Reduza a janela/volume, verifique throttling e repita o módulo em uma janela aprovada."}
-    if any(token in text for token in ("429", "throttl", "too many requests")):
+    if any(token in text for token in ("429", "too many requests")) or (
+        "throttl" in text and not any(token in text for token in ("400", "401", "403"))
+    ):
         return {"limitation_category": "throttling", "likely_cause": "O serviço limitou temporariamente a taxa de consultas.", "next_step": "Aguarde o intervalo indicado pelo serviço e repita; reduza paginação ou paralelismo."}
     if any(token in text for token in ("401", "unauthorized", "invalidauthenticationtoken", "authentication")):
         return {"limitation_category": "authentication", "likely_cause": "A sessão ou o token não foi aceito pelo serviço.", "next_step": "Renove a sessão no tenant aprovado e confirme o público/tenant do token."}

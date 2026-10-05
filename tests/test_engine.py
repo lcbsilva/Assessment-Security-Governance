@@ -225,6 +225,15 @@ class EngineContractTests(unittest.TestCase):
         self.assertEqual(timeout["limitation_category"], "timeout")
         self.assertEqual(configured["limitation_category"], "configuration")
 
+    def test_permission_message_with_generic_throttling_hint_is_not_misclassified(self):
+        note_403 = "HTTP 403; verifique consentimento/licença ou throttling: SecurityEvents.Read.All"
+        note_400 = "HTTP 400; verifique consentimento/licença ou throttling: LicenseAssignment.Read.All"
+        self.assertEqual(diagnose_module("Secure Score", "not_available", note_403)["limitation_category"], "permission_or_role")
+        self.assertEqual(diagnose_module("M365 licenses", "not_available", note_400)["limitation_category"], "permission_or_role")
+        self.assertEqual(classify("not_available", note_403), "permission")
+        self.assertEqual(classify("not_available", note_400), "permission")
+        self.assertEqual(classify("error", "HTTP 429; rate limit"), "throttling")
+
     def test_safe_collect_records_duration_and_attempt(self):
         name, result = safe_collect("graph", lambda: {"metadata": {"modules": {"graph": "success"}}, "discovery": {"collection_log": [{"status": "success"}]}}, {})
         self.assertEqual(name, "graph")
