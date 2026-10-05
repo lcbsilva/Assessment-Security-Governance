@@ -424,6 +424,79 @@ def render_executive_security_kpis(data: dict) -> str:
     return f'<section class="section exec-kpi-section"><div class="section-heading"><div><div class="eyebrow">Sinais prioritários</div><h2>Onde concentrar a atenção</h2></div><span class="section-intro">Indicadores derivados das evidências desta execução</span></div><div class="exec-kpis">{cards}</div></section>'
 
 
+
+def render_azure_intelligence(data: dict) -> str:
+    """Apresenta Resource Map, higiene, Policy deep dive e Secure Score impact."""
+    discovery = data.get("discovery", {})
+    graph = discovery.get("resource_map", {})
+    hygiene = discovery.get("resource_hygiene", {})
+    assignments = discovery.get("policy_assignments", [])
+    policy_states = discovery.get("policy_compliance", [])
+    secure = discovery.get("defender_secure_score", {})
+
+    nodes = graph.get("nodes", [])
+    edges = graph.get("edges", [])
+    groups: dict[str, list[dict]] = {}
+    for node in nodes:
+        groups.setdefault(str(node.get("resource_group") or "Sem resource group"), []).append(node)
+    group_cards = []
+    for group, items in sorted(groups.items()):
+        resource_cards = "".join(
+            f'<button class="map-node" type="button" data-map-name="{esc(item.get("name", ""))}" data-map-id="{esc(item.get("id", ""))}"><b>{esc(item.get("name", "—"))}</b><span>{esc(item.get("type", "—"))}</span><small>{esc(item.get("region", "—"))}</small></button>'
+            for item in sorted(items, key=lambda row: (str(row.get("type", "")), str(row.get("name", ""))))
+        )
+        group_cards.append(f'<article class="map-group"><h4>{esc(group)}</h4><div class="map-nodes">{resource_cards}</div></article>')
+    edge_rows = []
+    node_names = {str(item.get("id")): item.get("name", "—") for item in nodes}
+    for edge in edges:
+        edge_rows.append({
+            "source": node_names.get(str(edge.get("source")), edge.get("source", "—")),
+            "target": node_names.get(str(edge.get("target")), edge.get("target", "—")),
+            "kind": edge.get("kind", "Dependency"),
+        })
+
+    empty_groups = hygiene.get("empty_resource_groups", [])
+    network_attention = hygiene.get("network_attention", [])
+    unused_rows = [{"finding": key, "count": value} for key, value in hygiene.get("unused_by_reason", {}).items()]
+
+    assignment_rows = []
+    parameter_rows = []
+    for item in assignments:
+        assignment_rows.append({
+            "assignment": item.get("assignment", "—"),
+            "scope_type": item.get("scope_type", "—"),
+            "scope": item.get("scope", "—"),
+            "definition": item.get("definition_display_name", "—"),
+            "definition_type": item.get("definition_type", "—"),
+            "enforcement": item.get("enforcement_mode", "—"),
+            "parameters": item.get("parameter_count", 0),
+        })
+        for parameter in item.get("parameters", []) or []:
+            parameter_rows.append({
+                "assignment": item.get("assignment", "—"),
+                "parameter": parameter.get("name", "—"),
+                "default": parameter.get("default_value", "Not set"),
+                "assigned": parameter.get("assigned_value", "Not set"),
+                "effective": parameter.get("effective_value", "Not set"),
+                "source": parameter.get("value_source", "Not set"),
+            })
+
+    non_compliant = [row for row in policy_states if str(row.get("classification", "")).lower() == "non_compliant" or int(row.get("non_compliant", 0) or 0) > 0]
+    score_rows = secure.get("scores", [])
+    improvement_rows = secure.get("top_improvements", [])
+    return f'''<section class="section" id="azure-intelligence">
+      <div class="section-heading"><div><div class="eyebrow">Azure Resource Intelligence</div><h2>Mapa, governança e impacto de segurança</h2></div><span class="section-caption">{esc(graph.get("node_count", len(nodes)))} recursos · {esc(graph.get("edge_count", len(edges)))} relações demonstradas</span></div>
+      <p class="section-intro">A visualização combina inventário, dependências por ID ARM, higiene operacional, Policy e Secure Score. Relações ausentes não são inferidas.</p>
+      <div class="panel"><h3>Resource Map interativo</h3><div class="map-toolbar"><input id="resourceMapSearch" type="search" placeholder="Filtrar recurso ou tipo..." aria-label="Filtrar mapa de recursos"><button id="resourceMapClear" type="button">Limpar</button><span id="resourceMapCount">{esc(len(nodes))} recursos</span></div><div class="resource-map">{"".join(group_cards) if group_cards else '<div class="empty">Mapa indisponível nesta execução.</div>'}</div><p class="section-intro">{esc(graph.get("coverage_note", "Conexões somente quando demonstradas."))}</p>{render_table(edge_rows, [("source", "Origem"), ("kind", "Relação"), ("target", "Destino")])}</div>
+      <div class="analysis-grid">
+        <div class="panel"><h3>Resource Hygiene</h3><div class="mini-grid"><div class="mini"><span>RGs vazios</span><b>{esc(hygiene.get("empty_resource_group_count", 0))}</b></div><div class="mini"><span>Órfãos / não associados</span><b>{esc(hygiene.get("orphan_count", 0))}</b></div><div class="mini"><span>Rede em atenção</span><b>{esc(hygiene.get("network_attention_count", 0))}</b></div></div>{render_table(empty_groups, [("severity", "Severidade"), ("finding", "Finding"), ("name", "Resource group"), ("subscription", "Subscription")])}{render_table(unused_rows, [("finding", "Sinal"), ("count", "Quantidade")])}{render_table(network_attention, [("name", "Recurso"), ("type", "Tipo"), ("state", "Estado"), ("resource_group", "RG")])}</div>
+        <div class="panel"><h3>Defender Secure Score — maior ganho potencial</h3>{render_table(score_rows, [("subscription", "Subscription"), ("current", "Atual"), ("max", "Máximo"), ("percentage", "%")])}{render_table(improvement_rows, [("control", "Controle"), ("score", "Atual"), ("max_score", "Máximo"), ("potential_score_increase", "Pontos potenciais"), ("unhealthy_resources", "Recursos não saudáveis")])}<p class="section-intro">{esc(secure.get("interpretation", "Sinal para priorização; não é redução de risco garantida."))}</p></div>
+      </div>
+      <div class="panel"><h3>Azure Policy — assignments e parâmetros efetivos</h3>{render_table(assignment_rows, [("assignment", "Assignment"), ("scope_type", "Escopo"), ("definition", "Definition"), ("definition_type", "Tipo"), ("enforcement", "Enforcement"), ("parameters", "Parâmetros")])}{render_table(parameter_rows, [("assignment", "Assignment"), ("parameter", "Parâmetro"), ("default", "Default"), ("assigned", "Assigned"), ("effective", "Effective"), ("source", "Origem")])}</div>
+      <div class="panel"><h3>Azure Policy — recursos não conformes</h3>{render_table(non_compliant, [("policy", "Policy"), ("assignment", "Assignment"), ("effect", "Effect"), ("resource_type", "Tipo de recurso"), ("resource_id", "Resource ID"), ("last_evaluated", "Avaliado em")])}</div>
+    </section>'''
+
+
 def render_lifecycle(data: dict) -> str:
     """Renderiza FinOps e ciclo de vida sem executar ações destrutivas."""
     lifecycle = data.get("discovery", {}).get("lifecycle", {})
@@ -750,6 +823,7 @@ def render(catalog: dict, data: dict, runbooks: dict) -> str:
     discovery_html = render_discovery(data)
     analysis_html = render_results_analysis(findings, catalog, data)
     lifecycle_html = render_lifecycle(data)
+    azure_intelligence_html = render_azure_intelligence(data)
     runbooks_html = render_runbooks(runbooks)
     comparison_html = render_comparison(data)
     preflight_html = render_preflight(data)
@@ -847,7 +921,7 @@ th{{background:#eef7fb;color:#075985}}
 .collapse-note{{font-size:11px;color:var(--muted);font-weight:400;margin-left:auto}}
 .hero-pillars{{display:flex;gap:8px;flex-wrap:wrap;margin-top:24px}}.hero-pillars span{{border:1px solid #ffffff38;background:#ffffff14;border-radius:99px;padding:7px 12px;font-size:12px;color:#fff}}.hero-pillars b{{color:#62d6ff}}
 .scope-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}}.scope-card{{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;min-height:142px;border-top:3px solid #98a2b3}}.scope-card.scope-success{{border-top-color:#12b76a}}.scope-card.scope-partial{{border-top-color:#f79009}}.scope-card.scope-not_available,.scope-card.scope-roadmap{{border-top-color:#00aeea}}.scope-top{{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}}.scope-card p{{font-size:12px;color:#475467;margin:12px 0 10px;line-height:1.45}}.scope-card small{{display:block;font-size:10px;color:var(--muted);line-height:1.35}}.scope-card .status{{white-space:nowrap}}
-.inventory-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}}.inventory-card{{background:#111827;color:#fff;border-radius:12px;padding:15px;min-height:100px}}.inventory-card span{{display:block;color:#cbd5e1;font-size:11px}}.inventory-card b{{display:block;font-size:30px;line-height:1.2;margin:8px 0;color:#fff}}.inventory-bar{{height:5px;border-radius:6px;background:#ffffff1f;overflow:hidden}}.inventory-bar i{{display:block;height:100%;background:linear-gradient(90deg,#00aeea,#e6007e);border-radius:6px}}
+.inventory-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}}.map-toolbar{{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 14px}}.map-toolbar input{{flex:1;min-width:220px;border:1px solid #cfc4d8;border-radius:8px;padding:9px 11px}}.map-toolbar button{{border:1px solid #cfc4d8;background:#fff;color:var(--purple);border-radius:8px;padding:8px 11px;font-weight:700;cursor:pointer}}.resource-map{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}}.map-group{{border:1px dashed #a7b7c8;border-radius:14px;padding:13px;background:#f8fafc}}.map-group h4{{margin:0 0 10px;color:#172b4d}}.map-nodes{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.map-node{{text-align:left;border:1px solid #d8e1e8;background:#fff;border-radius:10px;padding:10px;cursor:pointer;color:#172b4d}}.map-node b,.map-node span,.map-node small{{display:block;overflow-wrap:anywhere}}.map-node span{{font-size:10px;color:#475467;margin-top:3px}}.map-node small{{font-size:9px;color:#667085;margin-top:4px}}.map-node.filtered-out{{display:none}}.map-group.filtered-out{{display:none}}.inventory-card{{background:#111827;color:#fff;border-radius:12px;padding:15px;min-height:100px}}.inventory-card span{{display:block;color:#cbd5e1;font-size:11px}}.inventory-card b{{display:block;font-size:30px;line-height:1.2;margin:8px 0;color:#fff}}.inventory-bar{{height:5px;border-radius:6px;background:#ffffff1f;overflow:hidden}}.inventory-bar i{{display:block;height:100%;background:linear-gradient(90deg,#00aeea,#e6007e);border-radius:6px}}
 .readiness-banner{{display:flex;gap:18px;align-items:center;flex-wrap:wrap;background:#111827;color:#fff;border-radius:12px;padding:15px 18px;margin-bottom:12px}}.readiness-banner b{{color:#62d6ff}}.readiness-banner span{{font-size:12px;color:#d0d5dd}}.readiness-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}}.readiness-card{{background:#fff;border:1px solid var(--line);border-left:4px solid #98a2b3;border-radius:10px;padding:13px;min-height:150px}}.readiness-pass{{border-left-color:#12b76a}}.readiness-warning{{border-left-color:#f79009}}.readiness-blocked{{border-left-color:#b42318}}.readiness-top{{display:flex;align-items:center;gap:7px}}.readiness-top b{{flex:1;font-size:13px}}.readiness-icon{{width:23px;height:23px;border-radius:50%;display:grid;place-items:center;background:#eef2f6;color:#475467;font-weight:800}}.readiness-pass .readiness-icon{{background:#dcfae6;color:#087443}}.readiness-warning .readiness-icon{{background:#fef0c7;color:#b54708}}.readiness-blocked .readiness-icon{{background:#fee4e2;color:#b42318}}.readiness-card p{{font-size:11px;color:#475467;margin:12px 0 8px;line-height:1.4}}.readiness-card small{{display:block;color:var(--muted);font-size:10px;line-height:1.35;margin-top:5px}}
 .health-banner{{display:flex;gap:16px;align-items:center;flex-wrap:wrap;background:#eef7fb;border:1px solid #b9e6f5;border-radius:12px;padding:14px 16px;color:#075985}}.health-banner b{{font-size:16px;color:#111827}}.health-banner span{{font-size:12px}}.execution-health .notice{{margin:12px 0}}
 .nav-group{{position:relative}}.nav-group>summary{{list-style:none;cursor:pointer;color:#075985;background:#fff;border:1px solid #d0d5dd;border-radius:99px;padding:7px 12px;font-size:12px;font-weight:700;white-space:nowrap}}.nav-group>summary::-webkit-details-marker{{display:none}}.nav-group[open]>summary{{border-color:#00aeea;color:#006f9f}}.nav-group>div{{position:absolute;top:calc(100% + 7px);left:0;min-width:190px;padding:7px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 28px #10182822;display:grid;gap:4px;z-index:40}}.nav-group>div a{{border:0;padding:8px 10px;border-radius:7px}}.nav-group>div a:hover{{background:#f0f9ff;transform:none}}.external-assessment{{border:1px solid #d9d6fe;border-radius:16px;background:linear-gradient(180deg,#fbfaff,#fff);padding:20px}}.external-summary{{grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}}.external-meta{{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}}.external-meta span{{font-size:11px;color:#475467;background:#f2f4f7;border-radius:8px;padding:6px 9px;overflow-wrap:anywhere}}.external-notice{{margin:12px 0}}.external-pillars{{display:grid;gap:9px;margin-top:14px}}.external-pillar{{background:#fff;border:1px solid var(--line);border-radius:12px;padding:0 14px}}.external-pillar>summary{{display:flex;align-items:center;gap:12px;list-style:none;cursor:pointer;padding:13px 0;color:var(--deep);font-weight:750}}.external-pillar>summary::-webkit-details-marker{{display:none}}.external-pillar>summary:after{{content:'＋';margin-left:auto;color:var(--purple)}}.external-pillar[open]>summary:after{{content:'−'}}.external-count{{font-size:11px;color:var(--muted);font-weight:500}}.external-chips{{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 12px}}.external-chip{{border-radius:99px;padding:4px 8px;font-size:10px;font-weight:700;background:#f2f4f7;color:#475467}}.external-chip.pass{{background:#e4f5ed;color:var(--green)}}.external-chip.fail,.external-chip.error{{background:#fde3e7;color:var(--red)}}.external-chip.partial{{background:#fff0d6;color:var(--orange)}}.external-chip.not_available{{background:#eeeaf1;color:var(--muted)}}.external-pillar .table-scroll{{margin-bottom:14px}}.external-footnote{{font-size:11px;color:var(--muted);margin:12px 2px 0}}
@@ -873,7 +947,7 @@ th{{background:#eef7fb;color:#075985}}
 <main class="wrap">
 {coverage_notice}
 {execution_context_html}
-<nav class="nav"><div class="nav-row"><div class="view-switcher" role="group" aria-label="Modo de leitura"><button class="view-button active" type="button" data-view-target="executive">Executivo</button><button class="view-button" type="button" data-view-target="technical">Técnico</button><button class="view-button" type="button" data-view-target="full">Completo</button></div><span class="nav-divider"></span><a href="#executive-summary">Resumo</a><a href="#coverage">Domínios</a><a href="#risks">Riscos</a>{zero_trust_nav}</div><div class="nav-row"><details class="nav-group"><summary>Plano de ação</summary><div><a href="#priority-matrix">Matriz de prioridade</a><a href="#decision-layer">Decisões</a><a href="#analysis">Plano 30/60/90</a><a href="#lifecycle">FinOps e ciclo de vida</a></div></details><details class="nav-group"><summary>Evidências</summary><div><a href="#discovery">Discovery técnico</a><a href="#controls">Controles do engine</a><a href="#runbooks">Runbooks</a><a href="#transparency">Limitações</a></div></details><details class="nav-group"><summary>Execução</summary><div>{readiness_nav}<a href="#inventory-overview">Números do escopo</a></div></details></div></nav>
+<nav class="nav"><div class="nav-row"><div class="view-switcher" role="group" aria-label="Modo de leitura"><button class="view-button active" type="button" data-view-target="executive">Executivo</button><button class="view-button" type="button" data-view-target="technical">Técnico</button><button class="view-button" type="button" data-view-target="full">Completo</button></div><span class="nav-divider"></span><a href="#executive-summary">Resumo</a><a href="#coverage">Domínios</a><a href="#risks">Riscos</a>{zero_trust_nav}</div><div class="nav-row"><details class="nav-group"><summary>Plano de ação</summary><div><a href="#priority-matrix">Matriz de prioridade</a><a href="#decision-layer">Decisões</a><a href="#analysis">Plano 30/60/90</a><a href="#azure-intelligence">Azure Intelligence</a><a href="#lifecycle">FinOps e ciclo de vida</a></div></details><details class="nav-group"><summary>Evidências</summary><div><a href="#discovery">Discovery técnico</a><a href="#controls">Controles do engine</a><a href="#runbooks">Runbooks</a><a href="#transparency">Limitações</a></div></details><details class="nav-group"><summary>Execução</summary><div>{readiness_nav}<a href="#inventory-overview">Números do escopo</a></div></details></div></nav>
 <section class="section summary-grid" id="executive-summary"><div class="executive"><div class="eyebrow">Leitura executiva</div><h2>O que este resultado significa</h2><p>A postura atual apresenta <b>{score_text.lower()}</b>, com maior necessidade de atenção em <b>{esc(priority_domain)}</b>. O assessment identificou <b>{len(findings)} riscos priorizados</b> e <b>{len(quick_wins)} ações de baixo esforço</b> que podem iniciar a evolução imediatamente.</p><p><b>Ponto forte:</b> {esc(strengths_text)}.</p><div class="notice"><b>Mensagem para liderança:</b> o maior risco deve ser interpretado junto com a cobertura, as limitações e a qualidade da evidência desta execução.</div></div><div class="score-panel"><div class="score-ring"><div><b>{score_display}</b><span>{"/ 100" if overall is not None else "sem score"}</span></div></div><div class="score-copy"><h3>{score_text}</h3><p>{esc(score_methodology.get("name", "Score ponderado pelos controles disponíveis"))}. Cobertura geral: <b>{coverage:.0f}%</b>. {esc(score_methodology.get("coverage_rule", "A interpretação deve considerar licenças e limitações."))}</p></div></div></section>
 {executive_security_kpis}
 {preflight_html}
@@ -888,6 +962,7 @@ th{{background:#eef7fb;color:#075985}}
 {risk_matrix_html}
 {analysis_html}
 {decision_html}
+{azure_intelligence_html}
 {lifecycle_html}
 {runbooks_html}
 {comparison_html}
@@ -956,6 +1031,29 @@ th{{background:#eef7fb;color:#075985}}
     URL.revokeObjectURL(url);
   }});
   applyFilter();
+  const mapSearch = document.getElementById('resourceMapSearch');
+  const mapClear = document.getElementById('resourceMapClear');
+  const mapCount = document.getElementById('resourceMapCount');
+  if (mapSearch) {
+    const mapNodes = Array.from(document.querySelectorAll('.map-node'));
+    const applyMapFilter = () => {
+      const query = mapSearch.value.trim().toLocaleLowerCase();
+      let visible = 0;
+      mapNodes.forEach(node => {
+        const match = !query || node.textContent.toLocaleLowerCase().includes(query);
+        node.classList.toggle('filtered-out', !match);
+        if (match) visible += 1;
+      });
+      document.querySelectorAll('.map-group').forEach(group => {
+        const anyVisible = Array.from(group.querySelectorAll('.map-node')).some(node => !node.classList.contains('filtered-out'));
+        group.classList.toggle('filtered-out', !anyVisible);
+      });
+      if (mapCount) mapCount.textContent = visible + ' recursos';
+    };
+    mapSearch.addEventListener('input', applyMapFilter);
+    if (mapClear) mapClear.addEventListener('click', () => { mapSearch.value = ''; applyMapFilter(); mapSearch.focus(); });
+    applyMapFilter();
+  }
   // Mantém a leitura inicial compacta: o consultor expande apenas o bloco necessário.
   Array.from(root.querySelectorAll(':scope > .panel')).forEach((panel, index) => {{
     const heading = panel.querySelector('h3');
