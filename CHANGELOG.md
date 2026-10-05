@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0-beta.75
+
+- Corrige a sem?ntica de controles sem evid?ncia suficiente, evitando classificar aus?ncia de telemetria como conformidade ou n?o conformidade comprovada.
+- Corrige o controle de autentica??o legada para exigir sign-ins efetivamente analisados antes de concluir aus?ncia de uso de protocolos legados.
+- Mant?m ID-005, ID-007, ID-009 e SEC-005 como `INSUFFICIENT_EVIDENCE` quando as fontes necess?rias est?o indispon?veis ou n?o fornecem dados suficientes.
+- Corrige Resource Hygiene normalizando subscription e resource group, evitando falsos positivos de resource groups vazios por diferen?as de chave ou capitaliza??o.
+- Torna expl?citas como `Unresolved` as Azure Policy definitions que n?o puderam ser resolvidas pelo Azure Resource Graph, sem inferir incorretamente o tipo da defini??o.
+- Adiciona regress?es para evid?ncia insuficiente, autentica??o legada, resource groups vazios e resolu??o de Azure Policy.
+- Mant?m o assessment read-only e o comportamento fail-gracefully dos collectors.
+
+
 ## 0.2.0-beta.74
 
 - Adiciona Azure Resource Intelligence ao assessment com mapa navegável por resource group e relações demonstradas por IDs ARM.

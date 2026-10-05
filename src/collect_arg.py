@@ -477,7 +477,16 @@ def enrich_policy_assignments(assignments: list[dict], definitions: list[dict]) 
             })
         enriched = dict(assignment)
         enriched["definition_display_name"] = definition.get("displayName") or definition.get("name") or "—"
-        enriched["definition_type"] = "PolicySet" if str(definition.get("type", "")).lower().endswith("policysetdefinitions") else "Policy"
+
+        definition_type = str(definition.get("type", "")).lower()
+        if definition_type.endswith("policysetdefinitions"):
+            enriched["definition_type"] = "PolicySet"
+        elif definition_type.endswith("policydefinitions"):
+            enriched["definition_type"] = "Policy"
+        else:
+            enriched["definition_type"] = "Unresolved"
+
+        enriched["definition_resolved"] = bool(definition)
         enriched["parameters"] = resolved
         enriched["parameter_count"] = len(resolved)
         result.append(enriched)
@@ -514,10 +523,31 @@ def hygiene_summary(resources: list[dict], orphans: list[dict], resource_groups:
     empty_resource_groups = []
     counts: dict[tuple[str, str], int] = {}
     for resource in resources:
-        key = (str(resource.get("subscription", "")), str(resource.get("resource_group", "")))
+        subscription = str(
+            resource.get("subscription")
+            or resource.get("subscriptionId")
+            or ""
+        ).strip().lower()
+        resource_group = str(
+            resource.get("resource_group")
+            or resource.get("resourceGroup")
+            or ""
+        ).strip().lower()
+        key = (subscription, resource_group)
         counts[key] = counts.get(key, 0) + 1
+
     for group in resource_groups:
-        key = (str(group.get("subscriptionId", "")), str(group.get("name", "")))
+        subscription = str(
+            group.get("subscriptionId")
+            or group.get("subscription")
+            or ""
+        ).strip().lower()
+        resource_group = str(
+            group.get("name")
+            or group.get("resourceGroup")
+            or ""
+        ).strip().lower()
+        key = (subscription, resource_group)
         if counts.get(key, 0) == 0:
             empty_resource_groups.append({"name": group.get("name", "—"), "subscription": group.get("subscriptionId", "—"), "location": group.get("location", "—"), "severity": "Low", "finding": "Empty resource group"})
     unused = {}
