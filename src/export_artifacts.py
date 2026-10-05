@@ -124,6 +124,40 @@ def write_xlsx(data: dict, path: Path) -> None:
         for column in external_sheet.columns:
             external_sheet.column_dimensions[column[0].column_letter].width = min(max(len(str(cell.value or "")) for cell in column) + 2, 64)
         external_sheet.freeze_panes = "A6"
+
+    intelligence = data.get("discovery", {})
+    intel_sheet = book.create_sheet("Azure Intelligence")
+    intel_sheet.append(["Resource Intelligence", "Valor"])
+    for cell in intel_sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="5B2C83")
+    graph = intelligence.get("resource_map", {})
+    hygiene = intelligence.get("resource_hygiene", {})
+    secure = intelligence.get("defender_secure_score", {})
+    intel_sheet.append(["Recursos no mapa", graph.get("node_count", 0)])
+    intel_sheet.append(["Relações demonstradas", graph.get("edge_count", 0)])
+    intel_sheet.append(["Resource groups vazios", hygiene.get("empty_resource_group_count", 0)])
+    intel_sheet.append(["Recursos órfãos/não associados", hygiene.get("orphan_count", 0)])
+    intel_sheet.append(["Sinais de rede em atenção", hygiene.get("network_attention_count", 0)])
+    intel_sheet.append([])
+    intel_sheet.append(["Secure Score / Subscription", "Atual", "Máximo", "Percentual"])
+    for item in secure.get("scores", []):
+        intel_sheet.append([item.get("subscription"), item.get("current"), item.get("max"), item.get("percentage")])
+    intel_sheet.append([])
+    intel_sheet.append(["Controle Secure Score", "Atual", "Máximo", "Ganho potencial", "Recursos não saudáveis"])
+    for item in secure.get("top_improvements", []):
+        intel_sheet.append([item.get("control"), item.get("score"), item.get("max_score"), item.get("potential_score_increase"), item.get("unhealthy_resources")])
+    intel_sheet.append([])
+    intel_sheet.append(["Policy Assignment", "Escopo", "Definition", "Enforcement", "Parâmetro", "Default", "Assigned", "Effective", "Origem"])
+    for assignment in intelligence.get("policy_assignments", []):
+        if assignment.get("parameters"):
+            for parameter in assignment.get("parameters", []):
+                intel_sheet.append([assignment.get("assignment"), assignment.get("scope"), assignment.get("definition_display_name"), assignment.get("enforcement_mode"), parameter.get("name"), parameter.get("default_value"), parameter.get("assigned_value"), parameter.get("effective_value"), parameter.get("value_source")])
+        else:
+            intel_sheet.append([assignment.get("assignment"), assignment.get("scope"), assignment.get("definition_display_name"), assignment.get("enforcement_mode"), "—", "—", "—", "—", "Not set"])
+    for column in intel_sheet.columns:
+        intel_sheet.column_dimensions[column[0].column_letter].width = min(max(len(str(cell.value or "")) for cell in column) + 2, 55)
+    intel_sheet.freeze_panes = "A2"
     book.save(path)
 
 
@@ -189,6 +223,26 @@ def write_pptx(data: dict, path: Path) -> None:
         body = slide.shapes.add_textbox(Inches(0.9), Inches(1.4), Inches(11.2), Inches(4.8))
         body.text_frame.text = f"Versão {external.get('source_version', 'N/D')} · {external.get('tests_total', 0)} verificações\n{status_line}\n\n" + "\n".join(pillar_lines) + "\n\nScore Microsoft mantido separado; não combinado ao score do Assessment Engine."
         body.text_frame.paragraphs[0].font.size = Pt(14)
+
+    discovery = data.get("discovery", {})
+    graph = discovery.get("resource_map", {})
+    hygiene = discovery.get("resource_hygiene", {})
+    secure = discovery.get("defender_secure_score", {})
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    title = slide.shapes.add_textbox(Inches(0.7), Inches(0.5), Inches(11.5), Inches(0.7))
+    title.text_frame.text = "Azure Intelligence — mapa, governança e Secure Score"
+    title.text_frame.paragraphs[0].font.size = Pt(22)
+    top_controls = secure.get("top_improvements", [])[:3]
+    controls_text = "\n".join(f"• {item.get('control')} — ganho potencial {item.get('potential_score_increase')} ponto(s)" for item in top_controls) or "• Secure Score não disponível"
+    body = slide.shapes.add_textbox(Inches(0.9), Inches(1.4), Inches(11.2), Inches(4.8))
+    body.text_frame.text = (
+        f"Resource Map: {graph.get('node_count', 0)} recursos · {graph.get('edge_count', 0)} relações demonstradas\n"
+        f"Higiene: {hygiene.get('empty_resource_group_count', 0)} RGs vazios · {hygiene.get('orphan_count', 0)} órfãos/não associados · {hygiene.get('network_attention_count', 0)} sinais de rede\n"
+        f"Policy assignments: {len(discovery.get('policy_assignments', []))}\n\n"
+        f"Controles com maior potencial de melhoria:\n{controls_text}\n\n"
+        "Relações ausentes e defaults não retornados permanecem como evidência insuficiente; nenhuma remediação é executada."
+    )
+    body.text_frame.paragraphs[0].font.size = Pt(14)
     presentation.save(path)
 
 
@@ -232,6 +286,16 @@ def write_pdf(data: dict, path: Path) -> None:
         for pillar in external.get("pillars", []):
             pillar_status = " · ".join(f"{key}: {value}" for key, value in pillar.get("statuses", {}).items())
             story.append(Paragraph(f"{pillar.get('name')}: {pillar.get('tests')} verificações — {pillar_status}", styles["BodyText"]))
+
+    discovery = data.get("discovery", {})
+    graph = discovery.get("resource_map", {})
+    hygiene = discovery.get("resource_hygiene", {})
+    secure = discovery.get("defender_secure_score", {})
+    story.append(Spacer(1, 14))
+    story.append(Paragraph("Azure Intelligence", styles["Heading2"]))
+    story.append(Paragraph(f"Resource Map: {graph.get('node_count', 0)} recursos e {graph.get('edge_count', 0)} relações demonstradas. Higiene: {hygiene.get('empty_resource_group_count', 0)} resource groups vazios, {hygiene.get('orphan_count', 0)} recursos órfãos/não associados e {hygiene.get('network_attention_count', 0)} sinais de rede em atenção.", styles["BodyText"]))
+    for item in secure.get("top_improvements", [])[:5]:
+        story.append(Paragraph(f"Secure Score — {item.get('control')}: ganho potencial {item.get('potential_score_increase')} ponto(s), {item.get('unhealthy_resources')} recursos não saudáveis.", styles["BodyText"]))
     document.build(story)
 
 

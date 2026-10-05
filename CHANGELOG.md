@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0-beta.74
+
+- Adiciona Azure Resource Intelligence ao assessment com mapa navegável por resource group e relações demonstradas por IDs ARM.
+- Amplia Resource Hygiene com resource groups vazios, discos/IPs/NICs não associados e sinais de conectividade de rede que exigem atenção.
+- Aprofunda Azure Policy com assignment, escopo, enforcement e parâmetros Default / Assigned / Effective, preservando "Not set" quando a definição não oferece evidência.
+- Acrescenta Defender Secure Score por subscription e priorização de controles pelo ganho potencial de pontos, sem tratar o ganho como redução de risco garantida.
+- Enriquece Azure Advisor com economia mensal derivada da estimativa anual oficial e mantém o aviso de possível sobreposição entre recomendações.
+- Integra Azure Intelligence ao HTML, XLSX, PPTX e PDF mantendo o fluxo offline, o score próprio, evidências, priorização e plano 30/60/90.
+- Mantém collectors independentes e fail-gracefully: módulos indisponíveis ou parciais continuam explícitos sem derrubar o assessment inteiro.
+- Adiciona regressões para dependências, Policy effective values, hygiene, Secure Score impact, Advisor savings e renderização do novo bloco.
+- Nenhuma operação de escrita ou remediação automática foi adicionada; o assessment permanece read-only.
+
 ## 0.2.0-beta.72
 
 - Adiciona dashboard histórico offline baseado em snapshots locais agregados.

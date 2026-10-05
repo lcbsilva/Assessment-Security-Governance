@@ -53,17 +53,57 @@ Resources
 POLICY_QUERY = """
 PolicyResources
 | where type =~ 'Microsoft.PolicyInsights/PolicyStates'
-| extend complianceState=tostring(properties.complianceState), resourceId=tostring(properties.resourceId), policyAssignmentId=tostring(properties.policyAssignmentId), policyAssignmentName=tostring(properties.policyAssignmentName), policyDefinitionName=tostring(properties.policyDefinitionName), timestamp=todatetime(properties.timestamp)
-| project subscriptionId, resourceId, policyAssignmentId, policyAssignmentName, policyDefinitionName, complianceState, timestamp
+| extend complianceState=tostring(properties.complianceState), resourceId=tostring(properties.resourceId), policyAssignmentId=tostring(properties.policyAssignmentId), policyAssignmentName=tostring(properties.policyAssignmentName), policyDefinitionName=tostring(properties.policyDefinitionName), policyDefinitionId=tostring(properties.policyDefinitionId), policySetDefinitionId=tostring(properties.policySetDefinitionId), policyDefinitionAction=tostring(properties.policyDefinitionAction), resourceType=tostring(properties.resourceType), resourceLocation=tostring(properties.resourceLocation), timestamp=todatetime(properties.timestamp)
+| project subscriptionId, resourceId, resourceType, resourceLocation, policyAssignmentId, policyAssignmentName, policyDefinitionId, policyDefinitionName, policySetDefinitionId, policyDefinitionAction, complianceState, timestamp
+""".strip()
+
+POLICY_ASSIGNMENTS_QUERY = """
+PolicyResources
+| where type =~ 'Microsoft.Authorization/PolicyAssignments'
+| extend displayName=tostring(properties.displayName), enforcementMode=tostring(properties.enforcementMode), definitionId=tostring(properties.policyDefinitionId), scope=tostring(properties.scope), notScopes=properties.notScopes, parameters=properties.parameters
+| project id, name, subscriptionId, resourceGroup, displayName, enforcementMode, definitionId, scope, notScopes, parameters
+""".strip()
+
+POLICY_DEFINITIONS_QUERY = """
+PolicyResources
+| where type in~ ('Microsoft.Authorization/PolicyDefinitions','Microsoft.Authorization/PolicySetDefinitions')
+| extend displayName=tostring(properties.displayName), parameters=properties.parameters
+| project id, name, type, displayName, parameters
 """.strip()
 
 ORPHAN_QUERY = """
 Resources
 | where type =~ 'Microsoft.Compute/disks'
 | where tostring(properties.diskState) =~ 'Unattached'
-| project name, type, subscriptionId, resourceGroup, location, reason='Unattached', resourceId=id
-| union (Resources | where type =~ 'Microsoft.Network/publicIPAddresses' | where isempty(properties.ipConfiguration) | project name, type, subscriptionId, resourceGroup, location, reason='Not associated', resourceId=id)
-| union (Resources | where type =~ 'Microsoft.Network/networkInterfaces' | where isempty(properties.virtualMachine.id) | project name, type, subscriptionId, resourceGroup, location, reason='No VM association', resourceId=id)
+| project name, type, subscriptionId, resourceGroup, location, reason='Unattached disk', resourceId=id
+| union (Resources | where type =~ 'Microsoft.Network/publicIPAddresses' | where isempty(properties.ipConfiguration) | project name, type, subscriptionId, resourceGroup, location, reason='Unused public IP', resourceId=id)
+| union (Resources | where type =~ 'Microsoft.Network/networkInterfaces' | where isempty(properties.virtualMachine.id) and isempty(properties.privateEndpoint.id) | project name, type, subscriptionId, resourceGroup, location, reason='Unused NIC', resourceId=id)
+""".strip()
+
+RESOURCE_GROUP_QUERY = """
+ResourceContainers
+| where type =~ 'microsoft.resources/subscriptions/resourcegroups'
+| project id, name, subscriptionId, location, tags
+""".strip()
+
+NETWORK_HEALTH_QUERY = """
+Resources
+| where type in~ ('microsoft.network/virtualnetworks','microsoft.network/connections','microsoft.network/virtualnetworkgateways','microsoft.network/expressroutecircuits')
+| project id, name, type, subscriptionId, resourceGroup, location, properties
+""".strip()
+
+DEFENDER_SCORE_QUERY = """
+SecurityResources
+| where type =~ 'microsoft.security/securescores'
+| extend current=todouble(properties.score.current), max=todouble(properties.score.max), percentage=todouble(properties.score.percentage)
+| project subscriptionId, name, current, max, percentage
+""".strip()
+
+DEFENDER_CONTROLS_QUERY = """
+SecurityResources
+| where type =~ 'microsoft.security/securescores/securescorecontrols'
+| extend displayName=tostring(properties.displayName), current=todouble(properties.score.current), max=todouble(properties.score.max), percentage=todouble(properties.score.percentage), unhealthy=tostring(properties.unhealthyResourceCount), healthy=tostring(properties.healthyResourceCount)
+| project subscriptionId, name, displayName, current, max, percentage, unhealthy, healthy
 """.strip()
 
 RETIREMENT_QUERY = """
@@ -204,6 +244,24 @@ def resource_security_posture(resource_type: str, properties: dict) -> list[str]
     return sorted(set(signals))
 
 
+def extract_resource_ids(value: object) -> list[str]:
+    """Extrai referências Azure Resource Manager explícitas de estruturas retornadas pelo ARG."""
+    found: set[str] = set()
+    def walk(current: object) -> None:
+        if isinstance(current, dict):
+            for key, child in current.items():
+                if str(key).lower() in {"id", "resourceid", "scope"} and isinstance(child, str) and child.lower().startswith("/subscriptions/"):
+                    found.add(child)
+                walk(child)
+        elif isinstance(current, list):
+            for child in current:
+                walk(child)
+        elif isinstance(current, str) and current.lower().startswith("/subscriptions/"):
+            found.add(current)
+    walk(value)
+    return sorted(found)
+
+
 def resource_row(item: dict) -> dict:
     resource_id = item.get("id", "")
     resource_type = str(item.get("type", "")).lower()
@@ -246,6 +304,7 @@ def resource_row(item: dict) -> dict:
         "security_posture": "; ".join(security_posture) or "Nenhum sinal explícito retornado",
         "governance_signal": governance_signal,
         "posture_signals": "; ".join(posture) or "Nenhum sinal básico",
+        "dependency_ids": [rid for rid in extract_resource_ids(properties) if rid.lower() != str(resource_id).lower()],
     }
 
 
@@ -264,9 +323,16 @@ def policy_row(item: dict) -> dict:
     else:
         classification = "unknown"
         evidence_state = "INSUFFICIENT_EVIDENCE"
+    assignment_id = item.get("policyAssignmentId") or "—"
+    assignment_scope = assignment_id.rsplit("/providers/Microsoft.Authorization/policyAssignments/", 1)[0] if "/providers/Microsoft.Authorization/policyAssignments/" in str(assignment_id) else "—"
     return {
         "policy": item.get("policyDefinitionName") or "—",
-        "assignment": item.get("policyAssignmentName") or item.get("policyAssignmentId") or "—",
+        "policy_definition_id": item.get("policyDefinitionId") or "—",
+        "initiative_id": item.get("policySetDefinitionId") or "—",
+        "assignment": item.get("policyAssignmentName") or assignment_id,
+        "assignment_id": assignment_id,
+        "assignment_scope": assignment_scope,
+        "effect": item.get("policyDefinitionAction") or "—",
         "compliance_state": raw_state,
         "classification": classification,
         "evidence_state": evidence_state,
@@ -274,6 +340,8 @@ def policy_row(item: dict) -> dict:
         "exemptions": 1 if classification == "exempt" else 0,
         "last_evaluated": item.get("timestamp") or "—",
         "resource_id": item.get("resourceId") or "—",
+        "resource_type": item.get("resourceType") or "—",
+        "resource_location": item.get("resourceLocation") or "—",
         "subscription": item.get("subscriptionId") or "—",
     }
 
@@ -374,6 +442,144 @@ def orphan_row(item: dict) -> dict:
         "recommended_action": "Validar dependência, owner e custo antes de qualquer ação",
         "resource_id": item.get("resourceId") or "—",
     }
+def policy_definition_defaults(item: dict) -> dict:
+    parameters = item.get("parameters") or {}
+    if not isinstance(parameters, dict):
+        return {}
+    defaults = {}
+    for name, definition in parameters.items():
+        if isinstance(definition, dict) and "defaultValue" in definition:
+            defaults[str(name)] = definition.get("defaultValue")
+    return defaults
+
+
+def enrich_policy_assignments(assignments: list[dict], definitions: list[dict]) -> list[dict]:
+    """Resolve Default/Assigned/Effective sem inventar default ausente."""
+    by_id = {str(item.get("id", "")).lower(): item for item in definitions if item.get("id")}
+    result = []
+    for assignment in assignments:
+        definition = by_id.get(str(assignment.get("definition_id", "")).lower(), {})
+        defaults = policy_definition_defaults(definition)
+        assigned_by_name = {str(item.get("name")): item.get("assigned_value") for item in assignment.get("parameters", [])}
+        names = sorted(set(defaults) | set(assigned_by_name))
+        resolved = []
+        for name in names:
+            assigned_present = name in assigned_by_name
+            default_present = name in defaults
+            assigned = assigned_by_name.get(name)
+            default = defaults.get(name)
+            resolved.append({
+                "name": name,
+                "default_value": default if default_present else "Not set",
+                "assigned_value": assigned if assigned_present else "Not set",
+                "effective_value": assigned if assigned_present else (default if default_present else "Not set"),
+                "value_source": "Assigned" if assigned_present else ("Default" if default_present else "Not set"),
+            })
+        enriched = dict(assignment)
+        enriched["definition_display_name"] = definition.get("displayName") or definition.get("name") or "—"
+        enriched["definition_type"] = "PolicySet" if str(definition.get("type", "")).lower().endswith("policysetdefinitions") else "Policy"
+        enriched["parameters"] = resolved
+        enriched["parameter_count"] = len(resolved)
+        result.append(enriched)
+    return result
+
+
+def policy_assignment_row(item: dict) -> dict:
+    """Normaliza assignment e parâmetros sem confundir ausência com default efetivo."""
+    parameters = item.get("parameters") or {}
+    if not isinstance(parameters, dict):
+        parameters = {}
+    normalized = []
+    for name, value in sorted(parameters.items()):
+        raw = value.get("value") if isinstance(value, dict) else value
+        normalized.append({"name": name, "assigned_value": raw, "value_source": "Assigned"})
+    scope = item.get("scope") or "—"
+    return {
+        "assignment": item.get("displayName") or item.get("name") or "—",
+        "assignment_name": item.get("name") or "—",
+        "assignment_id": item.get("id") or "—",
+        "definition_id": item.get("definitionId") or "—",
+        "scope": scope,
+        "scope_type": "ManagementGroup" if "/managementGroups/" in str(scope) else "ResourceGroup" if "/resourceGroups/" in str(scope) else "Subscription" if "/subscriptions/" in str(scope) else "Unknown",
+        "enforcement_mode": item.get("enforcementMode") or "Default",
+        "not_scopes": item.get("notScopes") or [],
+        "parameters": normalized,
+        "parameter_count": len(normalized),
+        "subscription": item.get("subscriptionId") or "—",
+    }
+
+
+def hygiene_summary(resources: list[dict], orphans: list[dict], resource_groups: list[dict], network_rows: list[dict]) -> dict:
+    """Resume higiene operacional com regras determinísticas e conservadoras."""
+    empty_resource_groups = []
+    counts: dict[tuple[str, str], int] = {}
+    for resource in resources:
+        key = (str(resource.get("subscription", "")), str(resource.get("resource_group", "")))
+        counts[key] = counts.get(key, 0) + 1
+    for group in resource_groups:
+        key = (str(group.get("subscriptionId", "")), str(group.get("name", "")))
+        if counts.get(key, 0) == 0:
+            empty_resource_groups.append({"name": group.get("name", "—"), "subscription": group.get("subscriptionId", "—"), "location": group.get("location", "—"), "severity": "Low", "finding": "Empty resource group"})
+    unused = {}
+    for row in orphans:
+        reason = str(row.get("reason", "Other"))
+        unused[reason] = unused.get(reason, 0) + 1
+    network_attention = []
+    for row in network_rows:
+        props = row.get("properties") or {}
+        resource_type = str(row.get("type", "")).lower()
+        if "connections" in resource_type and str(props.get("connectionStatus", "")).lower() not in {"", "connected"}:
+            network_attention.append({"name": row.get("name", "—"), "type": row.get("type", "—"), "state": props.get("connectionStatus", "Unknown"), "resource_group": row.get("resourceGroup", "—")})
+        if "expressroutecircuits" in resource_type and str(props.get("serviceProviderProperties", {}).get("provisioningState", props.get("circuitProvisioningState", ""))).lower() in {"failed", "disabled", "notprovisioned"}:
+            network_attention.append({"name": row.get("name", "—"), "type": row.get("type", "—"), "state": props.get("circuitProvisioningState", "Unknown"), "resource_group": row.get("resourceGroup", "—")})
+    return {
+        "empty_resource_groups": empty_resource_groups,
+        "empty_resource_group_count": len(empty_resource_groups),
+        "orphan_count": len(orphans),
+        "unused_by_reason": dict(sorted(unused.items())),
+        "network_attention": network_attention,
+        "network_attention_count": len(network_attention),
+        "interpretation": "Sinais de higiene para revisão; nenhuma exclusão ou alteração é executada pelo assessment.",
+    }
+
+
+def resource_map(resources: list[dict]) -> dict:
+    """Cria grafo navegável de recursos e dependências usando IDs explícitos retornados pelo ARG."""
+    nodes = []
+    edge_keys: set[tuple[str, str]] = set()
+    edges = []
+    known = {str(row.get("resource_id", "")).lower(): row for row in resources if row.get("resource_id")}
+    for row in resources:
+        rid = str(row.get("resource_id", ""))
+        nodes.append({"id": rid, "name": row.get("name", "—"), "type": row.get("type", "—"), "subscription": row.get("subscription", "—"), "resource_group": row.get("resource_group", "—"), "region": row.get("region", "—"), "security_signal": row.get("security_signal", "—"), "governance_signal": row.get("governance_signal", "—")})
+        for dependency in row.get("dependency_ids", []) or []:
+            target = str(dependency).lower()
+            source = rid.lower()
+            if target in known and target != source and (source, target) not in edge_keys:
+                edge_keys.add((source, target))
+                edges.append({"source": rid, "target": known[target].get("resource_id", dependency), "kind": "Resource dependency"})
+        # Child resources such as subnets also carry a deterministic parent ARM ID.
+        parts = rid.split("/")
+        if len(parts) > 10:
+            parent = "/".join(parts[:-2]).lower()
+            if parent in known and parent != rid.lower() and (rid.lower(), parent) not in edge_keys:
+                edge_keys.add((rid.lower(), parent))
+                edges.append({"source": rid, "target": known[parent].get("resource_id"), "kind": "Parent/child"})
+    return {"nodes": nodes, "edges": edges, "node_count": len(nodes), "edge_count": len(edges), "coverage_note": "Conexões são exibidas apenas quando a relação é demonstrada por IDs ARM retornados pela coleta; ausência de linha não significa ausência de dependência."}
+
+
+def defender_summary(scores: list[dict], controls: list[dict]) -> dict:
+    """Calcula potencial de ganho do Secure Score sem inventar pontos."""
+    score_rows = [{"subscription": row.get("subscriptionId", "—"), "current": row.get("current", 0) or 0, "max": row.get("max", 0) or 0, "percentage": row.get("percentage", 0) or 0} for row in scores]
+    control_rows = []
+    for row in controls:
+        maximum = float(row.get("max") or 0)
+        current = float(row.get("current") or 0)
+        control_rows.append({"subscription": row.get("subscriptionId", "—"), "control": row.get("displayName") or row.get("name") or "—", "score": current, "max_score": maximum, "potential_score_increase": round(max(0.0, maximum - current), 2), "unhealthy_resources": row.get("unhealthy") or "—", "healthy_resources": row.get("healthy") or "—"})
+    control_rows.sort(key=lambda x: (-float(x.get("potential_score_increase", 0)), str(x.get("control", ""))))
+    return {"scores": score_rows, "controls": control_rows, "top_improvements": control_rows[:10], "interpretation": "Potential score increase uses Defender Secure Score control points returned by Azure; it is prioritization context, not guaranteed risk reduction."}
+
+
 def advisor_row(item: dict) -> dict:
     """Normaliza recomendação do Advisor sem coletar dados de configuração."""
     return {
@@ -384,6 +590,7 @@ def advisor_row(item: dict) -> dict:
         "resource_group": item.get("resourceGroup") or "—",
         "resource_id": item.get("resourceId") or "—",
         "annual_savings": item.get("annualSavings") if item.get("annualSavings") is not None else "Não quantificado",
+        "monthly_savings": round(float(item.get("annualSavings")) / 12, 2) if item.get("annualSavings") not in {None, ""} else "Não quantificado",
         "currency": item.get("savingsCurrency") or "—",
         "last_updated": item.get("lastUpdated") or "—",
         "status": item.get("recommendationStatus") or "New",
@@ -510,12 +717,18 @@ def collect(subscription_ids: list[str]) -> dict:
     client = ResourceGraphClient(credential)
     rows: list[dict] = []
     policy_rows: list[dict] = []
+    policy_assignment_rows: list[dict] = []
+    policy_definition_rows: list[dict] = []
     orphan_rows: list[dict] = []
     retirement_rows: list[dict] = []
     advisor_rows: list[dict] = []
     container_rows: list[dict] = []
     power_platform_rows: list[dict] = []
     benefit_rows: list[dict] = []
+    resource_group_rows: list[dict] = []
+    network_health_rows: list[dict] = []
+    defender_score_rows: list[dict] = []
+    defender_control_rows: list[dict] = []
     skip_token: str | None = None
 
     while True:
@@ -573,6 +786,70 @@ def collect(subscription_ids: list[str]) -> dict:
     except Exception as exc:
         policy_status = "not_available"
         policy_note = f"Policy Insights indisponível: {type(exc).__name__}: {exc}"
+
+    try:
+        assignment_response = query_arg_with_retry(client, QueryRequest(
+            subscriptions=subscription_ids,
+            query=POLICY_ASSIGNMENTS_QUERY,
+            options=QueryRequestOptions(result_format="objectArray", top=5000),
+        ))
+        definition_response = query_arg_with_retry(client, QueryRequest(
+            subscriptions=subscription_ids,
+            query=POLICY_DEFINITIONS_QUERY,
+            options=QueryRequestOptions(result_format="objectArray", top=5000),
+        ))
+        policy_definition_rows = list(definition_response.data or [])
+        policy_assignment_rows = enrich_policy_assignments([policy_assignment_row(item) for item in (assignment_response.data or [])], policy_definition_rows)
+        assignment_status = "success"
+        assignment_note = "Policy assignments e parâmetros atribuídos via Azure Resource Graph."
+    except Exception as exc:
+        assignment_status = "not_available"
+        assignment_note = f"Policy assignments indisponíveis: {type(exc).__name__}: {exc}"
+
+    try:
+        rg_response = query_arg_with_retry(client, QueryRequest(
+            subscriptions=subscription_ids,
+            query=RESOURCE_GROUP_QUERY,
+            options=QueryRequestOptions(result_format="objectArray", top=5000),
+        ))
+        resource_group_rows = list(rg_response.data or [])
+        rg_status = "success"
+        rg_note = "Resource groups via ResourceContainers"
+    except Exception as exc:
+        rg_status = "not_available"
+        rg_note = f"Resource groups indisponíveis: {type(exc).__name__}: {exc}"
+
+    try:
+        network_response = query_arg_with_retry(client, QueryRequest(
+            subscriptions=subscription_ids,
+            query=NETWORK_HEALTH_QUERY,
+            options=QueryRequestOptions(result_format="objectArray", top=5000),
+        ))
+        network_health_rows = list(network_response.data or [])
+        network_status = "success"
+        network_note = "Sinais de rede via Azure Resource Graph"
+    except Exception as exc:
+        network_status = "not_available"
+        network_note = f"Sinais de rede indisponíveis: {type(exc).__name__}: {exc}"
+
+    try:
+        defender_score_response = query_arg_with_retry(client, QueryRequest(
+            subscriptions=subscription_ids,
+            query=DEFENDER_SCORE_QUERY,
+            options=QueryRequestOptions(result_format="objectArray", top=5000),
+        ))
+        defender_score_rows = list(defender_score_response.data or [])
+        defender_control_response = query_arg_with_retry(client, QueryRequest(
+            subscriptions=subscription_ids,
+            query=DEFENDER_CONTROLS_QUERY,
+            options=QueryRequestOptions(result_format="objectArray", top=5000),
+        ))
+        defender_control_rows = list(defender_control_response.data or [])
+        defender_status = "success" if (defender_score_rows or defender_control_rows) else "partial"
+        defender_note = "Secure Score e controles via SecurityResources; vazio pode significar Defender não habilitado ou sem dados."
+    except Exception as exc:
+        defender_status = "not_available"
+        defender_note = f"Secure Score indisponível: {type(exc).__name__}: {exc}"
 
     try:
         orphan_response = client.resources(QueryRequest(
@@ -654,6 +931,10 @@ def collect(subscription_ids: list[str]) -> dict:
             "security_posture_summary": summarize_security_posture(rows),
             "containers": container_rows,
             "policy_compliance": policy_rows,
+            "policy_assignments": policy_assignment_rows,
+            "resource_map": resource_map(rows),
+            "resource_hygiene": hygiene_summary(rows, orphan_rows, resource_group_rows, network_health_rows),
+            "defender_secure_score": defender_summary(defender_score_rows, defender_control_rows),
             "lifecycle": {
                 "summary": {"Recursos órfãos": len(orphan_rows), "Recomendações Advisor": len(advisor_rows)},
                 "orphan_resources": orphan_rows,
@@ -678,11 +959,35 @@ def collect(subscription_ids: list[str]) -> dict:
                 "records": len(policy_rows),
                 "note": policy_note,
             }, {
+                "module": "Azure Policy assignments",
+                "source": "PolicyResources / Azure Resource Graph",
+                "status": assignment_status,
+                "records": len(policy_assignment_rows),
+                "note": assignment_note,
+            }, {
                 "module": "Azure hierarchy",
                 "source": "ResourceContainers / Azure Resource Graph",
                 "status": hierarchy_status,
                 "records": len(container_rows),
                 "note": hierarchy_note,
+            }, {
+                "module": "Resource groups hygiene",
+                "source": "ResourceContainers / Azure Resource Graph",
+                "status": rg_status,
+                "records": len(resource_group_rows),
+                "note": rg_note,
+            }, {
+                "module": "Network health",
+                "source": "Resources / Azure Resource Graph",
+                "status": network_status,
+                "records": len(network_health_rows),
+                "note": network_note,
+            }, {
+                "module": "Defender Secure Score",
+                "source": "SecurityResources / Azure Resource Graph",
+                "status": defender_status,
+                "records": len(defender_score_rows) + len(defender_control_rows),
+                "note": defender_note,
             }, {
                 "module": "Orphan resources",
                 "source": "Azure Resource Graph",
