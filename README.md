@@ -32,6 +32,7 @@ as proteções do modo somente leitura.
 - classifica limitações por permissão, licença, throttling, suporte e execução, gerando um score conservador de qualidade da evidência;
 - classifica cada recurso Azure com sinais independentes de segurança, governança, exposição pública, owner e tags;
 - inventaria Power Apps, Power Automate, ambientes, conectores e owners via `PowerPlatformResources` quando o inventário do tenant estiver disponível;
+- gera Azure Resource Intelligence com mapa de recursos/dependências demonstradas, Resource Hygiene, Azure Policy Default/Assigned/Effective, Secure Score com ganho potencial e Advisor enriquecido;
 
 ## Executar
 
