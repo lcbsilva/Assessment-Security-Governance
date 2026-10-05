@@ -64,6 +64,13 @@ PolicyResources
 | project id, name, subscriptionId, resourceGroup, displayName, enforcementMode, definitionId, scope, notScopes, parameters
 """.strip()
 
+POLICY_DEFINITIONS_QUERY = """
+PolicyResources
+| where type in~ ('Microsoft.Authorization/PolicyDefinitions','Microsoft.Authorization/PolicySetDefinitions')
+| extend displayName=tostring(properties.displayName), parameters=properties.parameters
+| project id, name, type, displayName, parameters
+""".strip()
+
 ORPHAN_QUERY = """
 Resources
 | where type =~ 'Microsoft.Compute/disks'
@@ -237,6 +244,24 @@ def resource_security_posture(resource_type: str, properties: dict) -> list[str]
     return sorted(set(signals))
 
 
+def extract_resource_ids(value: object) -> list[str]:
+    """Extrai referências Azure Resource Manager explícitas de estruturas retornadas pelo ARG."""
+    found: set[str] = set()
+    def walk(current: object) -> None:
+        if isinstance(current, dict):
+            for key, child in current.items():
+                if str(key).lower() in {"id", "resourceid", "scope"} and isinstance(child, str) and child.lower().startswith("/subscriptions/"):
+                    found.add(child)
+                walk(child)
+        elif isinstance(current, list):
+            for child in current:
+                walk(child)
+        elif isinstance(current, str) and current.lower().startswith("/subscriptions/"):
+            found.add(current)
+    walk(value)
+    return sorted(found)
+
+
 def resource_row(item: dict) -> dict:
     resource_id = item.get("id", "")
     resource_type = str(item.get("type", "")).lower()
@@ -279,6 +304,7 @@ def resource_row(item: dict) -> dict:
         "security_posture": "; ".join(security_posture) or "Nenhum sinal explícito retornado",
         "governance_signal": governance_signal,
         "posture_signals": "; ".join(posture) or "Nenhum sinal básico",
+        "dependency_ids": [rid for rid in extract_resource_ids(properties) if rid.lower() != str(resource_id).lower()],
     }
 
 
@@ -416,6 +442,48 @@ def orphan_row(item: dict) -> dict:
         "recommended_action": "Validar dependência, owner e custo antes de qualquer ação",
         "resource_id": item.get("resourceId") or "—",
     }
+def policy_definition_defaults(item: dict) -> dict:
+    parameters = item.get("parameters") or {}
+    if not isinstance(parameters, dict):
+        return {}
+    defaults = {}
+    for name, definition in parameters.items():
+        if isinstance(definition, dict) and "defaultValue" in definition:
+            defaults[str(name)] = definition.get("defaultValue")
+    return defaults
+
+
+def enrich_policy_assignments(assignments: list[dict], definitions: list[dict]) -> list[dict]:
+    """Resolve Default/Assigned/Effective sem inventar default ausente."""
+    by_id = {str(item.get("id", "")).lower(): item for item in definitions if item.get("id")}
+    result = []
+    for assignment in assignments:
+        definition = by_id.get(str(assignment.get("definition_id", "")).lower(), {})
+        defaults = policy_definition_defaults(definition)
+        assigned_by_name = {str(item.get("name")): item.get("assigned_value") for item in assignment.get("parameters", [])}
+        names = sorted(set(defaults) | set(assigned_by_name))
+        resolved = []
+        for name in names:
+            assigned_present = name in assigned_by_name
+            default_present = name in defaults
+            assigned = assigned_by_name.get(name)
+            default = defaults.get(name)
+            resolved.append({
+                "name": name,
+                "default_value": default if default_present else "Not set",
+                "assigned_value": assigned if assigned_present else "Not set",
+                "effective_value": assigned if assigned_present else (default if default_present else "Not set"),
+                "value_source": "Assigned" if assigned_present else ("Default" if default_present else "Not set"),
+            })
+        enriched = dict(assignment)
+        enriched["definition_display_name"] = definition.get("displayName") or definition.get("name") or "—"
+        enriched["definition_type"] = "PolicySet" if str(definition.get("type", "")).lower().endswith("policysetdefinitions") else "Policy"
+        enriched["parameters"] = resolved
+        enriched["parameter_count"] = len(resolved)
+        result.append(enriched)
+    return result
+
+
 def policy_assignment_row(item: dict) -> dict:
     """Normaliza assignment e parâmetros sem confundir ausência com default efetivo."""
     parameters = item.get("parameters") or {}
@@ -478,14 +546,26 @@ def hygiene_summary(resources: list[dict], orphans: list[dict], resource_groups:
 def resource_map(resources: list[dict]) -> dict:
     """Cria grafo navegável de recursos e dependências usando IDs explícitos retornados pelo ARG."""
     nodes = []
+    edge_keys: set[tuple[str, str]] = set()
     edges = []
     known = {str(row.get("resource_id", "")).lower(): row for row in resources if row.get("resource_id")}
     for row in resources:
         rid = str(row.get("resource_id", ""))
         nodes.append({"id": rid, "name": row.get("name", "—"), "type": row.get("type", "—"), "subscription": row.get("subscription", "—"), "resource_group": row.get("resource_group", "—"), "region": row.get("region", "—"), "security_signal": row.get("security_signal", "—"), "governance_signal": row.get("governance_signal", "—")})
-    # O inventário normalizado não preserva todas as propriedades brutas; relações
-    # conhecidas podem ser acrescentadas por coletores futuros sem quebrar o contrato.
-    return {"nodes": nodes, "edges": edges, "node_count": len(nodes), "edge_count": len(edges), "coverage_note": "Mapa base por inventário. Conexões só são exibidas quando a relação é demonstrada por ID explícito; ausência de linha não significa ausência de dependência."}
+        for dependency in row.get("dependency_ids", []) or []:
+            target = str(dependency).lower()
+            source = rid.lower()
+            if target in known and target != source and (source, target) not in edge_keys:
+                edge_keys.add((source, target))
+                edges.append({"source": rid, "target": known[target].get("resource_id", dependency), "kind": "Resource dependency"})
+        # Child resources such as subnets also carry a deterministic parent ARM ID.
+        parts = rid.split("/")
+        if len(parts) > 10:
+            parent = "/".join(parts[:-2]).lower()
+            if parent in known and parent != rid.lower() and (rid.lower(), parent) not in edge_keys:
+                edge_keys.add((rid.lower(), parent))
+                edges.append({"source": rid, "target": known[parent].get("resource_id"), "kind": "Parent/child"})
+    return {"nodes": nodes, "edges": edges, "node_count": len(nodes), "edge_count": len(edges), "coverage_note": "Conexões são exibidas apenas quando a relação é demonstrada por IDs ARM retornados pela coleta; ausência de linha não significa ausência de dependência."}
 
 
 def defender_summary(scores: list[dict], controls: list[dict]) -> dict:
@@ -638,6 +718,7 @@ def collect(subscription_ids: list[str]) -> dict:
     rows: list[dict] = []
     policy_rows: list[dict] = []
     policy_assignment_rows: list[dict] = []
+    policy_definition_rows: list[dict] = []
     orphan_rows: list[dict] = []
     retirement_rows: list[dict] = []
     advisor_rows: list[dict] = []
@@ -712,7 +793,13 @@ def collect(subscription_ids: list[str]) -> dict:
             query=POLICY_ASSIGNMENTS_QUERY,
             options=QueryRequestOptions(result_format="objectArray", top=5000),
         ))
-        policy_assignment_rows = [policy_assignment_row(item) for item in (assignment_response.data or [])]
+        definition_response = query_arg_with_retry(client, QueryRequest(
+            subscriptions=subscription_ids,
+            query=POLICY_DEFINITIONS_QUERY,
+            options=QueryRequestOptions(result_format="objectArray", top=5000),
+        ))
+        policy_definition_rows = list(definition_response.data or [])
+        policy_assignment_rows = enrich_policy_assignments([policy_assignment_row(item) for item in (assignment_response.data or [])], policy_definition_rows)
         assignment_status = "success"
         assignment_note = "Policy assignments e parâmetros atribuídos via Azure Resource Graph."
     except Exception as exc:
