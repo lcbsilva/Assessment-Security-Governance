@@ -140,16 +140,19 @@ def derive(data: dict, catalog: dict) -> dict:
     put("ID-004", 100 if policies and exclusions == 0 else (70 if policies else None), "high" if policies else "low")
     if policies and exclusions:
         findings.append(finding("ID-004", "Exclusões em Conditional Access exigem revisão", "medium", 58, 2, exclusions, f"Foram identificadas {exclusions} exclusões configuradas em Conditional Access.", [f"Políticas avaliadas: {len(policies)}", f"Exclusões contabilizadas: {exclusions}"], "Documentar justificativas, reduzir exclusões e proteger contas de emergência.", "Identity / IAM", "Microsoft Graph Conditional Access", {"30": "Documentar exceções.", "60": "Reduzir exclusões não justificadas.", "90": "Implantar revisão periódica."}))
-    legacy_policy = any("legacy" in str(item.get("display_name", "")).lower() and str(item.get("state", "")).lower() == "enabled" for item in policies)
     legacy_count = int(legacy_summary.get("legacy_signins", 0) or 0)
-    if legacy_summary:
+    signins_reviewed = int(legacy_summary.get("signins_reviewed", 0) or 0)
+    if legacy_summary and signins_reviewed > 0:
         legacy_score = 95 if legacy_count == 0 else 35
         put("ID-005", legacy_score, "high")
         if legacy_count:
             affected = int(legacy_summary.get("affected_users", legacy_count) or legacy_count)
             findings.append(finding("ID-005", "Uso de autenticação legada identificado", "high", 78, 3, affected, f"{legacy_count} sign-ins legados foram observados na janela analisada.", [f"Janela: {legacy_summary.get('lookback_days', '—')} dias", f"Usuários afetados: {affected}", f"Sign-ins analisados: {legacy_summary.get('signins_reviewed', '—')}"], "Bloquear protocolos legados após validar dependências e acompanhar falhas de autenticação.", "Identity / IAM", "Microsoft Graph auditLogs/signIns", {"30": "Identificar usuários e aplicações dependentes.", "60": "Bloquear autenticação legada por Conditional Access.", "90": "Monitorar tentativas e remover exceções."}))
     else:
-        put("ID-005", 95 if legacy_policy else (30 if policies else None), "high" if policies else "low")
+        # A existência de uma política de Conditional Access não prova
+        # ausência de autenticação legada. Sem telemetria de sign-ins,
+        # o controle permanece sem evidência suficiente.
+        put("ID-005", None, "low")
     put("ID-006", 70 if users else None, "medium" if users else "low")
     privileged = [item for item in users if item.get("privileged") is True]
     privileged_missing = [item for item in privileged if item.get("mfa_status") == "Not registered"]
@@ -274,7 +277,8 @@ def derive(data: dict, catalog: dict) -> dict:
 
     # Garante que todos os controles catalogados apareçam no relatório.
     for item in catalog.get("controls", []):
-        put(item["id"], controls.get(item["id"], {}).get("score") if item["id"] in controls else None, controls.get(item["id"], {}).get("confidence", "low"))
+        if item["id"] not in controls:
+            put(item["id"], None, "low")
     data["controls"] = list(controls.values())
     data["findings"] = findings
     return data
