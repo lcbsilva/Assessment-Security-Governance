@@ -976,7 +976,7 @@ th{{background:#eef7fb;color:#075985}}
 (function () {{
   const viewButtons = Array.from(document.querySelectorAll('[data-view-target]'));
   const technicalIds = new Set(['discovery', 'controls', 'transparency', 'runbooks']);
-  const executiveIds = new Set(['run-context', 'executive-summary', 'coverage', 'inventory-overview', 'risks', 'priority-matrix', 'decision-layer', 'analysis', 'lifecycle']);
+  const executiveIds = new Set(['run-context', 'executive-summary', 'coverage', 'inventory-overview', 'risks', 'priority-matrix', 'decision-layer', 'analysis', 'azure-intelligence', 'lifecycle']);
   document.querySelectorAll('.section[id]').forEach(section => {{
     if (technicalIds.has(section.id)) section.classList.add('technical-only');
     if (executiveIds.has(section.id)) section.classList.add('executive-only');
@@ -1034,26 +1034,26 @@ th{{background:#eef7fb;color:#075985}}
   const mapSearch = document.getElementById('resourceMapSearch');
   const mapClear = document.getElementById('resourceMapClear');
   const mapCount = document.getElementById('resourceMapCount');
-  if (mapSearch) {
+  if (mapSearch) {{
     const mapNodes = Array.from(document.querySelectorAll('.map-node'));
-    const applyMapFilter = () => {
+    const applyMapFilter = () => {{
       const query = mapSearch.value.trim().toLocaleLowerCase();
       let visible = 0;
-      mapNodes.forEach(node => {
+      mapNodes.forEach(node => {{
         const match = !query || node.textContent.toLocaleLowerCase().includes(query);
         node.classList.toggle('filtered-out', !match);
         if (match) visible += 1;
-      });
-      document.querySelectorAll('.map-group').forEach(group => {
+      }});
+      document.querySelectorAll('.map-group').forEach(group => {{
         const anyVisible = Array.from(group.querySelectorAll('.map-node')).some(node => !node.classList.contains('filtered-out'));
         group.classList.toggle('filtered-out', !anyVisible);
-      });
+      }});
       if (mapCount) mapCount.textContent = visible + ' recursos';
-    };
+    }};
     mapSearch.addEventListener('input', applyMapFilter);
-    if (mapClear) mapClear.addEventListener('click', () => { mapSearch.value = ''; applyMapFilter(); mapSearch.focus(); });
+    if (mapClear) mapClear.addEventListener('click', () => {{ mapSearch.value = ''; applyMapFilter(); mapSearch.focus(); }});
     applyMapFilter();
-  }
+  }}
   // Mantém a leitura inicial compacta: o consultor expande apenas o bloco necessário.
   Array.from(root.querySelectorAll(':scope > .panel')).forEach((panel, index) => {{
     const heading = panel.querySelector('h3');
