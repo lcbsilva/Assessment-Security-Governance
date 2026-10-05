@@ -13,7 +13,10 @@ def classify(status: object, note: object = "") -> str:
         and not any(token in value for token in ("400", "401", "403"))
     ):
         return "throttling"
-    if any(token in value for token in ("403", "401", "permission", "consent", "permiss")):
+    # Escopos Graph e consentimento são sinais de acesso, mesmo quando a API
+    # devolve 400. Não transformar o texto genérico "licença ou throttling"
+    # em prova de licença ausente.
+    if any(token in value for token in ("403", "401", "permission", "consent", "permiss", "read.all", "licenseassignment", "roleassignment")):
         return "permission"
     if any(token in value for token in ("licen", "defender p2")):
         return "license"

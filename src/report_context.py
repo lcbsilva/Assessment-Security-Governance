@@ -32,6 +32,10 @@ def build(data: dict) -> dict:
         for key, label in SCOPE_LABELS.items()
         if isinstance(scope.get(key), (int, float))
     ]
+    scope_notes = []
+    license_log = next((item for item in logs if str(item.get("module", "")).lower() == "m365 licenses"), None)
+    if scope.get("licenses_assessed") == 0 and license_log and license_log.get("status") != "success":
+        scope_notes.append("Licenças não foram validadas nesta execução; zero não significa ausência de licenças.")
     status_limitations = {
         "partial": "Coleta parcial; cobertura e paginação precisam ser consideradas.",
         "not_available": "Fonte indisponível nesta execução; validar licença, permissão e disponibilidade.",
@@ -60,6 +64,7 @@ def build(data: dict) -> dict:
         "duration_seconds": execution.get("wall_duration_seconds"),
         "contract_status": metadata.get("contract_status", "não informado"),
         "scope_rows": scope_rows,
+        "scope_notes": scope_notes,
         "module_count": len(logs),
         "status_counts": dict(counts),
         "limitations": limitations,

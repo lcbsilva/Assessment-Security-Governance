@@ -17,7 +17,8 @@ def build_execution_manifest(logs: list[dict], profile: str, read_only: bool = T
         if status in {"success", "partial"}:
             executed.append(row)
         elif status in {"not_available", "error"}:
-            row["limitation"] = str(item.get("note", "Evidência indisponível"))
+            diagnostic = diagnose(module, status, str(item.get("note", "")))
+            row.update({key: diagnostic[key] for key in ("limitation_category", "diagnostic_code", "diagnostic_confidence", "likely_cause", "next_step")})
             unavailable.append(row)
         elif status == "not_run":
             out_of_profile.append(row)
@@ -101,4 +102,3 @@ def summarize(logs: list[dict]) -> dict:
         "out_of_profile_modules": counts["not_run"],
         "interpretation": "Zero registros só é evidência de ausência quando o módulo terminou com sucesso; not_available/error não permitem concluir ausência; not_run significa que o módulo não pertenceu ao perfil.",
     }
-

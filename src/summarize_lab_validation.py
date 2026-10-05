@@ -7,6 +7,8 @@ import argparse
 import json
 from pathlib import Path
 
+from module_diagnostics import diagnose
+
 
 PROFILES = ("security", "governance", "full")
 
@@ -27,8 +29,12 @@ def profile_summary(pilot: dict, manifest: dict, preflight: dict | None = None, 
         collection_counts[status] = collection_counts.get(status, 0) + 1
         if status in {"error", "not_available", "partial"}:
             # Deliberately omit note/details: they can contain tenant identifiers or other sensitive values.
+            diagnostic = diagnose(str(entry.get("module", "unknown")), status, str(entry.get("note", "")))
             collection_issues.append({"module": entry.get("module", "unknown"), "status": status,
-                                      "records": entry.get("records", 0)})
+                                      "records": entry.get("records", 0),
+                                      "limitation_category": diagnostic["limitation_category"],
+                                      "diagnostic_code": diagnostic["diagnostic_code"],
+                                      "diagnostic_confidence": diagnostic["diagnostic_confidence"]})
     if collection_issues:
         warnings.append("Há módulos de coleta indisponíveis, com erro ou parciais; consulte os detalhes localmente.")
     if blocked:

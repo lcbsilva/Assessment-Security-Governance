@@ -44,6 +44,7 @@ from validate_manifest import validate as validate_manifest
 from pseudonymize import pseudonymize
 from summarize_lab_validation import summarize as summarize_lab_validation
 from module_diagnostics import diagnose as diagnose_module
+from report_context import build as build_report_context
 from build_demo_package import build_demo
 from doctor import diagnose
 from pilot_evidence import build as build_pilot_evidence
@@ -222,6 +223,8 @@ class EngineContractTests(unittest.TestCase):
         configured = diagnose_module("Azure DevOps", "not_available", "Configure AZDO_ORG_URL")
         self.assertEqual(permission["limitation_category"], "permission_or_role")
         self.assertIn("pode", permission["likely_cause"])
+        self.assertEqual(permission["diagnostic_code"], "assessment.permission_or_role")
+        self.assertEqual(permission["diagnostic_confidence"], "alta")
         self.assertEqual(timeout["limitation_category"], "timeout")
         self.assertEqual(configured["limitation_category"], "configuration")
 
@@ -704,6 +707,8 @@ class EngineContractTests(unittest.TestCase):
             {"module": "Cost", "status": "not_run", "records": 0},
         ], "security")
         self.assertEqual(result["totals"], {"all": 3, "executed": 1, "unavailable_or_error": 1, "out_of_profile": 1})
+        self.assertEqual(result["unavailable_or_error"][0]["limitation_category"], "license_or_entitlement")
+        self.assertNotIn("Licença", json.dumps(result["unavailable_or_error"]))
         self.assertTrue(result["read_only"])
 
     def test_report_priority_domain_is_data_driven(self):
@@ -729,6 +734,11 @@ class EngineContractTests(unittest.TestCase):
         html = render(self.catalog, data, {"runbooks": []})
         self.assertIn("lab-subscription", html)
         self.assertNotIn("Tenant não identificado", html.split("<h1>", 1)[0])
+
+    def test_zero_license_scope_is_not_presented_as_absence_of_licenses(self):
+        data = {"metadata": {"scope": {"licenses_assessed": 0}}, "discovery": {"collection_log": [{"module": "M365 licenses", "status": "not_available", "records": 0, "note": "HTTP 403; consentimento"}]}}
+        context = build_report_context(data)
+        self.assertIn("zero não significa ausência de licenças", context["scope_notes"][0])
 
     def test_report_falls_back_to_tenant_id_when_label_is_missing(self):
         from generate_report import render
@@ -1113,7 +1123,11 @@ class EngineContractTests(unittest.TestCase):
             self.assertEqual(result["profiles"]["full"]["artifact_integrity"], "valid")
             self.assertEqual(result["profiles"]["full"]["control_coverage_percent"], 80)
             self.assertTrue(result["profiles"]["full"]["score_is_provisional"])
-            self.assertEqual(result["profiles"]["full"]["collection_issues"], [{"module": "Módulo teste", "status": "not_available", "records": 0}])
+            issue = result["profiles"]["full"]["collection_issues"][0]
+            self.assertEqual(issue["module"], "Módulo teste")
+            self.assertEqual(issue["limitation_category"], "unknown")
+            self.assertEqual(issue["diagnostic_code"], "assessment.unknown")
+            self.assertNotIn("user@example.com", json.dumps(result))
             self.assertNotIn("user@example.com", json.dumps(result))
 
     def test_lab_validation_summary_blocks_on_invalid_artifact(self):
