@@ -44,12 +44,29 @@ from validate_manifest import validate as validate_manifest
 from pseudonymize import pseudonymize
 from summarize_lab_validation import summarize as summarize_lab_validation
 from module_diagnostics import diagnose as diagnose_module
+from lifecycle_finops import build as build_lifecycle_finops
 from build_demo_package import build_demo
 from doctor import diagnose
 from pilot_evidence import build as build_pilot_evidence
 
 
 class EngineContractTests(unittest.TestCase):
+    def test_lifecycle_finops_keeps_savings_overlap_aware_and_actions_guarded(self):
+        result = build_lifecycle_finops({
+            "advisor_recommendations": [
+                {"potential_savings": 100, "currency": "BRL"},
+                {"potential_savings": 50, "currency": "BRL"},
+            ],
+            "retirement_signals": [{"resource": "legacy-service"}],
+            "orphan_resources": [{"resource": "candidate"}],
+            "service_health": [{"title": "advisory"}],
+        })
+        self.assertEqual(result["savings"]["upper_bound"], 150.0)
+        self.assertIsNone(result["savings"]["realizable_savings"])
+        self.assertIn("sobrepor", result["savings"]["method"])
+        self.assertEqual(result["signals"]["retirement_items"], 1)
+        self.assertTrue(any("não candidatos automáticos" in item for item in result["decision_guardrails"]))
+
     @classmethod
     def setUpClass(cls):
         cls.catalog = yaml.safe_load((ROOT / "catalog/controls.yaml").read_text(encoding="utf-8"))
