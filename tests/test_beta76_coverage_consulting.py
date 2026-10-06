@@ -279,3 +279,51 @@ def test_evidence_quality_guidance_does_not_default_to_more_permissions():
     ])
     assert "solicitar novos acessos" in result["interpretation"]
     assert "categoria indicada" in result["interpretation"]
+
+
+
+def test_execution_health_exposes_cause_and_next_step():
+    from execution_health import summarize
+
+    result = summarize([
+        {
+            "module": "Defender alerts",
+            "status": "not_available",
+            "records": 0,
+            "note": "HTTP 403 Forbidden; acesso negado pelo serviço. Escopo esperado: SecurityIncident.Read.All",
+        }
+    ])
+    limitation = result["limitations"][0]
+    assert limitation["category"] == "permission_or_role"
+    assert limitation["likely_cause"]
+    assert limitation["next_step"]
+    assert "403" in limitation["limitation"]
+
+
+def test_html_execution_health_renders_actionable_limitation_fields():
+    from generate_report import render_execution_health
+
+    html = render_execution_health({
+        "metadata": {
+            "execution_health": {
+                "health": "degraded",
+                "completed_modules": 1,
+                "total_modules": 2,
+                "coverage_percent": 50,
+                "status_counts": {"success": 1, "partial": 0, "not_available": 1, "error": 0, "not_run": 0},
+                "interpretation": "Teste conservador.",
+                "limitations": [{
+                    "module": "Defender alerts",
+                    "status": "not_available",
+                    "records": 0,
+                    "category": "permission_or_role",
+                    "likely_cause": "Acesso read-only não autorizado",
+                    "next_step": "Validar consentimento aprovado",
+                }],
+            },
+            "coverage_map": [],
+        }
+    })
+    assert "Causa provável" in html
+    assert "Próximo passo" in html
+    assert "Validar consentimento aprovado" in html
