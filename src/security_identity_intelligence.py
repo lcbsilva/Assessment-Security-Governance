@@ -13,6 +13,9 @@ def build(discovery: dict, collection_log: list[dict]) -> dict:
     alerts = discovery.get("defender_alerts", []) or []
     vulnerabilities = discovery.get("defender_vulnerabilities", []) or []
     secure_scores = discovery.get("secure_score", []) or []
+    users = discovery.get("users", []) or []
+    conditional_access = discovery.get("conditional_access", []) or []
+    identity_risks = discovery.get("identity_risks", []) or []
 
     unavailable = {
         str(item.get("module", "")).lower(): item
@@ -32,6 +35,12 @@ def build(discovery: dict, collection_log: list[dict]) -> dict:
     active_pim = [item for item in pim if str(item.get("assignment_type", "")).lower() == "active"]
     eligible_pim = [item for item in pim if str(item.get("assignment_type", "")).lower() == "eligible"]
 
+    privileged_users = [item for item in users if item.get("privileged") is True]
+    privileged_without_mfa = [item for item in privileged_users if str(item.get("mfa_status", "")).lower() in {"not registered", "disabled", "false"}]
+    risky_users = [item for item in identity_risks if str(item.get("risk_level", "")).lower() in {"high", "medium"}]
+    ca_enabled = [item for item in conditional_access if str(item.get("state", "")).lower() in {"enabled", "on"}]
+    ca_report_only = [item for item in conditional_access if "report" in str(item.get("state", "")).lower()]
+
     alert_severity = Counter(str(item.get("severity", "unknown")).lower() for item in alerts)
     vuln_severity = Counter(str(item.get("severity", "unknown")).lower() for item in vulnerabilities)
 
@@ -42,6 +51,14 @@ def build(discovery: dict, collection_log: list[dict]) -> dict:
             "pim_active": len(active_pim),
             "pim_eligible": len(eligible_pim),
             "interpretation": "Inventário para revisão; não prova excesso de privilégio sem contexto de função, owner e necessidade.",
+        },
+        "identity_posture": {
+            "privileged_users": len(privileged_users),
+            "privileged_without_mfa": len(privileged_without_mfa),
+            "risky_users_high_or_medium": len(risky_users),
+            "conditional_access_enabled": len(ca_enabled),
+            "conditional_access_report_only": len(ca_report_only),
+            "interpretation": "Correlação consultiva sobre evidências coletadas; não presume incidente, comprometimento ou eficácia de política sem validação contextual.",
         },
         "defender": {
             "alerts": len(alerts),
