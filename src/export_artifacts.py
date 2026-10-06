@@ -311,6 +311,28 @@ def write_pptx(data: dict, path: Path) -> None:
     )
     body.text_frame.paragraphs[0].font.size = Pt(14)
 
+    # Executive Report 2.0: the same FinOps and identity decision signals shown in XLSX
+    # are exposed in PPTX without turning advisory signals into confirmed savings/risk.
+    lifecycle = data.get("discovery", {}).get("lifecycle_finops_intelligence", {}) or {}
+    savings = lifecycle.get("savings", {}) or {}
+    optimization = lifecycle.get("optimization", {}) or {}
+    security_identity = data.get("discovery", {}).get("security_identity_intelligence", {}) or {}
+    privileged = security_identity.get("privileged_access", {}) or {}
+    identity_posture = security_identity.get("identity_posture", {}) or {}
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    title = slide.shapes.add_textbox(Inches(0.7), Inches(0.5), Inches(11.5), Inches(0.7))
+    title.text_frame.text = "Sinais executivos — FinOps, Segurança e Identidade"
+    title.text_frame.paragraphs[0].font.size = Pt(22)
+    body = slide.shapes.add_textbox(Inches(0.9), Inches(1.3), Inches(11.2), Inches(5.2))
+    body.text_frame.text = (
+        f"FinOps · limite superior de economia: {savings.get('upper_bound', 'N/D')} {savings.get('currency', '')} · economia realizável: {savings.get('realizable_savings', 'não determinada')}\n"
+        f"FinOps · dias com sinal de anomalia: {optimization.get('anomaly_days', 'N/D')} · candidatos de rightsizing: {optimization.get('rightsizing_candidates', 'N/D')}\n"
+        f"Identidade · atribuições privilegiadas alto/crítico: {privileged.get('high_or_critical_assignments', 'N/D')} · escopo amplo: {privileged.get('broad_scope_assignments', 'N/D')}\n"
+        f"Identidade · privilegiados sem MFA observado: {identity_posture.get('privileged_without_mfa', 'N/D')} · usuários em risco alto/médio: {identity_posture.get('risky_users_high_or_medium', 'N/D')}\n\n"
+        "Guardrail executivo: economia potencial exige deduplicação e validação financeira; sinais de identidade exigem validação de owner, contexto e cobertura antes de remediação."
+    )
+    body.text_frame.paragraphs[0].font.size = Pt(14)
+
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     title = slide.shapes.add_textbox(Inches(0.7), Inches(0.5), Inches(11.5), Inches(0.7))
     title.text_frame.text = "Roadmap executivo — 30 / 60 / 90 dias"
@@ -393,6 +415,16 @@ def write_pdf(data: dict, path: Path) -> None:
     story.append(Paragraph(f"P1: {summary['p1']} · P2: {summary['p2']} · quick wins confirmados: {summary['quick_wins']} · revisões condicionais: {summary['conditional_review']}.", styles["BodyText"]))
     for item in executive["quick_wins"][:5]:
         story.append(Paragraph(f"Quick win — {item['priority']} · {item['title']} · risco {item['risk']}/100 · esforço {item['effort']} · owner {item['owner']}", styles["BodyText"]))
+    lifecycle = data.get("discovery", {}).get("lifecycle_finops_intelligence", {}) or {}
+    savings = lifecycle.get("savings", {}) or {}
+    optimization = lifecycle.get("optimization", {}) or {}
+    security_identity = data.get("discovery", {}).get("security_identity_intelligence", {}) or {}
+    privileged = security_identity.get("privileged_access", {}) or {}
+    identity_posture = security_identity.get("identity_posture", {}) or {}
+    story.append(Paragraph("Sinais executivos — FinOps, Segurança e Identidade", styles["Heading2"]))
+    story.append(Paragraph(f"FinOps: limite superior de economia {savings.get('upper_bound', 'N/D')} {savings.get('currency', '')}; economia realizável {savings.get('realizable_savings', 'não determinada')}; dias com sinal de anomalia {optimization.get('anomaly_days', 'N/D')}; rightsizing {optimization.get('rightsizing_candidates', 'N/D')}.", styles["BodyText"]))
+    story.append(Paragraph(f"Identidade: atribuições privilegiadas alto/crítico {privileged.get('high_or_critical_assignments', 'N/D')}; escopo amplo {privileged.get('broad_scope_assignments', 'N/D')}; privilegiados sem MFA observado {identity_posture.get('privileged_without_mfa', 'N/D')}; risco alto/médio {identity_posture.get('risky_users_high_or_medium', 'N/D')}.", styles["BodyText"]))
+    story.append(Paragraph("Guardrail: economia potencial exige deduplicação e validação financeira; sinais de identidade exigem validação de owner, contexto e cobertura antes de remediação.", styles["BodyText"]))
     story.append(Paragraph("Roadmap 30 / 60 / 90", styles["Heading2"]))
     for horizon in ("30", "60", "90"):
         actions = executive["roadmap"][horizon][:4]
