@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0-beta.76
+
+- Torna a cobertura de execução auditável por módulo, com status, domínio, escopo read-only esperado, confiança, causa provável, próximo passo e limitação técnica.
+- Separa falhas de permissão/role, licença ou entitlement, configuração, timeout, throttling e endpoint/API sem recomendar ampliação de acesso como resposta genérica.
+- Mantém HTTP 400 como sinal para validar endpoint, parâmetros, disponibilidade e entitlement antes de solicitar novas permissões.
+- Explicita lacunas de evidência do Microsoft Purview para DLP, sensitivity labels e retention, mapeadas aos controles CMP-001, CMP-002 e CMP-003 sem transformar ausência de coleta em conformidade.
+- Mantém permissões opcionais do Microsoft Graph fora dos requisitos bloqueantes do preflight do perfil Security.
+- Enriquece HTML, PDF, PPTX e XLSX com limitações acionáveis e orientação consultiva baseada na evidência observada.
+- Adiciona ao XLSX a aba "Cobertura e limitações" e ao PPTX a visão "Decisão executiva — próximos passos".
+- Preserva o princípio de que ausência de evidência não é conformidade e mantém toda a execução no tenant somente leitura.
+- Amplia regressões automatizadas para cobertura, diagnóstico, qualidade da evidência, Purview, Graph e integridade dos artefatos executivos.
+
 ## 0.2.0-beta.75
 
 - Corrige a sem?ntica de controles sem evid?ncia suficiente, evitando classificar aus?ncia de telemetria como conformidade ou n?o conformidade comprovada.
