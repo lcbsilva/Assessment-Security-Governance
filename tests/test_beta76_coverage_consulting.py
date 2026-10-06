@@ -195,3 +195,35 @@ def test_diagnostics_classify_license_before_generic_permission_text():
     )
 
     assert result["limitation_category"] == "license_or_entitlement"
+
+
+
+def test_m365_collector_declares_compliance_gaps_explicitly():
+    from collect_m365_posture import collect
+
+    result = collect(domains=[])
+    logs = result["discovery"]["collection_log"]
+    modules = {item["module"]: item for item in logs}
+
+    for module in (
+        "Purview DLP policies",
+        "Purview sensitivity labels",
+        "Purview retention policies",
+    ):
+        assert modules[module]["status"] == "not_available"
+        assert modules[module]["records"] == 0
+        assert "not configured" in modules[module]["note"].lower()
+
+
+def test_m365_capability_manifest_maps_purview_controls():
+    from collect_m365_posture import capability_manifest
+
+    manifest = capability_manifest()
+    mapping = {
+        item["module"]: item.get("controls", [])
+        for item in manifest
+    }
+
+    assert mapping["Purview DLP policies"] == ["CMP-001"]
+    assert mapping["Purview sensitivity labels"] == ["CMP-002"]
+    assert mapping["Purview retention policies"] == ["CMP-003"]
