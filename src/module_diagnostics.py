@@ -15,11 +15,18 @@ def diagnose(module: str, status: str, note: str = "") -> dict:
         return {"limitation_category": "throttling", "likely_cause": "O serviço limitou temporariamente a taxa de consultas.", "next_step": "Aguarde o intervalo indicado pelo serviço e repita; reduza paginação ou paralelismo."}
     if any(token in text for token in ("401", "unauthorized", "invalidauthenticationtoken", "authentication")):
         return {"limitation_category": "authentication", "likely_cause": "A sessão ou o token não foi aceito pelo serviço.", "next_step": "Renove a sessão no tenant aprovado e confirme o público/tenant do token."}
-    # Licenciamento/entitlement é uma causa mais específica do que uma menção
-    # genérica a permissão. Classifique primeiro para evitar orientar o cliente a
-    # ampliar consentimentos quando o serviço simplesmente não está licenciado.
-    if any(token in text for token in ("license", "licence", "licensed", "licenciamento", "sku", "entitlement")):
-        return {"limitation_category": "license_or_entitlement", "likely_cause": "A API pode depender de licença, SKU ou entitlement do serviço.", "next_step": "Confirme a licença e a disponibilidade do serviço com o administrador; mantenha o resultado como evidência insuficiente se indisponível."}
+    # HTTP 400 é ambíguo: notas de diagnóstico frequentemente dizem para
+    # "validar entitlement/licença" sem comprovar que essa é a causa. Só trate
+    # licenciamento como causa quando a própria evidência declarar ausência ou
+    # requisito explícito de licença/SKU/entitlement.
+    explicit_license = (
+        "license required", "licence required", "license unavailable", "licence unavailable",
+        "not licensed", "unlicensed", "licença necessária", "licenca necessaria",
+        "licença indisponível", "licenca indisponivel", "sku required", "sku unavailable",
+        "entitlement required", "entitlement unavailable", "missing entitlement",
+    )
+    if any(token in text for token in explicit_license):
+        return {"limitation_category": "license_or_entitlement", "likely_cause": "A evidência indica requisito ou indisponibilidade de licença, SKU ou entitlement.", "next_step": "Confirme a licença e a disponibilidade do serviço com o administrador; mantenha o resultado como evidência insuficiente se indisponível."}
     if any(token in text for token in ("403", "accessdenied", "insufficient privileges", "permission", "consent")):
         return {"limitation_category": "permission_or_role", "likely_cause": "A permissão Graph/Azure ou a função do usuário pode não cobrir esta operação.", "next_step": "Compare o endpoint com a matriz de permissões; peça ao owner para confirmar consentimento e função somente leitura."}
     if any(token in text for token in ("not configured", "configure ", "environment variable", "pat read-only", "not provided")):
