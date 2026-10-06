@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0-beta.82
+
+- Adiciona tendência multi-run privacy-safe sobre snapshots locais minimizados.
+- Compara somente controles com evidência válida nas duas execuções.
+- Separa delta de cobertura de delta médio dos controles comparáveis.
+- Evita interpretar nova disponibilidade de evidência como melhoria automática de postura.
+- Mantém UPN, nomes de recursos, tenant IDs e evidência textual fora da série histórica.
+- Declara explicitamente que histórico local não constitui benchmark externo de mercado.
+
 ## 0.2.0-beta.81
 
 - Adiciona inteligência evidence-aware para RBAC, PIM, Defender, vulnerabilidades e Secure Score.
