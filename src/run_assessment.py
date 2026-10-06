@@ -43,6 +43,7 @@ from execution_health import (
 from checkpoint import load as load_checkpoint, scope_key, write as write_checkpoint
 from local_privacy import protect_output_directory
 from module_diagnostics import diagnose
+from lifecycle_finops import build as build_lifecycle_finops
 
 
 def args() -> argparse.Namespace:
@@ -792,6 +793,12 @@ def main() -> None:
 
     enrich_rbac_identity(
         payload["discovery"]
+    )
+
+    # Camada consultiva: consolida sinais já coletados sem executar ações
+    # nem transformar recomendações financeiras/lifecycle em fatos confirmados.
+    payload["discovery"]["lifecycle_finops_intelligence"] = (
+        build_lifecycle_finops(payload["discovery"])
     )
 
     payload["metadata"]["execution_health"] = (
