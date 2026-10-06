@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
-  echo "Uso: ./scripts/run-lab-validation.sh <subscription-id-1,subscription-id-2>"
+  echo "Uso: ./scripts/run-lab-validation.sh <subscription-id-1,subscription-id-2> [expected-tenant-id]"
   exit 2
 fi
 
@@ -13,6 +13,24 @@ command -v az >/dev/null || { echo "Azure CLI não encontrado."; exit 1; }
 az account show >/dev/null || { echo "Execute 'az login' antes de continuar."; exit 1; }
 
 SUBSCRIPTIONS="$1"
+EXPECTED_TENANT_ID="${2:-}"
+ACTIVE_TENANT_ID="$(az account show --query tenantId --output tsv)"
+if [[ -n "$EXPECTED_TENANT_ID" && "$ACTIVE_TENANT_ID" != "$EXPECTED_TENANT_ID" ]]; then
+  echo "Safety gate: tenant ativo '$ACTIVE_TENANT_ID' difere do tenant de laboratório esperado '$EXPECTED_TENANT_ID'. Nenhuma coleta foi iniciada."
+  exit 3
+fi
+IFS=',' read -ra SUBS <<< "$SUBSCRIPTIONS"
+for subscription_id in "${SUBS[@]}"; do
+  subscription_id="$(echo "$subscription_id" | xargs)"
+  tenant_for_subscription="$(az account show --subscription "$subscription_id" --query tenantId --output tsv)" || {
+    echo "Safety gate: subscription '$subscription_id' não pôde ser validada antes da coleta."; exit 3;
+  }
+  if [[ -n "$EXPECTED_TENANT_ID" && "$tenant_for_subscription" != "$EXPECTED_TENANT_ID" ]]; then
+    echo "Safety gate: subscription '$subscription_id' pertence a tenant diferente do laboratório esperado. Nenhuma coleta foi iniciada."
+    exit 3
+  fi
+done
+echo "Safety gate aprovado: tenant e subscriptions validados antes da coleta."
 mkdir -p runtime/lab-validation dist/lab-validation
 
 for PROFILE in security governance full; do

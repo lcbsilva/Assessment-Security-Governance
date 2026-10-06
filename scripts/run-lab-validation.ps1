@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory=$true)]
-    [string]$Subscriptions
+    [string]$Subscriptions,
+    [string]$ExpectedTenantId = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -8,8 +9,23 @@ $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) { throw "Python 3 não encontrado." }
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) { throw "Azure CLI não encontrado." }
-az account show | Out-Null
+$accountJson = az account show --output json
 if ($LASTEXITCODE -ne 0) { throw "Execute 'az login' antes de continuar." }
+$account = $accountJson | ConvertFrom-Json
+if ($ExpectedTenantId -and $account.tenantId -ne $ExpectedTenantId) {
+    throw "Safety gate: tenant ativo '$($account.tenantId)' difere do tenant de laboratório esperado '$ExpectedTenantId'. Nenhuma coleta foi iniciada."
+}
+$subscriptionList = @($Subscriptions -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+foreach ($subscriptionId in $subscriptionList) {
+    $tenantForSubscription = az account show --subscription $subscriptionId --query tenantId --output tsv
+    if ($LASTEXITCODE -ne 0 -or -not $tenantForSubscription) {
+        throw "Safety gate: subscription '$subscriptionId' não pôde ser validada antes da coleta."
+    }
+    if ($ExpectedTenantId -and $tenantForSubscription.Trim() -ne $ExpectedTenantId) {
+        throw "Safety gate: subscription '$subscriptionId' pertence a tenant diferente do laboratório esperado. Nenhuma coleta foi iniciada."
+    }
+}
+Write-Host "Safety gate aprovado: tenant e subscriptions validados antes da coleta."
 
 function Invoke-PythonChecked {
     param([Parameter(Mandatory=$true)][string[]]$Arguments)
