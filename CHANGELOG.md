@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0-beta.77
+
+- Adiciona uma camada de Executive Intelligence que organiza achados já normalizados sem alterar o score técnico ou inventar impacto de negócio.
+- Separa ações confirmadas de revisões condicionais; itens com evidência insuficiente permanecem fora de P1, quick wins e roadmap confirmado.
+- Identifica quick wins considerando prioridade, risco, esforço relativo e suficiência da evidência.
+- Agrupa achados em frentes consultivas de Identity & Access, Cloud & M365 Security, Cloud Governance, FinOps e Risk & Compliance.
+- Consolida roadmap executivo 30/60/90 com owner e ação derivada do plano já registrado no achado.
+- Integra a visão executiva ao HTML, XLSX, PPTX, PDF e briefing de uma página.
+- Adiciona ao XLSX a aba de Prioridades executivas e ao PPTX uma página dedicada ao roadmap 30/60/90.
+- Preserva os guardrails read-only, a rastreabilidade da evidência e a regra de que ausência de evidência não é conformidade.
+
 ## 0.2.0-beta.76
 
 - Torna a cobertura de execução auditável por módulo, com status, domínio, escopo read-only esperado, confiança, causa provável, próximo passo e limitação técnica.

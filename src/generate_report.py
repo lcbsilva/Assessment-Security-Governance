@@ -13,6 +13,7 @@ from pathlib import Path
 
 import yaml
 from insight_engine import executive_actions, cross_domain_insights, prioritize_findings
+from executive_intelligence import build as build_executive_intelligence
 from local_privacy import protect_output_parent
 from report_context import build as build_report_context
 from module_diagnostics import diagnose
@@ -395,13 +396,35 @@ def render_results_analysis(findings: list[dict], catalog: dict, data: dict) -> 
 
 def render_decision_layer(data: dict) -> str:
     intersections = data.get("discovery", {}).get("risk_intersections", [])
-    actions = executive_actions(data.get("findings", []))
+    cost_signal = data.get("discovery", {}).get("lifecycle", {}).get("summary", {}).get("Custo mensal potencial", "Não quantificado")
+    prioritized = prioritize_findings(data.get("findings", []), data.get("metadata", {}).get("evidence_quality", {}), cost_signal)
+    executive = build_executive_intelligence(prioritized)
+    actions = executive_actions(prioritized)
     evidence = data.get("metadata", {}).get("evidence_by_control", [])
+    quick_wins = executive["quick_wins"]
+    workstreams = executive["workstreams"]
+    conditional = executive["conditional_reviews"]
+    roadmap = [
+        {"horizon": f"{horizon} dias", **item}
+        for horizon, items in executive["roadmap"].items()
+        for item in items
+    ]
+    summary = executive["summary"]
     return f'''<section class="section" id="decision-layer">
   <h2>Camada de decisão</h2>
   <p class="section-intro">Correlação de sinais para orientar o workshop. Uma correlação indica prioridade de investigação; não representa automaticamente um incidente.</p>
+  <div class="risk-stats">
+    <div class="risk-stat critical"><span>P1</span><b>{esc(summary["p1"])}</b><small>prioridade imediata</small></div>
+    <div class="risk-stat high"><span>P2</span><b>{esc(summary["p2"])}</b><small>prioridade planejada</small></div>
+    <div class="risk-stat medium"><span>Quick wins</span><b>{esc(summary["quick_wins"])}</b><small>evidência suficiente</small></div>
+    <div class="risk-stat low"><span>Validar evidência</span><b>{esc(summary["conditional_review"])}</b><small>fora do plano confirmado</small></div>
+  </div>
   <div class="analysis-grid"><div class="panel"><h3>Interseções críticas</h3>{render_table(intersections, [("severity", "Severidade"), ("title", "Interseção"), ("risk", "Risco"), ("affected", "Afetados"), ("evidence", "Evidência"), ("action", "Próxima ação")])}</div>
   <div class="panel"><h3>Primeiras decisões executivas</h3>{render_table(actions, [("priority", "Prioridade"), ("finding", "Achado"), ("risk", "Risco"), ("owner", "Owner"), ("outcome", "Resultado esperado")])}</div></div>
+  <div class="analysis-grid"><div class="panel"><h3>Quick wins confirmados</h3>{render_table(quick_wins, [("priority", "Prioridade"), ("title", "Achado"), ("risk", "Risco"), ("effort", "Esforço"), ("owner", "Owner"), ("outcome", "Resultado esperado")])}</div>
+  <div class="panel"><h3>Frentes consultivas</h3>{render_table(workstreams, [("name", "Frente"), ("findings", "Achados"), ("confirmed", "Confirmados"), ("conditional", "Condicionais"), ("max_risk", "Maior risco"), ("top_priority", "Prioridade")])}</div></div>
+  <div class="panel"><h3>Roadmap executivo 30 / 60 / 90</h3>{render_table(roadmap, [("horizon", "Horizonte"), ("priority", "Prioridade"), ("finding", "Achado"), ("owner", "Owner"), ("action", "Ação")])}</div>
+  <div class="panel"><h3>Revisões condicionais — validar antes de remediar</h3><p class="section-intro">{esc(executive["guardrail"])}</p>{render_table(conditional, [("title", "Achado"), ("risk", "Risco"), ("owner", "Owner"), ("reason", "Motivo")])}</div>
   <div class="panel"><h3>Cobertura e origem da evidência por controle</h3>{render_table(evidence, [("control_id", "Controle"), ("control", "Nome"), ("domain", "Domínio"), ("module", "Módulo"), ("sources_display", "Fonte"), ("status", "Coleta"), ("evidence_state", "Estado da evidência"), ("records", "Registros"), ("confidence", "Confiança"), ("collection_window_display", "Janela observada"), ("limitation", "Limitação")])}</div>
 </section>'''
 

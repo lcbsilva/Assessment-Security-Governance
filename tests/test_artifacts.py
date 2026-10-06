@@ -65,9 +65,10 @@ class ArtifactTests(unittest.TestCase):
         self.assertGreaterEqual(workbook["Plano de ação"].max_row, 2)
         workbook.close()
         deck = Presentation(self.artifact_dir / "assessment-executive-summary.pptx")
-        self.assertGreaterEqual(len(deck.slides), 6)
+        self.assertGreaterEqual(len(deck.slides), 7)
         deck_text = "\n".join(shape.text for slide in deck.slides for shape in slide.shapes if hasattr(shape, "text_frame"))
         self.assertIn("Decisão executiva — próximos passos", deck_text)
+        self.assertIn("Roadmap executivo — 30 / 60 / 90 dias", deck_text)
         self.assertIn("Cobertura e limitações da execução", " ".join(shape.text for shape in deck.slides[3].shapes if shape.has_text_frame))
         brief = self.artifact_dir / "assessment-one-page-brief.pdf"
         self.assertTrue(brief.exists())
