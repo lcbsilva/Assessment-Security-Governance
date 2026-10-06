@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0-rc.1
+
+- Consolida as macro-sprints de confiabilidade, tendências, entrega executiva e segurança de IA em uma Release Candidate.
+- Mantém o assessment read-only e a regra de que ausência de evidência não representa conformidade.
+- Mantém economias FinOps como limite superior até deduplicação e validação financeira; economia realizável não é presumida.
+- Mantém IA opcional, consultiva e separada de score, controles e evidência determinística; nenhuma chamada externa ocorre no CI.
+- Exige testes, E2E, validação de artefatos, Release Gate e Delivery Gate antes da promoção.
+- A validação em tenant Azure real permanece uma etapa separada e só pode ser declarada concluída após execução autorizada no laboratório.
+
+# Changelog
+
 ## 0.2.0-beta.83
 
 - Adiciona gate opt-in de segurança para futura integração de IA, sem chamada externa nesta versão.
