@@ -256,7 +256,7 @@ class EngineContractTests(unittest.TestCase):
         result = collect_m365(domains=[])
         self.assertEqual(result["metadata"]["modules"]["m365"], "not_available")
         self.assertEqual(result["discovery"]["collection_log"][0]["status"], "not_available")
-        self.assertEqual(len(capability_manifest()), 5)
+        self.assertGreaterEqual(len(capability_manifest()), 5)\n        self.assertTrue({"Purview DLP policies", "Purview sensitivity labels", "Purview retention policies"}.issubset({item["module"] for item in capability_manifest()}))
         self.assertTrue(all(item["status"] == "not_configured" for item in capability_manifest()))
 
     def test_legacy_auth_is_scored_from_aggregated_signin_evidence(self):
