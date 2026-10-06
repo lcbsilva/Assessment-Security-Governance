@@ -22,6 +22,33 @@ def capability_manifest() -> list[dict]:
     ]
 
 
+def compliance_collection_log() -> list[dict]:
+    """Declara explicitamente lacunas de Compliance sem fabricar evidência."""
+    return [
+        {
+            "module": "Purview DLP policies",
+            "source": "Microsoft Purview",
+            "status": "not_available",
+            "records": 0,
+            "note": "Integration not configured; Purview read-only adapter not provided. Control CMP-001 remains insufficient evidence.",
+        },
+        {
+            "module": "Purview sensitivity labels",
+            "source": "Microsoft Purview",
+            "status": "not_available",
+            "records": 0,
+            "note": "Integration not configured; Purview read-only adapter not provided. Control CMP-002 remains insufficient evidence.",
+        },
+        {
+            "module": "Purview retention policies",
+            "source": "Microsoft Purview",
+            "status": "not_available",
+            "records": 0,
+            "note": "Integration not configured; Purview read-only adapter not provided. Control CMP-003 remains insufficient evidence.",
+        },
+    ]
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
