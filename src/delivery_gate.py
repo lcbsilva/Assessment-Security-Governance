@@ -9,6 +9,11 @@ mínima das limitações.
 from __future__ import annotations
 
 from collections import Counter
+import argparse
+import json
+from pathlib import Path
+
+import yaml
 
 from executive_intelligence import build as build_executive_intelligence
 from insight_engine import prioritize_findings
@@ -79,3 +84,28 @@ def assess(data: dict, catalog: dict, artifact_validation: dict | None = None) -
             "Remediação depende de validação de owner, escopo e mudança aprovada.",
         ],
     }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Valida prontidão final para revisão com cliente")
+    parser.add_argument("--data", default="runtime/assessment.json")
+    parser.add_argument("--artifact-validation", default=None)
+    parser.add_argument("--output", default="runtime/delivery-gate.json")
+    options = parser.parse_args()
+    root = Path(__file__).resolve().parents[1]
+    catalog = yaml.safe_load((root / "catalog" / "controls.yaml").read_text(encoding="utf-8"))
+    data = json.loads(Path(options.data).read_text(encoding="utf-8"))
+    artifact_validation = None
+    if options.artifact_validation:
+        artifact_validation = json.loads(Path(options.artifact_validation).read_text(encoding="utf-8"))
+    result = assess(data, catalog, artifact_validation)
+    output = Path(options.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"Delivery gate: {result['status']}")
+    if result["status"] == "blocked":
+        raise SystemExit(2)
+
+
+if __name__ == "__main__":
+    main()
