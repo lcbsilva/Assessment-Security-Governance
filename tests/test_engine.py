@@ -143,6 +143,16 @@ class EngineContractTests(unittest.TestCase):
         self.assertIn("zero não implica", result["defender"]["interpretation"])
         self.assertTrue(any("Não interpretar zero registros" in item for item in result["guardrails"]))
 
+    def test_finops_advanced_keeps_benefits_and_anomalies_advisory(self):
+        result = build_lifecycle_finops({
+            "advisor_recommendations": [{"category": "Rightsizing", "potential_savings": 100, "currency": "BRL"}],
+            "finops_summary": {"anomalies": {"daily_median": 10, "daily_peak": 50, "anomaly_days": [{"date": "2026-01-02"}]}, "reservations": "Não quantificado", "savings_plans": "Não quantificado"},
+        })
+        self.assertEqual(result["optimization"]["anomaly_days"], 1)
+        self.assertEqual(result["optimization"]["rightsizing_candidates"], 1)
+        self.assertIn("não constituem compromisso", result["optimization"]["interpretation"])
+        self.assertIsNone(result["savings"]["realizable_savings"])
+
     def test_lifecycle_finops_keeps_savings_overlap_aware_and_actions_guarded(self):
         result = build_lifecycle_finops({
             "advisor_recommendations": [
