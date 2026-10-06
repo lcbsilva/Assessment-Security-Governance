@@ -26,12 +26,13 @@ def test_delivery_gate_accepts_complete_mock_contract():
     assert result["blockers"] == []
 
 
-def test_delivery_gate_blocks_missing_evidence_traceability():
+def test_delivery_gate_warns_when_traceability_is_not_materialized_yet():
     data = _mock()
     data["metadata"]["evidence_by_control"] = []
+    data.get("discovery", {}).pop("control_evidence", None)
     result = assess(data, _catalog(), {"status": "valid"})
-    assert result["status"] == "blocked"
-    assert any("rastreabilidade" in item for item in result["blockers"])
+    assert result["status"] == "ready_for_client_review"
+    assert any("rastreabilidade" in item for item in result["warnings"])
 
 
 def test_delivery_gate_blocks_invalid_artifacts_and_non_readonly():
