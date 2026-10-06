@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0-beta.78
+
+- Adiciona Delivery Gate final para diferenciar execução tecnicamente válida de relatório pronto para revisão com cliente.
+- Bloqueia entrega quando há erro crítico de qualidade, contrato inválido, execução não read-only, integridade de artefatos inválida, manifesto de coleta ausente ou rastreabilidade de evidência ausente.
+- Mantém cobertura incompleta como limitação auditável em vez de forçar score ou conformidade.
+- Exige documentação de módulos partial/not_available/error por observação, causa provável ou próximo passo.
+- Expõe o gate via CLI e JSON para automação de release.
+- Integra o Delivery Gate ao pipeline de CI após a validação dos artefatos e o release gate existente.
+- Preserva achados condicionais como warning consultivo, fora das ações confirmadas até validação de evidência.
+
 ## 0.2.0-beta.77
 
 - Adiciona uma camada de Executive Intelligence que organiza achados já normalizados sem alterar o score técnico ou inventar impacto de negócio.
