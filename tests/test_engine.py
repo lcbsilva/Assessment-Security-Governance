@@ -50,12 +50,24 @@ from trend_intelligence import build as build_trend_intelligence
 from history_dashboard import render as render_history_dashboard
 from ai_security_gate import evaluate as evaluate_ai_security_gate
 from ai_advisory import run as run_ai_advisory
+from collector_coverage import build as build_collector_coverage
 from build_demo_package import build_demo
 from doctor import diagnose
 from pilot_evidence import build as build_pilot_evidence
 
 
 class EngineContractTests(unittest.TestCase):
+    def test_collector_coverage_prioritizes_security_gaps_without_inflating_compliance(self):
+        result = build_collector_coverage([
+            {"module": "Cost Management", "status": "partial", "records": 2},
+            {"module": "PIM active assignments", "status": "not_available", "records": 0},
+            {"module": "Azure Resource Graph", "status": "success", "records": 10},
+        ])
+        self.assertEqual(result["status"], "limited")
+        self.assertEqual(result["gap_count"], 2)
+        self.assertEqual(result["gaps"][0]["module"], "PIM active assignments")
+        self.assertTrue(any("não representa conformidade" in item for item in result["guardrails"]))
+
     def test_ai_advisory_requires_gate_and_never_mutates_score(self):
         safe = {"purpose": "Executive summary for security and governance assessment", "limitations": ["aggregated only"], "finding_count": 2}
         called = []
