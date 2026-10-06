@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0-beta.81
+
+- Adiciona inteligência evidence-aware para RBAC, PIM, Defender, vulnerabilidades e Secure Score.
+- Impede que zero registros seja interpretado como ausência de risco quando a cobertura estiver partial, not_available ou error.
+- Mantém atribuições privilegiadas como sinais para revisão contextual, sem concluir excesso de privilégio apenas pelo nome da função.
+- Expõe limitações de cobertura de identidade e segurança junto da camada de decisão.
+- Mantém remediação privilegiada condicionada a owner, impacto, break-glass e mudança aprovada.
+- Adiciona regressão para semântica de cobertura de Defender/PIM.
+
 ## 0.2.0-beta.80
 
 - Adiciona camada consultiva de Lifecycle & FinOps sobre sinais já coletados de Advisor, Service Health, retirement/EOL e recursos órfãos.
