@@ -255,3 +255,27 @@ def test_graph_failure_note_preserves_throttling_signal():
     note = graph_failure_note(429, "AuditLog.Read.All")
     assert "429 Too Many Requests" in note
     assert "throttling" in note.lower()
+
+
+
+def test_evidence_quality_classifies_entitlement_before_permission():
+    from evidence_quality import classify
+
+    assert classify("not_available", "HTTP 403; entitlement or license unavailable") == "license"
+
+
+def test_evidence_quality_treats_bad_request_as_availability_not_permission():
+    from evidence_quality import classify
+
+    assert classify("not_available", "HTTP 400 Bad Request; validate endpoint before permissions") == "availability"
+
+
+def test_evidence_quality_guidance_does_not_default_to_more_permissions():
+    from evidence_quality import summarize
+
+    result = summarize([
+        {"status": "success", "note": "ok"},
+        {"status": "not_available", "note": "HTTP 400 Bad Request; validate endpoint/entitlement"},
+    ])
+    assert "solicitar novos acessos" in result["interpretation"]
+    assert "categoria indicada" in result["interpretation"]
