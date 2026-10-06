@@ -348,3 +348,40 @@ def test_report_context_does_not_default_unavailable_to_permission_or_license():
     assert limitation["limitation_category"] == "license_or_entitlement"
     assert "causa provável" in limitation["summary"].lower()
     assert "solicitar licença ou acesso" in limitation["summary"].lower()
+
+
+
+def test_xlsx_contains_actionable_coverage_sheet(tmp_path):
+    from export_artifacts import write_xlsx
+    from openpyxl import load_workbook
+
+    output = tmp_path / "assessment.xlsx"
+    data = {
+        "metadata": {
+            "execution": {"tenant_mutation": False},
+            "coverage_map": [{
+                "module": "Defender alerts",
+                "domain": "security",
+                "expected_read_scope": "SecurityIncident.Read.All",
+                "status": "not_available",
+                "records": 0,
+                "evidence_confidence": "baixa",
+                "limitation_category": "permission_or_role",
+                "likely_cause": "Acesso read-only não autorizado",
+                "next_step": "Validar consentimento com o owner",
+                "limitation": "HTTP 403 Forbidden",
+            }],
+        },
+        "discovery": {"collection_log": []},
+        "findings": [],
+    }
+    write_xlsx(data, output)
+    book = load_workbook(output, read_only=True)
+    assert "Cobertura e limitações" in book.sheetnames
+    sheet = book["Cobertura e limitações"]
+    headers = [cell.value for cell in next(sheet.iter_rows(min_row=1, max_row=1))]
+    assert "Causa provável" in headers
+    assert "Próximo passo" in headers
+    values = [cell.value for cell in next(sheet.iter_rows(min_row=2, max_row=2))]
+    assert "Defender alerts" in values
+    assert "Validar consentimento com o owner" in values
