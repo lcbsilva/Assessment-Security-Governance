@@ -7,6 +7,7 @@
 - Autoriza somente o contrato agregado produzido por ai_payload.py após validação de privacidade.
 - Bloqueia payloads com identificadores, segredos ou ausência das limitações de interpretação.
 - Mantém qualquer saída futura de IA separada do score, compliance e causa raiz determinísticos.
+- Rebase de release após promoção da beta.82; sem mudança no contrato de coleta ou permissões.
 
 ## 0.2.0-beta.82
 
