@@ -171,3 +171,27 @@ def test_collection_pipeline_preserves_operational_diagnostics():
     # consultiva para módulos que não puderam ser coletados.
     assert logs[0]["likely_cause"]
     assert logs[0]["next_step"]
+
+
+def test_diagnostics_classify_not_configured_as_configuration():
+    from module_diagnostics import diagnose
+
+    result = diagnose(
+        "Purview DLP policies",
+        "not_available",
+        "Integration not configured; Purview read-only adapter not provided.",
+    )
+
+    assert result["limitation_category"] == "configuration"
+
+
+def test_diagnostics_classify_license_before_generic_permission_text():
+    from module_diagnostics import diagnose
+
+    result = diagnose(
+        "Defender vulnerabilities",
+        "not_available",
+        "HTTP 403; license or entitlement unavailable; permission may be valid.",
+    )
+
+    assert result["limitation_category"] == "license_or_entitlement"
