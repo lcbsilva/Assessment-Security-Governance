@@ -47,6 +47,7 @@ from module_diagnostics import diagnose as diagnose_module
 from lifecycle_finops import build as build_lifecycle_finops
 from security_identity_intelligence import build as build_security_identity_intelligence
 from trend_intelligence import build as build_trend_intelligence
+from history_dashboard import render as render_history_dashboard
 from ai_security_gate import evaluate as evaluate_ai_security_gate
 from build_demo_package import build_demo
 from doctor import diagnose
@@ -54,6 +55,19 @@ from pilot_evidence import build as build_pilot_evidence
 
 
 class EngineContractTests(unittest.TestCase):
+    def test_history_dashboard_separates_coverage_from_comparable_delta(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "a.json").write_text(json.dumps({"run_id":"a","collected_at":"2026-01-01","coverage":50,"controls":[{"id":"C1","score":50,"status":"non_compliant"}],"findings":[]}), encoding="utf-8")
+            (root / "b.json").write_text(json.dumps({"run_id":"b","collected_at":"2026-02-01","coverage":60,"controls":[{"id":"C1","score":70,"status":"non_compliant"}],"findings":[]}), encoding="utf-8")
+            html = render_history_dashboard(root)
+            self.assertIn("Δ controles comparáveis", html)
+            self.assertIn("Δ cobertura mais recente", html)
+            self.assertIn("não significam melhoria automática", html)
+
     def test_ai_security_gate_is_opt_in_and_rejects_identifiers(self):
         safe = {"purpose": "Executive summary for security and governance assessment", "limitations": ["aggregated only"], "finding_count": 2}
         self.assertFalse(evaluate_ai_security_gate(safe)["approved_for_external_model"])
