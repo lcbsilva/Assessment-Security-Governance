@@ -119,6 +119,20 @@ class EngineContractTests(unittest.TestCase):
         self.assertFalse(result["privacy"]["raw_identifiers_included"])
         self.assertTrue(any("não constitui benchmark externo" in item for item in result["limitations"]))
 
+    def test_security_identity_correlates_privileged_mfa_risk_and_conditional_access(self):
+        result = build_security_identity_intelligence({
+            "users": [{"privileged": True, "mfa_status": "Not registered"}, {"privileged": True, "mfa_status": "Registered"}],
+            "identity_risks": [{"risk_level": "high"}, {"risk_level": "low"}],
+            "conditional_access": [{"state": "enabled"}, {"state": "enabledForReportingButNotEnforced"}],
+        }, [])
+        posture = result["identity_posture"]
+        self.assertEqual(posture["privileged_users"], 2)
+        self.assertEqual(posture["privileged_without_mfa"], 1)
+        self.assertEqual(posture["risky_users_high_or_medium"], 1)
+        self.assertEqual(posture["conditional_access_enabled"], 1)
+        self.assertEqual(posture["conditional_access_report_only"], 1)
+        self.assertIn("não presume incidente", posture["interpretation"])
+
     def test_security_identity_does_not_treat_missing_coverage_as_zero_risk(self):
         result = build_security_identity_intelligence(
             {"defender_alerts": [], "defender_vulnerabilities": [], "rbac": [], "pim_assignments": []},
