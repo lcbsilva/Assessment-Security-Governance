@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.0
+
+- Consolida o Assessment Engine para entrega 1.0 com execução tenant read-only e falha graciosa por coletor.
+- Integra cobertura priorizada, inteligência avançada de Segurança/Identidade e FinOps, Executive Report 2.0 e histórico privacy-safe.
+- Adiciona Azure OpenAI opcional somente sobre payload agregado aprovado; a camada permanece advisory-only e não altera score, controles ou evidências.
+- Adiciona modelo interno de maturidade com confiança condicionada à cobertura e proíbe benchmark externo sem coorte real e metodologia documentada.
+- Formaliza handoff operacional, preflight, diagnóstico, integridade de artefatos, Release Gate e Delivery Gate.
+- Mantém validação Azure Lab como evidência operacional separada: CI e cenários sintéticos não substituem uma execução real autorizada.
+
 ## 0.2.0
 
 - Fecha o ciclo das macro-sprints com hardening para release estável.
