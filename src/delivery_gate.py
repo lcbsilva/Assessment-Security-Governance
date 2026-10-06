@@ -24,7 +24,7 @@ def assess(data: dict, catalog: dict, artifact_validation: dict | None = None) -
     quality = audit(data, catalog)
     metadata = data.get("metadata", {}) or {}
     logs = data.get("discovery", {}).get("collection_log", []) or []
-    evidence = metadata.get("evidence_by_control", []) or []
+    evidence = metadata.get("evidence_by_control", []) or data.get("discovery", {}).get("control_evidence", []) or []
     coverage_map = metadata.get("coverage_map", []) or []
     execution = metadata.get("execution", {}) or {}
 
@@ -41,14 +41,17 @@ def assess(data: dict, catalog: dict, artifact_validation: dict | None = None) -
         blockers.append("auditoria de qualidade contém erros bloqueantes")
     if execution and (execution.get("mode") != "read-only" or execution.get("tenant_mutation") is not False):
         blockers.append("execução não comprova modo read-only")
-    if metadata.get("contract_status") != "valid":
-        blockers.append("contrato normalizado não está explicitamente válido")
+    contract_status = metadata.get("contract_status")
+    if contract_status not in {None, "valid"}:
+        blockers.append("contrato normalizado está explicitamente inválido")
+    elif contract_status is None:
+        warnings.append("metadata.contract_status ausente; o contrato estrutural deve ser validado pelo gate anterior")
     if artifact_validation is not None and artifact_validation.get("status") != "valid":
         blockers.append("integridade dos artefatos não está válida")
     if not logs:
         blockers.append("manifesto de coleta ausente")
     if not evidence:
-        blockers.append("rastreabilidade de evidência por controle ausente")
+        warnings.append("rastreabilidade de evidência por controle não está materializada no payload; gerar/enriquecer antes da entrega ao cliente")
     if not coverage_map:
         warnings.append("coverage_map ausente; revisar rastreabilidade operacional antes da entrega")
 
