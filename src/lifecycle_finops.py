@@ -29,6 +29,18 @@ def build(discovery: dict) -> dict:
     # teto de investigação, nunca como economia realizável ou business case.
     savings_upper_bound = round(sum(item["amount"] for item in savings), 2)
     currency = next((item["currency"] for item in savings if item["currency"] != "—"), finops.get("currency", "—"))
+    anomaly = finops.get("anomalies", {}) or {}
+    reservation_signal = finops.get("reservations", "Não quantificado")
+    savings_plan_signal = finops.get("savings_plans", "Não quantificado")
+    optimization = {
+        "anomaly_days": len(anomaly.get("anomaly_days", []) or []),
+        "daily_median": anomaly.get("daily_median"),
+        "daily_peak": anomaly.get("daily_peak"),
+        "reservations": reservation_signal,
+        "savings_plans": savings_plan_signal,
+        "rightsizing_candidates": sum(1 for item in advisor if "right" in str(item.get("category", "")).lower() or "right" in str(item.get("recommendation", "")).lower()),
+        "interpretation": "Sinais para investigação FinOps; não constituem compromisso de economia, compra de benefício ou alteração de SKU.",
+    }
 
     return {
         "signals": {
@@ -44,6 +56,7 @@ def build(discovery: dict) -> dict:
             "realizable_savings": None,
             "guardrail": "Não apresentar como economia comprometida sem deduplicação, owner, dependências e validação financeira.",
         },
+        "optimization": optimization,
         "decision_guardrails": [
             "Sinais de retirement exigem confirmação em fonte oficial e validação de dependências antes de qualquer plano de mudança.",
             "Recursos órfãos são candidatos à investigação, não candidatos automáticos à exclusão.",
