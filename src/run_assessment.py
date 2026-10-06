@@ -44,6 +44,7 @@ from checkpoint import load as load_checkpoint, scope_key, write as write_checkp
 from local_privacy import protect_output_directory
 from module_diagnostics import diagnose
 from lifecycle_finops import build as build_lifecycle_finops
+from security_identity_intelligence import build as build_security_identity_intelligence
 
 
 def args() -> argparse.Namespace:
@@ -799,6 +800,13 @@ def main() -> None:
     # nem transformar recomendações financeiras/lifecycle em fatos confirmados.
     payload["discovery"]["lifecycle_finops_intelligence"] = (
         build_lifecycle_finops(payload["discovery"])
+    )
+
+    payload["discovery"]["security_identity_intelligence"] = (
+        build_security_identity_intelligence(
+            payload["discovery"],
+            payload["discovery"]["collection_log"],
+        )
     )
 
     payload["metadata"]["execution_health"] = (
