@@ -38,18 +38,25 @@ def build(data: dict) -> dict:
         "error": "Falha controlada; consultar causa provável e próximo passo antes de interpretar o domínio.",
         "not_run": "Módulo fora do perfil selecionado; não representa conformidade.",
     }
-    limitations = [
-        {
+    limitations = []
+    for item in logs:
+        status = str(item.get("status"))
+        if status not in status_limitations:
+            continue
+        diagnosis = diagnose(
+            str(item.get("module", "")),
+            status or "unknown",
+            str(item.get("note", "")),
+        )
+        limitations.append({
             "module": item.get("module", "Módulo não identificado"),
             "status": item.get("status", "unknown"),
             "records": item.get("records", 0),
-            "summary": status_limitations.get(str(item.get("status")), "Validar observações no manifesto técnico."),
-            "limitation_category": item.get("limitation_category", diagnose(str(item.get("module", "")), str(item.get("status", "unknown")), str(item.get("note", "")))["limitation_category"]),
-            "likely_cause": item.get("likely_cause", diagnose(str(item.get("module", "")), str(item.get("status", "unknown")), str(item.get("note", "")))["likely_cause"]),
-            "next_step": item.get("next_step", diagnose(str(item.get("module", "")), str(item.get("status", "unknown")), str(item.get("note", "")))["next_step"]),
-        }
-        for item in logs if str(item.get("status")) in status_limitations
-    ]
+            "summary": status_limitations.get(status, "Validar observações no manifesto técnico."),
+            "limitation_category": item.get("limitation_category") or diagnosis["limitation_category"],
+            "likely_cause": item.get("likely_cause") or diagnosis["likely_cause"],
+            "next_step": item.get("next_step") or diagnosis["next_step"],
+        })
     return {
         "profile": metadata.get("profile", "não informado"),
         "run_id": metadata.get("run_id", "não informado"),
