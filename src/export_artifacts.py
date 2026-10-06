@@ -235,6 +235,31 @@ def write_pptx(data: dict, path: Path) -> None:
     body = slide.shapes.add_textbox(Inches(0.9), Inches(1.4), Inches(11.2), Inches(4.8))
     body.text_frame.text = f"Perfil {context['profile']} · contrato {context['contract_status']}\nMódulos: {status_text}\n\n" + ("\n".join(limitation_lines) if limitation_lines else "Nenhuma limitação de módulo registrada.") + "\n\nContagens de alcance não comprovam impacto operacional; validar com os owners."
     body.text_frame.paragraphs[0].font.size = Pt(14)
+
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    title = slide.shapes.add_textbox(Inches(0.7), Inches(0.5), Inches(11.5), Inches(0.7))
+    title.text_frame.text = "Decisão executiva — próximos passos"
+    title.text_frame.paragraphs[0].font.size = Pt(22)
+    actionable = [
+        item for item in context["limitations"]
+        if item.get("status") in {"partial", "not_available", "error"}
+    ][:5]
+    action_lines = [
+        f"• {item['module']} — {item['limitation_category']}: {item['next_step']}"
+        for item in actionable
+    ]
+    top_risks = [
+        f"• {item.get('priority', 'P3')} · {item.get('title')} — owner {item.get('owner', 'A definir')}"
+        for item in findings[:3]
+    ]
+    body = slide.shapes.add_textbox(Inches(0.9), Inches(1.3), Inches(11.2), Inches(5.2))
+    body.text_frame.text = (
+        "Prioridades de risco:\n" + ("\n".join(top_risks) if top_risks else "• Nenhum achado priorizado nesta execução.") +
+        "\n\nPendências de evidência que exigem decisão:\n" + ("\n".join(action_lines) if action_lines else "• Nenhuma pendência operacional crítica registrada.") +
+        "\n\nPrincípio: ausência de evidência não é conformidade; validar owner, escopo e dependências antes de remediar."
+    )
+    body.text_frame.paragraphs[0].font.size = Pt(14)
+
     external = data.get("discovery", {}).get("external_assessments", {}).get("microsoft_zero_trust")
     if external:
         slide = presentation.slides.add_slide(presentation.slide_layouts[6])
