@@ -368,7 +368,8 @@ def write_pdf(data: dict, path: Path) -> None:
     customer = meta.get("customer_name") or engagement.get("customer_name", "Tenant")
     engagement_name = meta.get("engagement_name") or engagement.get("engagement_name", "Security & Governance Assessment")
     classification = meta.get("classification") or engagement.get("classification", "Confidencial — Security & Governance Assessment")
-    findings = sorted(data.get("findings", []), key=lambda item: item.get("risk_score", 0), reverse=True)
+    findings = prioritize_findings(data.get("findings", []), data.get("metadata", {}).get("evidence_quality", {}), data.get("discovery", {}).get("lifecycle", {}).get("summary", {}).get("Custo mensal potencial", "Não quantificado"))
+    executive = build_executive_intelligence(findings)
     scope_line = " · ".join(f"{row['label']}: {row['value']}" for row in context["scope_rows"])
     story = [Paragraph(str(engagement_name), styles["Title"]), Paragraph(str(customer), styles["Heading2"]), Paragraph(str(classification), styles["BodyText"]), Paragraph("Confidencial · compartilhar somente com pessoas autorizadas", styles["BodyText"]), Paragraph(f"Perfil {context['profile']} · Run ID {context['run_id']} · Início UTC {context['started_at']} · fim UTC {context['finished_at']}", styles["BodyText"]), Paragraph(scope_line, styles["BodyText"]), Spacer(1, 18)]
     story.append(Paragraph("Top riscos", styles["Heading2"]))
@@ -376,6 +377,24 @@ def write_pdf(data: dict, path: Path) -> None:
         lineage = item.get("evidence_lineage", {})
         story.append(Paragraph(f"{item.get('title')} — risco {item.get('risk_score')}/100 · alcance: {item.get('affected', 'N/D')} {item.get('affected_unit', 'itens')} · esforço: {item.get('effort_band', 'não avaliado')} · confiança: {item.get('evidence_confidence', 'não avaliada')} · fonte: {lineage.get('source', item.get('source', 'N/D'))} ({lineage.get('source_status', 'estado N/D')})", styles["BodyText"]))
         story.append(Spacer(1, 6))
+    story.append(Paragraph("Decisão executiva", styles["Heading2"]))
+    summary = executive["summary"]
+    story.append(Paragraph(f"P1: {summary['p1']} · P2: {summary['p2']} · quick wins confirmados: {summary['quick_wins']} · revisões condicionais: {summary['conditional_review']}.", styles["BodyText"]))
+    for item in executive["quick_wins"][:5]:
+        story.append(Paragraph(f"Quick win — {item['priority']} · {item['title']} · risco {item['risk']}/100 · esforço {item['effort']} · owner {item['owner']}", styles["BodyText"]))
+    story.append(Paragraph("Roadmap 30 / 60 / 90", styles["Heading2"]))
+    for horizon in ("30", "60", "90"):
+        actions = executive["roadmap"][horizon][:4]
+        if actions:
+            for item in actions:
+                story.append(Paragraph(f"{horizon} dias — {item['priority']} · {item['finding']} · {item['action']} · owner {item['owner']}", styles["BodyText"]))
+        else:
+            story.append(Paragraph(f"{horizon} dias — nenhuma ação confirmada neste horizonte.", styles["BodyText"]))
+    if executive["conditional_reviews"]:
+        story.append(Paragraph("Validações antes de remediar", styles["Heading2"]))
+        for item in executive["conditional_reviews"][:6]:
+            story.append(Paragraph(f"{item['title']} — {item['reason']}", styles["BodyText"]))
+
     insights = data.get("discovery", {}).get("cross_domain_insights", [])
     story.append(Paragraph("Insights cruzados", styles["Heading2"]))
     for item in insights[:5]:
