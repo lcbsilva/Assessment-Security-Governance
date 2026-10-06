@@ -420,14 +420,15 @@ O mapa de encaminhamento consultivo está em [`docs/SOFTWAREONE-OFFERING-MAP.md`
 
 O [CloudMoveAnalyzer](https://github.com/jrlimax/CloudMoveAnalyzer) foi incluído como referência complementar para processamento local, exploração de inventários, filtros, exportações, atualização de bases oficiais e testes de qualidade. Seu mecanismo de suporte à movimentação de recursos não faz parte do scoring de Segurança & Governança.
 
-## Próxima evolução
+## Próxima evolução — macro-sprints prioritárias
 
-1. enriquecer retirement com Advisor, Service Health e Azure EOL;
-2. ampliar RBAC, PIM, Defender, Secure Score e Cost Management;
-3. validar os resultados no tenant de laboratório;
-4. adicionar tendências entre execuções e benchmark anonimizado;
-5. conectar a camada Azure OpenAI ao payload agregado, após revisão de segurança;
-6. evoluir os templates executivos de PDF, PPTX e XLSX.
+1. **Core & Reliability** — fechar coleta, Cost Management, RBAC/PIM/Defender/Secure Score, diagnóstico, evidência, cobertura e preparação/validação de laboratório.
+2. **Intelligence & Trends** — consolidar histórico, comparação entre execuções, lifecycle/FinOps e tendências; benchmark externo somente com coorte real e metodologia documentada.
+3. **Executive Delivery** — alinhar HTML, PDF, PPTX, XLSX e one-page ao mesmo contexto executivo, prioridades, limitações e plano 30/60/90.
+4. **AI & Security** — manter IA opt-in, limitada ao payload agregado aprovado e separada de score, compliance, causa raiz e evidência determinística.
+5. **Release Candidate** — executar testes, E2E, validação de artefatos, release/delivery gates, documentação e fechamento da versão candidata.
+
+Melhorias cosméticas e funcionalidades secundárias ficam fora deste bloco até a conclusão das cinco macro-sprints.
 
 ### Guardrails de lifecycle e FinOps
 
