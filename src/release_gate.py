@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gate final da Beta: qualidade local, guardrails e documentação mínima."""
+"""Gate final de release: qualidade local, guardrails e documentação mínima."""
 
 from __future__ import annotations
 
@@ -102,11 +102,11 @@ def run_release_gate(data_path: Path) -> dict:
     beta = run_gate(data_path)
     checks.extend({"name": f"beta_{item['name']}", "status": item["status"], "detail": item.get("detail", "")} for item in beta["checks"])
     passed = sum(item["status"] == "pass" for item in checks)
-    return {"status": "beta_release_ready" if passed == len(checks) else "blocked", "checks": checks, "passed": passed, "total": len(checks), "read_only": True, "note": "Gate local; não acessa nem altera tenant."}
+    return {"status": "release_ready" if passed == len(checks) else "blocked", "checks": checks, "passed": passed, "total": len(checks), "read_only": True, "note": "Gate local; não acessa nem altera tenant."}
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Gate final de release Beta")
+    parser = argparse.ArgumentParser(description="Gate final de release")
     parser.add_argument("--data", type=Path, default=ROOT / "mock" / "assessment.json")
     parser.add_argument("--output", type=Path, default=ROOT / "runtime" / "release-gate.json")
     args = parser.parse_args()
@@ -114,7 +114,7 @@ def main() -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Release Gate: {result['status']} ({result['passed']}/{result['total']})")
-    if result["status"] != "beta_release_ready":
+    if result["status"] != "release_ready":
         raise SystemExit(2)
 
 
