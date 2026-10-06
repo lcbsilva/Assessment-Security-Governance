@@ -47,6 +47,7 @@ from module_diagnostics import diagnose as diagnose_module
 from lifecycle_finops import build as build_lifecycle_finops
 from security_identity_intelligence import build as build_security_identity_intelligence
 from trend_intelligence import build as build_trend_intelligence
+from maturity_model import build as build_maturity_model
 from history_dashboard import render as render_history_dashboard
 from ai_security_gate import evaluate as evaluate_ai_security_gate
 from ai_advisory import run as run_ai_advisory
@@ -112,6 +113,13 @@ class EngineContractTests(unittest.TestCase):
         result = evaluate_ai_security_gate(unsafe, enabled=True)
         self.assertFalse(result["approved_for_external_model"])
         self.assertTrue(result["privacy_violations"])
+
+    def test_maturity_model_never_invents_external_benchmark(self):
+        result = build_maturity_model({"score": {"overall": 72}, "metadata": {"coverage": 55}})
+        self.assertEqual(result["maturity_level"], "Gerenciado")
+        self.assertEqual(result["confidence"], "baixa")
+        self.assertEqual(result["external_benchmark"]["status"], "unavailable")
+        self.assertIn("coorte externa", result["external_benchmark"]["reason"])
 
     def test_trends_compare_only_valid_overlap_and_remain_privacy_safe(self):
         result = build_trend_intelligence([
