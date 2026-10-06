@@ -13,6 +13,8 @@ import html
 import json
 from pathlib import Path
 
+from trend_intelligence import build as build_trend_intelligence
+
 
 def _number(value: object) -> float | int | None:
     return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
@@ -47,6 +49,14 @@ def load_history(history_dir: Path) -> list[dict]:
 def render(history_dir: Path) -> str:
     rows = load_history(history_dir)
     latest = rows[-1] if rows else {}
+    snapshots = []
+    for path in sorted(history_dir.glob("*.json"), key=lambda item: item.stat().st_mtime):
+        try:
+            snapshots.append(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError):
+            continue
+    trends = build_trend_intelligence(snapshots)
+    latest_interval = trends.get("intervals", [])[-1] if trends.get("intervals") else {}
     payload = json.dumps(rows, ensure_ascii=False, separators=(",", ":"))
     latest_score = latest.get("overall_score", "N/D")
     latest_coverage = latest.get("coverage", "N/D")
@@ -66,7 +76,7 @@ def render(history_dir: Path) -> str:
 :root {{ color-scheme: light; --blue:#005a8d; --navy:#172033; --ink:#233247; --line:#d9e2ec; --soft:#f4f8fb; }}
 * {{ box-sizing:border-box; }} body {{ margin:0; background:#f6f8fb; color:var(--ink); font:15px/1.5 Segoe UI,Arial,sans-serif; }}
 main {{ max-width:1180px; margin:32px auto; padding:0 20px; }} header {{ background:var(--navy); color:#fff; border-radius:16px; padding:28px 30px; }}
-h1 {{ margin:0 0 6px; font-size:28px; }} header p {{ margin:0; color:#b9c9dc; }} .cards {{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:18px 0; }}
+h1 {{ margin:0 0 6px; font-size:28px; }} header p {{ margin:0; color:#b9c9dc; }} .cards {{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin:18px 0; }}
 .card,.panel {{ background:#fff; border:1px solid var(--line); border-radius:14px; padding:20px; box-shadow:0 3px 12px #1720330d; }} .label {{ color:#61738a; font-size:13px; }} .value {{ color:var(--blue); font-size:30px; font-weight:700; margin-top:4px; }}
 table {{ border-collapse:collapse; width:100%; }} th,td {{ border-bottom:1px solid var(--line); padding:12px 10px; text-align:left; vertical-align:top; }} th {{ background:var(--soft); color:#4c6178; font-size:13px; }}
 .notice {{ background:#fff8e6; border-left:4px solid #d98b00; padding:12px 14px; border-radius:8px; }} footer {{ color:#61738a; margin-top:18px; font-size:13px; }}
@@ -75,7 +85,9 @@ table {{ border-collapse:collapse; width:100%; }} th,td {{ border-bottom:1px sol
 <header><h1>Histórico do Assessment</h1><p>SoftwareOne Security &amp; Governance · visão local de tendências</p></header>
 <section class="cards"><div class="card"><div class="label">Execuções registradas</div><div class="value">{len(rows)}</div></div>
 <div class="card"><div class="label">Score mais recente</div><div class="value">{html.escape(str(latest_score))}</div></div>
-<div class="card"><div class="label">Cobertura mais recente</div><div class="value">{html.escape(str(latest_coverage))}</div></div></section>
+<div class="card"><div class="label">Cobertura mais recente</div><div class="value">{html.escape(str(latest_coverage))}</div></div>
+<div class="card"><div class="label">Δ controles comparáveis</div><div class="value">{html.escape(str(latest_interval.get("average_control_delta", "N/D")))}</div></div></section>
+<section class="panel"><h2>Leitura de tendência</h2><p>O delta considera somente controles comparáveis com evidência válida. Mudanças de cobertura são exibidas separadamente e não significam melhoria automática de postura.</p><p><strong>Δ cobertura mais recente:</strong> {html.escape(str(latest_interval.get("coverage_delta", "N/D")))}</p></section>
 <section class="panel"><h2>Evolução por execução</h2>{empty}<table><thead><tr><th>Coleta</th><th>Engine</th><th>Score</th><th>Cobertura</th><th>Status dos módulos</th></tr></thead><tbody>{table_rows}</tbody></table></section>
 <footer>Somente leitura · dados agregados locais · nenhum tenant foi acessado para gerar esta página.</footer>
 <script>window.historySnapshots={payload};</script>
