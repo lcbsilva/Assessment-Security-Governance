@@ -22,9 +22,9 @@ forem executados.
 | PIM — elegibilidade | Microsoft Graph | `RoleEligibilitySchedule.Read.Directory` | Tenant | Menor permissão de leitura para instâncias; acesso delegado também exige função Entra compatível |
 | Definições/funções e membros | Microsoft Graph | `RoleManagement.Read.Directory`, `Directory.Read.All` | Tenant | Usado separadamente para resolver definições e associação de funções; opcional para cobertura de MFA privilegiada |
 | Grupos e convidados | Microsoft Graph | `Group.Read.All`, `User.Read.All` | Tenant | Preferir coleta mínima e mascarar na camada executiva |
-| Secure Score | Microsoft Graph | `SecurityEvents.Read.All` | Tenant | Validar disponibilidade e escopo efetivo do endpoint |
-| Defender alertas | Microsoft Graph | `SecurityIncident.Read.All` | Tenant | Opcional; falha controlada quando Defender/API não estiver disponível |
-| Defender vulnerabilidades | Microsoft Graph | `Vulnerability.Read.All` | Tenant | Opcional; retorna apenas metadados e severidade |
+| Secure Score | Microsoft Graph | `SecurityEvents.Read.All` | Tenant | Opcional; validar disponibilidade e escopo efetivo do endpoint. Falha não reduz a validade dos demais módulos |
+| Defender alertas | Microsoft Graph | `SecurityIncident.Read.All` | Tenant | Opcional; não é requisito para iniciar o perfil Security. Falha controlada quando Defender/API não estiver disponível |
+| Defender vulnerabilidades | Microsoft Graph | `Vulnerability.Read.All` | Tenant | Opcional; retorna apenas metadados e severidade. HTTP 400 deve ser validado como endpoint/entitlement antes de solicitar novos consentimentos |
 | Grupos Entra/M365 | Microsoft Graph | `Group.Read.All` | Tenant | Inventário de grupos; não coleta membros neste módulo |
 | Consentimentos de aplicações | Microsoft Graph | `DelegatedPermissionGrant.Read.All` | Tenant | Permissões delegadas e consentimento; não altera grants nem coleta tokens |
 | Licenças M365 | Microsoft Graph | `LicenseAssignment.Read.All` | Tenant | Menor permissão para leitura agregada de SKUs; sem consultar atribuições por usuário |
