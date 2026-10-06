@@ -227,3 +227,31 @@ def test_m365_capability_manifest_maps_purview_controls():
     assert mapping["Purview DLP policies"] == ["CMP-001"]
     assert mapping["Purview sensitivity labels"] == ["CMP-002"]
     assert mapping["Purview retention policies"] == ["CMP-003"]
+
+
+
+def test_graph_failure_notes_do_not_guess_license_on_permission_error():
+    from collect_graph import graph_failure_note
+
+    note = graph_failure_note(403, "SecurityIncident.Read.All")
+    assert "403 Forbidden" in note
+    assert "read-only" in note
+    assert "licen" not in note.lower()
+
+
+def test_graph_failure_note_400_avoids_permission_escalation():
+    from collect_graph import graph_failure_note
+
+    note = graph_failure_note(400, "Vulnerability.Read.All")
+    assert "400 Bad Request" in note
+    assert "endpoint" in note.lower()
+    assert "entitlement" in note.lower()
+    assert "antes de ampliar permissões" in note
+
+
+def test_graph_failure_note_preserves_throttling_signal():
+    from collect_graph import graph_failure_note
+
+    note = graph_failure_note(429, "AuditLog.Read.All")
+    assert "429 Too Many Requests" in note
+    assert "throttling" in note.lower()
