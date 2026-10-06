@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0-beta.83
+
+- Adiciona gate opt-in de segurança para futura integração de IA, sem chamada externa nesta versão.
+- Bloqueia payload com identificadores/segredos e mantém IA separada do score e da evidência determinística.
+- Reorganiza o restante do projeto em cinco macro-sprints prioritárias até a Release Candidate.
+
 ## 0.2.0-beta.82
 
 - Adiciona tendência multi-run privacy-safe sobre snapshots locais minimizados.

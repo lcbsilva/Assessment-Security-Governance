@@ -47,12 +47,22 @@ from module_diagnostics import diagnose as diagnose_module
 from lifecycle_finops import build as build_lifecycle_finops
 from security_identity_intelligence import build as build_security_identity_intelligence
 from trend_intelligence import build as build_trend_intelligence
+from ai_security_gate import evaluate as evaluate_ai_security_gate
 from build_demo_package import build_demo
 from doctor import diagnose
 from pilot_evidence import build as build_pilot_evidence
 
 
 class EngineContractTests(unittest.TestCase):
+    def test_ai_security_gate_is_opt_in_and_rejects_identifiers(self):
+        safe = {"purpose": "Executive summary for security and governance assessment", "limitations": ["aggregated only"], "finding_count": 2}
+        self.assertFalse(evaluate_ai_security_gate(safe)["approved_for_external_model"])
+        self.assertTrue(evaluate_ai_security_gate(safe, enabled=True)["approved_for_external_model"])
+        unsafe = {**safe, "tenantId": "00000000-0000-0000-0000-000000000000"}
+        result = evaluate_ai_security_gate(unsafe, enabled=True)
+        self.assertFalse(result["approved_for_external_model"])
+        self.assertTrue(result["privacy_violations"])
+
     def test_trends_compare_only_valid_overlap_and_remain_privacy_safe(self):
         result = build_trend_intelligence([
             {"run_id": "a", "collected_at": "2026-01-01", "coverage": 50, "controls": [{"id": "C1", "score": 50, "status": "non_compliant"}, {"id": "C2", "score": None, "status": "not_available"}], "findings": []},
