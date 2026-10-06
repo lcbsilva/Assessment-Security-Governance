@@ -983,10 +983,7 @@ class EngineContractTests(unittest.TestCase):
     def test_engagement_config_is_local_metadata_only(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "engagement.yaml"
-            path.write_text("customer_name: Cliente Demo
-consultant_name: Lucas
-subscriptions: all
-", encoding="utf-8")
+            path.write_text("customer_name: Cliente Demo\nconsultant_name: Lucas\nsubscriptions: all\n", encoding="utf-8")
             result = load_engagement(path)
         self.assertEqual(result["customer_name"], "Cliente Demo")
         self.assertEqual(result["consultant_name"], "Lucas")
