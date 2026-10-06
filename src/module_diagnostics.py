@@ -15,10 +15,13 @@ def diagnose(module: str, status: str, note: str = "") -> dict:
         return {"limitation_category": "throttling", "likely_cause": "O serviço limitou temporariamente a taxa de consultas.", "next_step": "Aguarde o intervalo indicado pelo serviço e repita; reduza paginação ou paralelismo."}
     if any(token in text for token in ("401", "unauthorized", "invalidauthenticationtoken", "authentication")):
         return {"limitation_category": "authentication", "likely_cause": "A sessão ou o token não foi aceito pelo serviço.", "next_step": "Renove a sessão no tenant aprovado e confirme o público/tenant do token."}
+    # Licenciamento/entitlement é uma causa mais específica do que uma menção
+    # genérica a permissão. Classifique primeiro para evitar orientar o cliente a
+    # ampliar consentimentos quando o serviço simplesmente não está licenciado.
+    if any(token in text for token in ("license", "licence", "licensed", "licenciamento", "sku", "entitlement")):
+        return {"limitation_category": "license_or_entitlement", "likely_cause": "A API pode depender de licença, SKU ou entitlement do serviço.", "next_step": "Confirme a licença e a disponibilidade do serviço com o administrador; mantenha o resultado como evidência insuficiente se indisponível."}
     if any(token in text for token in ("403", "accessdenied", "insufficient privileges", "permission", "consent")):
         return {"limitation_category": "permission_or_role", "likely_cause": "A permissão Graph/Azure ou a função do usuário pode não cobrir esta operação.", "next_step": "Compare o endpoint com a matriz de permissões; peça ao owner para confirmar consentimento e função somente leitura."}
-    if any(token in text for token in ("license", "licence", "sku", "not licensed")):
-        return {"limitation_category": "license_or_entitlement", "likely_cause": "A API pode depender de licença, SKU ou entitlement do serviço.", "next_step": "Confirme a licença e a disponibilidade do serviço com o administrador; mantenha o resultado como evidência insuficiente se indisponível."}
     if any(token in text for token in ("not configured", "configure ", "environment variable", "pat read-only", "not provided")):
         return {"limitation_category": "configuration", "likely_cause": "A integração opcional não foi configurada para esta execução.", "next_step": "Configure somente a integração aprovada ou deixe-a explicitamente como não configurada."}
     if "400" in text:

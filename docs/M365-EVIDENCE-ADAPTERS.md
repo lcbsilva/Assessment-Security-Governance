@@ -9,7 +9,7 @@ O engine separa o que já é coletado por DNS/Graph do que exige uma API adminis
 - SharePoint/OneDrive sharing: adaptador ainda não configurado.
 - Teams federation/reuniões: adaptador ainda não configurado.
 - Unified Audit Log: adaptador Purview/Exchange ainda não configurado.
-- Power Platform DLP: adaptador Power Platform Admin API ainda não configurado.
+- Power Platform DLP: adaptador Power Platform Admin API ainda não configurado.\n- Purview DLP, rótulos de sensibilidade e retenção: adaptadores administrativos ainda não configurados; o engine registra cada lacuna separadamente e vincula CMP-001/CMP-002/CMP-003, sem transformar ausência de coleta em conformidade.
 
 ## Regra de integração
 

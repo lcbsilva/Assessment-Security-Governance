@@ -181,6 +181,21 @@ def enrich_pim_rows(rows: list[dict], users: list[dict]) -> list[dict]:
     return rows
 
 
+def graph_failure_note(code: int, permission_hint: str) -> str:
+    """Mantém a causa observada separada das hipóteses de permissão/licença."""
+    if code == 401:
+        return f"HTTP 401 Unauthorized; sessão/token Graph não aceito. Escopo esperado: {permission_hint}"
+    if code == 403:
+        return f"HTTP 403 Forbidden; acesso negado pelo serviço. Verifique consentimento/role read-only. Escopo esperado: {permission_hint}"
+    if code == 429:
+        return f"HTTP 429 Too Many Requests; throttling após tentativas configuradas. Escopo esperado: {permission_hint}"
+    if code == 400:
+        return f"HTTP 400 Bad Request; valide endpoint, parâmetros, disponibilidade e entitlement antes de ampliar permissões. Escopo esperado: {permission_hint}"
+    if code >= 500:
+        return f"HTTP {code}; falha transitória do serviço após tentativas configuradas. Escopo esperado: {permission_hint}"
+    return f"HTTP {code}; chamada Graph não concluída. Escopo esperado: {permission_hint}"
+
+
 def collect() -> dict:
     started = utc_now()
     from azure.identity import DefaultAzureCredential
@@ -227,7 +242,7 @@ def collect() -> dict:
             logs.append({"module": module, "source": "Microsoft Graph", "status": "success", "records": len(rows), "note": permission_hint})
             return rows
         except urllib.error.HTTPError as exc:
-            note = f"HTTP {exc.code}; verifique consentimento/licença ou throttling: {permission_hint}"
+            note = graph_failure_note(exc.code, permission_hint)
             logs.append({"module": module, "source": "Microsoft Graph", "status": "partial" if rows else "not_available", "records": len(rows), "note": note})
             return rows
         except Exception as exc:

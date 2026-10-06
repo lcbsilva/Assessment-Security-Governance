@@ -152,7 +152,7 @@ def module_readiness(profile: str) -> list[dict]:
         ("Directory audit", "Compliance", ["AuditLog.Read.All"]),
         ("Purview DLP / retention", "Compliance", ["Integração Purview específica / licenciamento"]),
         ("Power BI / Fabric", "Dados", ["Fabric admin ou Tenant.Read.All read-only"]),
-        ("M365 domain posture", "Segurança", ["Domain.Read.All + DNS read-only"]),
+        ("M365 domain posture", "Segurança", ["DNS read-only; Domain.Read.All somente se os domínios forem descobertos pelo Graph"]),
     ]
     active_domains = {"segurança", "identidade"} if profile == "security" else {"governança"} if profile == "governance" else {"segurança", "identidade", "governança", "finops", "ecossistema", "dados", "compliance"}
     return [{"module": name, "domain": domain, "expected_read_scope": ", ".join(scopes),
@@ -219,7 +219,7 @@ def main() -> int:
                         "Módulos sem licença/consentimento serão marcados como não disponíveis, sem dados inventados.",
                         "Conceda somente os escopos aprovados se quiser ampliar a cobertura."))
     pim_read = ["RoleAssignmentSchedule.Read.Directory", "RoleEligibilitySchedule.Read.Directory", "RoleManagement.Read.Directory", "Directory.Read.All"]
-    required = {"security": ["User.Read.All", "Reports.Read.All", "Policy.Read.All", "AuditLog.Read.All", "SecurityIncident.Read.All", "Reader"],
+    required = {"security": ["User.Read.All", "Reports.Read.All", "Policy.Read.All", "AuditLog.Read.All", "Reader"],
                 "governance": ["Reader", *pim_read],
                 "full": ["Reader", "Cost Management Reader", "User.Read.All", "Reports.Read.All", "Policy.Read.All", "AuditLog.Read.All", *pim_read]}[options.profile]
     optional = ["Group.Read.All", "Application.Read.All", "DelegatedPermissionGrant.Read.All", "LicenseAssignment.Read.All", "Device.Read.All", "DeviceManagementManagedDevices.Read.All", "SecurityEvents.Read.All", "SecurityIncident.Read.All", "Vulnerability.Read.All", "Fabric admin/Tenant.Read.All", "Azure DevOps PAT read-only", "Purview-specific read integration"]

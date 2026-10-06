@@ -34,8 +34,8 @@ def build(data: dict) -> dict:
     ]
     status_limitations = {
         "partial": "Coleta parcial; cobertura e paginação precisam ser consideradas.",
-        "not_available": "Fonte indisponível nesta execução; validar licença, permissão e disponibilidade.",
-        "error": "Falha controlada; consultar o manifesto técnico confidencial.",
+        "not_available": "Fonte indisponível nesta execução; use a causa provável do módulo antes de solicitar licença ou acesso.",
+        "error": "Falha controlada; consultar causa provável e próximo passo antes de interpretar o domínio.",
         "not_run": "Módulo fora do perfil selecionado; não representa conformidade.",
     }
     limitations = [
