@@ -97,6 +97,32 @@ def write_xlsx(data: dict, path: Path) -> None:
     for column in sheet.columns:
         sheet.column_dimensions[column[0].column_letter].width = min(max(len(str(cell.value or "")) for cell in column) + 2, 42)
     sheet.freeze_panes = "A2"
+
+    coverage_sheet = book.create_sheet("Cobertura e limitações", 2)
+    coverage_headers = ["Módulo", "Domínio", "Escopo esperado", "Status", "Registros", "Confiança", "Classificação", "Causa provável", "Próximo passo", "Observação técnica"]
+    coverage_sheet.append(coverage_headers)
+    for cell in coverage_sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="5B2C83")
+    coverage_rows = data.get("metadata", {}).get("coverage_map", []) or []
+    if coverage_rows:
+        for item in coverage_rows:
+            coverage_sheet.append([
+                item.get("module"), item.get("domain"), item.get("expected_read_scope"), item.get("status"),
+                item.get("records", 0), item.get("evidence_confidence"), item.get("limitation_category", item.get("category", "unknown")),
+                item.get("likely_cause", "—"), item.get("next_step", "—"), item.get("limitation", "—"),
+            ])
+    else:
+        for item in context["limitations"]:
+            coverage_sheet.append([
+                item.get("module"), "N/D", "N/D", item.get("status"), item.get("records", 0), "baixa",
+                item.get("limitation_category"), item.get("likely_cause"), item.get("next_step"), item.get("summary"),
+            ])
+    for column in coverage_sheet.columns:
+        coverage_sheet.column_dimensions[column[0].column_letter].width = min(max(len(str(cell.value or "")) for cell in column) + 2, 60)
+    coverage_sheet.freeze_panes = "A2"
+    coverage_sheet.auto_filter.ref = coverage_sheet.dimensions
+
     external = data.get("discovery", {}).get("external_assessments", {}).get("microsoft_zero_trust")
     if external:
         def safe_cell(value: object) -> object:
