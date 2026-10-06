@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0-beta.83
+
+- Adiciona gate explícito de segurança para futura integração Azure OpenAI/LLM.
+- Mantém integração de IA desabilitada por padrão e sem qualquer chamada externa nesta versão.
+- Autoriza somente o contrato agregado produzido por ai_payload.py após validação de privacidade.
+- Bloqueia payloads com identificadores, segredos ou ausência das limitações de interpretação.
+- Mantém qualquer saída futura de IA separada do score, compliance e causa raiz determinísticos.
+
 ## 0.2.0-beta.82
 
 - Adiciona tendência multi-run privacy-safe sobre snapshots locais minimizados.
