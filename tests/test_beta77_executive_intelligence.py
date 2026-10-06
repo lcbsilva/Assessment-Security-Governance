@@ -24,3 +24,20 @@ def test_executive_intelligence_groups_workstreams_and_roadmap():
     assert "Cloud Governance" in names
     assert result["roadmap"]["30"][0]["action"] == "Planejar"
     assert result["roadmap"]["60"][0]["action"] == "Executar"
+
+
+def test_html_decision_layer_renders_executive_intelligence():
+    from generate_report import render_decision_layer
+    html = render_decision_layer({
+        "metadata": {"evidence_quality": {"score": 90}, "evidence_by_control": []},
+        "discovery": {"lifecycle": {"summary": {}}},
+        "findings": [{
+            "title": "Quick win security", "control_id": "SEC-001", "priority": "P1",
+            "risk_score": 90, "effort": 2, "owner": "Security",
+            "priority_eligibility": "eligible", "action_30_60_90": {"30": "Validar owner"},
+        }],
+    })
+    assert "Quick wins confirmados" in html
+    assert "Roadmap executivo 30 / 60 / 90" in html
+    assert "Quick win security" in html
+    assert "Revisões condicionais" in html
