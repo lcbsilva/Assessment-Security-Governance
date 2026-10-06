@@ -116,7 +116,7 @@ depende de licença, permissão, retenção ou throttling. Eles não devem ser
 alterados manualmente nem interpretados como conformidade.
 
 O roteiro completo para uma execução autorizada em outro ambiente está em
-[`docs/LAB-HANDOFF-FOR-REVIEWER.md`](docs/LAB-HANDOFF-FOR-REVIEWER.md). Os
+[`docs/LAB-HANDOFF-FOR-REVIEWER.md`](docs/LAB-HANDOFF-FOR-REVIEWER.md). Para operação e handoff entre consultores, use também [`docs/OPERATIONAL-HANDOFF.md`](docs/OPERATIONAL-HANDOFF.md). Os
 cenários sintéticos para testar a ferramenta sem tenant estão em
 [`docs/SIMULATION-RUNBOOK.md`](docs/SIMULATION-RUNBOOK.md).
 
