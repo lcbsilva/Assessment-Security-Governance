@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 
 from insight_engine import prioritize_findings
+from executive_intelligence import build as build_executive_intelligence
 from local_privacy import protect_output_directory
 from report_context import build as build_report_context
 from quality_audit import audit
@@ -76,6 +77,7 @@ def write_xlsx(data: dict, path: Path) -> None:
         cell.fill = PatternFill("solid", fgColor="5B2C83")
     cost_signal = data.get("discovery", {}).get("lifecycle", {}).get("summary", {}).get("Custo mensal potencial", "Não quantificado")
     findings = prioritize_findings(data.get("findings", []), data.get("metadata", {}).get("evidence_quality", {}), cost_signal)
+    executive = build_executive_intelligence(findings)
     for item in findings:
         actions = item.get("action_30_60_90", {})
         severity = item.get("severity", "medium")
@@ -98,7 +100,37 @@ def write_xlsx(data: dict, path: Path) -> None:
         sheet.column_dimensions[column[0].column_letter].width = min(max(len(str(cell.value or "")) for cell in column) + 2, 42)
     sheet.freeze_panes = "A2"
 
-    coverage_sheet = book.create_sheet("Cobertura e limitações", 2)
+    exec_sheet = book.create_sheet("Prioridades executivas", 2)
+    summary = executive["summary"]
+    exec_sheet.append(["Resumo executivo", "Valor"])
+    exec_sheet.append(["Achados priorizados", summary["findings"]])
+    exec_sheet.append(["P1", summary["p1"]])
+    exec_sheet.append(["P2", summary["p2"]])
+    exec_sheet.append(["P3", summary["p3"]])
+    exec_sheet.append(["Confirmados para ação", summary["confirmed_for_action"]])
+    exec_sheet.append(["Revisão condicional", summary["conditional_review"]])
+    exec_sheet.append(["Quick wins", summary["quick_wins"]])
+    exec_sheet.append([])
+    exec_sheet.append(["Quick wins", "Prioridade", "Risco", "Esforço", "Owner", "Resultado esperado"])
+    for item in executive["quick_wins"]:
+        exec_sheet.append([item["title"], item["priority"], item["risk"], item["effort"], item["owner"], item["outcome"]])
+    exec_sheet.append([])
+    exec_sheet.append(["Frente consultiva", "Achados", "Confirmados", "Condicionais", "Maior risco", "Prioridade"])
+    for item in executive["workstreams"]:
+        exec_sheet.append([item["name"], item["findings"], item["confirmed"], item["conditional"], item["max_risk"], item["top_priority"]])
+    exec_sheet.append([])
+    exec_sheet.append(["Horizonte", "Prioridade", "Achado", "Owner", "Ação"])
+    for horizon, actions in executive["roadmap"].items():
+        for item in actions:
+            exec_sheet.append([f"{horizon} dias", item["priority"], item["finding"], item["owner"], item["action"]])
+    for cell in exec_sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="5B2C83")
+    for column in exec_sheet.columns:
+        exec_sheet.column_dimensions[column[0].column_letter].width = min(max(len(str(cell.value or "")) for cell in column) + 2, 64)
+    exec_sheet.freeze_panes = "A2"
+
+    coverage_sheet = book.create_sheet("Cobertura e limitações", 3)
     coverage_headers = ["Módulo", "Domínio", "Escopo esperado", "Status", "Registros", "Confiança", "Classificação", "Causa provável", "Próximo passo", "Observação técnica"]
     coverage_sheet.append(coverage_headers)
     for cell in coverage_sheet[1]:
