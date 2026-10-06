@@ -327,3 +327,24 @@ def test_html_execution_health_renders_actionable_limitation_fields():
     assert "Causa provável" in html
     assert "Próximo passo" in html
     assert "Validar consentimento aprovado" in html
+
+
+
+def test_report_context_does_not_default_unavailable_to_permission_or_license():
+    from report_context import build
+
+    result = build({
+        "metadata": {},
+        "discovery": {
+            "collection_log": [{
+                "module": "Defender vulnerabilities",
+                "status": "not_available",
+                "records": 0,
+                "note": "HTTP 400 Bad Request; valide endpoint e entitlement antes de ampliar permissões.",
+            }]
+        },
+    })
+    limitation = result["limitations"][0]
+    assert limitation["limitation_category"] == "license_or_entitlement"
+    assert "causa provável" in limitation["summary"].lower()
+    assert "solicitar licença ou acesso" in limitation["summary"].lower()
