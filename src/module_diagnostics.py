@@ -27,12 +27,15 @@ def diagnose(module: str, status: str, note: str = "") -> dict:
     )
     if any(token in text for token in explicit_license):
         return {"limitation_category": "license_or_entitlement", "likely_cause": "A evidência indica requisito ou indisponibilidade de licença, SKU ou entitlement.", "next_step": "Confirme a licença e a disponibilidade do serviço com o administrador; mantenha o resultado como evidência insuficiente se indisponível."}
+    # Um HTTP 400 explícito prevalece sobre linguagem consultiva na nota
+    # ("validate ... permissions"). Isso evita transformar hipótese de correção
+    # em evidência de falta de permissão.
+    if "400" in text:
+        return {"limitation_category": "bad_request_or_endpoint", "likely_cause": "A API rejeitou a solicitação; endpoint, parâmetro, permissão ou entitlement podem precisar de validação.", "next_step": "Revise a versão e os parâmetros do endpoint junto ao responsável da integração; não amplie permissões sem validação."}
     if any(token in text for token in ("403", "accessdenied", "insufficient privileges", "permission", "consent")):
         return {"limitation_category": "permission_or_role", "likely_cause": "A permissão Graph/Azure ou a função do usuário pode não cobrir esta operação.", "next_step": "Compare o endpoint com a matriz de permissões; peça ao owner para confirmar consentimento e função somente leitura."}
     if any(token in text for token in ("not configured", "configure ", "environment variable", "pat read-only", "not provided")):
         return {"limitation_category": "configuration", "likely_cause": "A integração opcional não foi configurada para esta execução.", "next_step": "Configure somente a integração aprovada ou deixe-a explicitamente como não configurada."}
-    if "400" in text:
-        return {"limitation_category": "bad_request_or_endpoint", "likely_cause": "A API rejeitou a solicitação; endpoint, parâmetro, permissão ou entitlement podem precisar de validação.", "next_step": "Revise a versão e os parâmetros do endpoint junto ao responsável da integração; não amplie permissões sem validação."}
     if status == "partial":
         return {"limitation_category": "partial_collection", "likely_cause": "A coleta terminou sem completar todo o escopo solicitado.", "next_step": "Revise o limite de páginas, duração, throttling e falhas registradas antes de comparar resultados."}
     if status == "error":
