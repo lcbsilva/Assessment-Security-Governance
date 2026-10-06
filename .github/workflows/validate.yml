@@ -40,7 +40,7 @@ jobs:
           python src/export_artifacts.py --data mock/assessment.json --output-dir /tmp/assessment-dist
           python src/ai_payload.py --data mock/assessment.json --output /tmp/assessment-runtime/ai-payload.json
           python src/validate_artifacts.py --output-dir /tmp/assessment-dist --ai-payload /tmp/assessment-runtime/ai-payload.json --assessment mock/assessment.json --output /tmp/assessment-runtime/artifact-validation.json
-      - name: Run beta release gate
+      - name: Run release gate
         run: python src/release_gate.py --data mock/assessment.json --output /tmp/assessment-runtime/release-gate.json
       - name: Run final client delivery gate
         run: python src/delivery_gate.py --data mock/assessment.json --artifact-validation /tmp/assessment-runtime/artifact-validation.json --output /tmp/assessment-runtime/delivery-gate.json
