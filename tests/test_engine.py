@@ -45,12 +45,23 @@ from pseudonymize import pseudonymize
 from summarize_lab_validation import summarize as summarize_lab_validation
 from module_diagnostics import diagnose as diagnose_module
 from lifecycle_finops import build as build_lifecycle_finops
+from security_identity_intelligence import build as build_security_identity_intelligence
 from build_demo_package import build_demo
 from doctor import diagnose
 from pilot_evidence import build as build_pilot_evidence
 
 
 class EngineContractTests(unittest.TestCase):
+    def test_security_identity_does_not_treat_missing_coverage_as_zero_risk(self):
+        result = build_security_identity_intelligence(
+            {"defender_alerts": [], "defender_vulnerabilities": [], "rbac": [], "pim_assignments": []},
+            [{"module": "Defender alerts", "status": "not_available", "note": "HTTP 403"}],
+        )
+        self.assertEqual(result["defender"]["alerts"], 0)
+        self.assertTrue(result["coverage_limitations"])
+        self.assertIn("zero não implica", result["defender"]["interpretation"])
+        self.assertTrue(any("Não interpretar zero registros" in item for item in result["guardrails"]))
+
     def test_lifecycle_finops_keeps_savings_overlap_aware_and_actions_guarded(self):
         result = build_lifecycle_finops({
             "advisor_recommendations": [
