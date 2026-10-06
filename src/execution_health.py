@@ -203,28 +203,38 @@ def summarize(logs: list[dict]) -> dict:
         counts[status] = counts.get(status, 0) + 1
 
         if status not in {"success"}:
+            diagnostic = diagnose(
+                str(item.get("module", "—")),
+                status,
+                str(item.get("note", "")),
+            )
             limitations.append(
                 {
-                    "module": str(
-                        item.get(
-                            "module",
-                            "—",
-                        )
-                    ),
+                    "module": str(item.get("module", "—")),
                     "status": status,
                     "category": str(
                         item.get(
                             "limitation_category",
-                            "unknown",
+                            diagnostic.get("limitation_category", "unknown"),
                         )
                     ),
-                    "records": int(
+                    "records": int(item.get("records", 0) or 0),
+                    "likely_cause": str(
                         item.get(
-                            "records",
-                            0,
+                            "likely_cause",
+                            diagnostic.get("likely_cause", "Não determinada"),
                         )
-                        or 0
                     ),
+                    "next_step": str(
+                        item.get(
+                            "next_step",
+                            diagnostic.get(
+                                "next_step",
+                                item.get("note", "Validar evidência do módulo."),
+                            ),
+                        )
+                    ),
+                    "limitation": str(item.get("note", "—")),
                 }
             )
 
