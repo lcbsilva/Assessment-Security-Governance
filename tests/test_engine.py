@@ -50,6 +50,7 @@ from trend_intelligence import build as build_trend_intelligence
 from history_dashboard import render as render_history_dashboard
 from ai_security_gate import evaluate as evaluate_ai_security_gate
 from ai_advisory import run as run_ai_advisory
+from azure_openai_transport import configured as aoai_configured
 from collector_coverage import build as build_collector_coverage
 from build_demo_package import build_demo
 from doctor import diagnose
@@ -67,6 +68,10 @@ class EngineContractTests(unittest.TestCase):
         self.assertEqual(result["gap_count"], 2)
         self.assertEqual(result["gaps"][0]["module"], "PIM active assignments")
         self.assertTrue(any("não representa conformidade" in item for item in result["guardrails"]))
+
+    def test_azure_openai_transport_is_disabled_without_explicit_configuration(self):
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertFalse(aoai_configured())
 
     def test_ai_advisory_requires_gate_and_never_mutates_score(self):
         safe = {"purpose": "Executive summary for security and governance assessment", "limitations": ["aggregated only"], "finding_count": 2}
