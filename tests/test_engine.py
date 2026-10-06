@@ -49,12 +49,31 @@ from security_identity_intelligence import build as build_security_identity_inte
 from trend_intelligence import build as build_trend_intelligence
 from history_dashboard import render as render_history_dashboard
 from ai_security_gate import evaluate as evaluate_ai_security_gate
+from ai_advisory import run as run_ai_advisory
 from build_demo_package import build_demo
 from doctor import diagnose
 from pilot_evidence import build as build_pilot_evidence
 
 
 class EngineContractTests(unittest.TestCase):
+    def test_ai_advisory_requires_gate_and_never_mutates_score(self):
+        safe = {"purpose": "Executive summary for security and governance assessment", "limitations": ["aggregated only"], "finding_count": 2}
+        called = []
+        def transport(payload):
+            called.append(payload)
+            return "Priorize validação de evidências antes da remediação."
+        disabled = run_ai_advisory(safe, enabled=False, transport=transport)
+        self.assertEqual(disabled["status"], "not_configured")
+        self.assertFalse(called)
+        completed = run_ai_advisory(safe, enabled=True, transport=transport)
+        self.assertEqual(completed["status"], "completed")
+        self.assertFalse(completed["score_mutation_allowed"])
+        self.assertTrue(completed["advisory_only"])
+        unsafe = {**safe, "tenantId": "00000000-0000-0000-0000-000000000000"}
+        blocked = run_ai_advisory(unsafe, enabled=True, transport=transport)
+        self.assertEqual(blocked["status"], "blocked")
+        self.assertEqual(len(called), 1)
+
     def test_history_dashboard_separates_coverage_from_comparable_delta(self):
         import json
         import tempfile
