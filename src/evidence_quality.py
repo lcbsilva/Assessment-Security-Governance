@@ -10,10 +10,12 @@ def classify(status: object, note: object = "") -> str:
         return state
     if "429" in value or "throttl" in value or "rate limit" in value:
         return "throttling"
-    if any(token in value for token in ("403", "401", "permission", "consent", "permiss")):
-        return "permission"
-    if any(token in value for token in ("licen", "defender p2")):
+    if any(token in value for token in ("licen", "defender p2", "entitlement", "sku")):
         return "license"
+    if "400" in value or "bad request" in value or "endpoint" in value:
+        return "availability"
+    if any(token in value for token in ("403", "401", "permission", "consent", "permiss", "forbidden", "unauthorized")):
+        return "permission"
     if any(token in value for token in ("unsupported", "not supported", "parserfailure", "parser failure")):
         return "unsupported"
     if state == "error":
@@ -37,4 +39,4 @@ def summarize(logs: list[dict]) -> dict:
     evaluated = sum(counts.get(key, 0) for key in ("success", "partial", "not_available", "error"))
     score = round(((counts.get("success", 0) * 100) + (counts.get("partial", 0) * 70)) / evaluated) if evaluated else 0
     return {"score": score, "total_modules": len(logs), "evaluated_modules": evaluated, **{key: counts.get(key, 0) for key in counts}, "categories": categories,
-            "interpretation": "Evidência suficiente para os módulos executados." if score >= 80 else "Ampliar permissões, licenças ou disponibilidade antes de comparar tenants."}
+            "interpretation": "Evidência suficiente para os módulos executados." if score >= 80 else "Há limitações de evidência; valide a categoria indicada por módulo (permissão, licença/entitlement, throttling, endpoint/configuração ou disponibilidade) antes de comparar tenants ou solicitar novos acessos."}
