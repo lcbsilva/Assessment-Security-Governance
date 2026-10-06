@@ -230,6 +230,7 @@ def write_pptx(data: dict, path: Path) -> None:
     consultant = meta.get("consultant_name") or engagement.get("consultant_name", "Consultor não informado")
     classification = meta.get("classification") or engagement.get("classification", "Confidencial — Security & Governance Assessment")
     findings = prioritize_findings(data.get("findings", []), data.get("metadata", {}).get("evidence_quality", {}), data.get("discovery", {}).get("lifecycle", {}).get("summary", {}).get("Custo mensal potencial", "Não quantificado"))
+    executive = build_executive_intelligence(findings)
     presentation = Presentation()
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     box = slide.shapes.add_textbox(Inches(0.7), Inches(0.8), Inches(12), Inches(1.2))
@@ -284,13 +285,38 @@ def write_pptx(data: dict, path: Path) -> None:
         f"• {item.get('priority', 'P3')} · {item.get('title')} — owner {item.get('owner', 'A definir')}"
         for item in findings[:3]
     ]
+    quick_win_lines = [
+        f"• {item['priority']} · {item['title']} — risco {item['risk']}/100 · esforço {item['effort']} · owner {item['owner']}"
+        for item in executive["quick_wins"][:3]
+    ]
+    summary = executive["summary"]
     body = slide.shapes.add_textbox(Inches(0.9), Inches(1.3), Inches(11.2), Inches(5.2))
     body.text_frame.text = (
-        "Prioridades de risco:\n" + ("\n".join(top_risks) if top_risks else "• Nenhum achado priorizado nesta execução.") +
-        "\n\nPendências de evidência que exigem decisão:\n" + ("\n".join(action_lines) if action_lines else "• Nenhuma pendência operacional crítica registrada.") +
+        f"Decisão: {summary['p1']} P1 · {summary['p2']} P2 · {summary['conditional_review']} dependem de validação de evidência.\n\n"
+        "Quick wins confirmados:\n" + ("\n".join(quick_win_lines) if quick_win_lines else "• Nenhum quick win confirmado com evidência suficiente.") +
+        "\n\nPrioridades de risco:\n" + ("\n".join(top_risks) if top_risks else "• Nenhum achado priorizado nesta execução.") +
+        "\n\nPendências de coleta:\n" + ("\n".join(action_lines[:3]) if action_lines else "• Nenhuma pendência operacional crítica registrada.") +
         "\n\nPrincípio: ausência de evidência não é conformidade; validar owner, escopo e dependências antes de remediar."
     )
     body.text_frame.paragraphs[0].font.size = Pt(14)
+
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    title = slide.shapes.add_textbox(Inches(0.7), Inches(0.5), Inches(11.5), Inches(0.7))
+    title.text_frame.text = "Roadmap executivo — 30 / 60 / 90 dias"
+    title.text_frame.paragraphs[0].font.size = Pt(22)
+    roadmap_lines = []
+    for horizon in ("30", "60", "90"):
+        actions = executive["roadmap"][horizon][:3]
+        roadmap_lines.append(f"{horizon} dias")
+        roadmap_lines.extend(
+            f"• {item['priority']} · {item['finding']} — {item['action']} · owner {item['owner']}"
+            for item in actions
+        )
+        if not actions:
+            roadmap_lines.append("• Nenhuma ação confirmada neste horizonte.")
+    body = slide.shapes.add_textbox(Inches(0.9), Inches(1.3), Inches(11.2), Inches(5.4))
+    body.text_frame.text = "\n".join(roadmap_lines) + "\n\nItens com evidência insuficiente permanecem fora do roadmap confirmado até validação."
+    body.text_frame.paragraphs[0].font.size = Pt(13)
 
     external = data.get("discovery", {}).get("external_assessments", {}).get("microsoft_zero_trust")
     if external:
