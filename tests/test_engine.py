@@ -223,6 +223,10 @@ class EngineContractTests(unittest.TestCase):
         self.assertIn("pode", permission["likely_cause"])
         self.assertEqual(timeout["limitation_category"], "timeout")
         self.assertEqual(configured["limitation_category"], "configuration")
+        ambiguous_400 = diagnose_module("PIM", "not_available", "HTTP 400; validate endpoint, parameters and entitlement before broadening permissions")
+        explicit_license = diagnose_module("Defender", "not_available", "HTTP 403; license required for this endpoint")
+        self.assertEqual(ambiguous_400["limitation_category"], "bad_request_or_endpoint")
+        self.assertEqual(explicit_license["limitation_category"], "license_or_entitlement")
 
     def test_safe_collect_records_duration_and_attempt(self):
         name, result = safe_collect("graph", lambda: {"metadata": {"modules": {"graph": "success"}}, "discovery": {"collection_log": [{"status": "success"}]}}, {})
