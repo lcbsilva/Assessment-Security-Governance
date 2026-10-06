@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0-beta.79
+
+- Reforça a integridade da taxonomia de limitações operacionais sem inferir causa além da evidência.
+- Notas HTTP 400 que apenas sugerem validar licença/entitlement permanecem classificadas como requisição/endpoint ambíguo.
+- Classificação de licença passa a exigir indicação explícita de requisito ou indisponibilidade de licença, SKU ou entitlement.
+- Mantém permissão, autenticação, throttling, timeout, configuração e erro de coletor como categorias operacionais distintas.
+- Refatora o contexto de relatório para diagnosticar cada limitação uma única vez e reutilizar o resultado de forma determinística.
+- Adiciona testes de regressão para diferenciar hipótese de entitlement de evidência explícita de licenciamento.
+
 ## 0.2.0-beta.78
 
 - Adiciona Delivery Gate final para diferenciar execução tecnicamente válida de relatório pronto para revisão com cliente.
