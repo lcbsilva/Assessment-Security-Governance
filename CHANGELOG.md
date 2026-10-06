@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0
+
+- Fecha o ciclo das macro-sprints com hardening para release estável.
+- Preserva execução read-only, falha graciosa dos coletores e semântica conservadora para evidência ausente ou parcial.
+- Mantém inteligência executiva, tendências, FinOps e segurança/identidade separadas da evidência determinística e de qualquer remediação.
+- Mantém a camada de IA opt-in, advisory-only e protegida pelo gate de privacidade antes de qualquer transporte externo.
+- Mantém validação real em Azure Lab como evidência operacional separada; CI e cenários sintéticos não substituem execução autorizada em tenant.
+
 ## 0.2.0-rc.1
 
 - Consolida as macro-sprints de confiabilidade, tendências, entrega executiva e segurança de IA em uma Release Candidate.
@@ -8,8 +16,6 @@
 - Mantém IA opcional, consultiva e separada de score, controles e evidência determinística; nenhuma chamada externa ocorre no CI.
 - Exige testes, E2E, validação de artefatos, Release Gate e Delivery Gate antes da promoção.
 - A validação em tenant Azure real permanece uma etapa separada e só pode ser declarada concluída após execução autorizada no laboratório.
-
-# Changelog
 
 ## 0.2.0-beta.83
 
