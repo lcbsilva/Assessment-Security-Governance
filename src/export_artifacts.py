@@ -110,6 +110,17 @@ def write_xlsx(data: dict, path: Path) -> None:
     exec_sheet.append(["Confirmados para ação", summary["confirmed_for_action"]])
     exec_sheet.append(["Revisão condicional", summary["conditional_review"]])
     exec_sheet.append(["Quick wins", summary["quick_wins"]])
+    lifecycle = data.get("discovery", {}).get("lifecycle_finops_intelligence", {}) or {}
+    savings = lifecycle.get("savings", {}) or {}
+    security_identity = data.get("discovery", {}).get("security_identity_intelligence", {}) or {}
+    exec_sheet.append([])
+    exec_sheet.append(["Sinais executivos adicionais", "Valor"])
+    exec_sheet.append(["FinOps · economia potencial (limite superior)", savings.get("upper_bound", "N/D")])
+    exec_sheet.append(["FinOps · economia realizável", savings.get("realizable_savings", "Não determinada")])
+    exec_sheet.append(["FinOps · interpretação", savings.get("method", "Sinais financeiros exigem validação e deduplicação antes de compromisso.")])
+    exec_sheet.append(["Segurança/Identidade · atribuições privilegiadas alto/crítico", (security_identity.get("privileged_access", {}) or {}).get("high_or_critical_assignments", "N/D")])
+    exec_sheet.append(["Segurança/Identidade · escopo amplo", (security_identity.get("privileged_access", {}) or {}).get("broad_scope_assignments", "N/D")])
+    exec_sheet.append(["Guardrail", "Ausência de evidência não é conformidade; nenhuma recomendação implica mudança automática no tenant."])
     exec_sheet.append([])
     exec_sheet.append(["Quick wins", "Prioridade", "Risco", "Esforço", "Owner", "Resultado esperado"])
     for item in executive["quick_wins"]:
