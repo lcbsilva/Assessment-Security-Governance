@@ -46,12 +46,24 @@ from summarize_lab_validation import summarize as summarize_lab_validation
 from module_diagnostics import diagnose as diagnose_module
 from lifecycle_finops import build as build_lifecycle_finops
 from security_identity_intelligence import build as build_security_identity_intelligence
+from trend_intelligence import build as build_trend_intelligence
 from build_demo_package import build_demo
 from doctor import diagnose
 from pilot_evidence import build as build_pilot_evidence
 
 
 class EngineContractTests(unittest.TestCase):
+    def test_trends_compare_only_valid_overlap_and_remain_privacy_safe(self):
+        result = build_trend_intelligence([
+            {"run_id": "a", "collected_at": "2026-01-01", "coverage": 50, "controls": [{"id": "C1", "score": 50, "status": "non_compliant"}, {"id": "C2", "score": None, "status": "not_available"}], "findings": []},
+            {"run_id": "b", "collected_at": "2026-02-01", "coverage": 60, "controls": [{"id": "C1", "score": 70, "status": "non_compliant"}, {"id": "C2", "score": 100, "status": "compliant"}], "findings": [{"id": "F1"}]},
+        ])
+        self.assertEqual(result["intervals"][0]["comparable_controls"], 1)
+        self.assertEqual(result["intervals"][0]["average_control_delta"], 20.0)
+        self.assertEqual(result["intervals"][0]["coverage_delta"], 10)
+        self.assertFalse(result["privacy"]["raw_identifiers_included"])
+        self.assertTrue(any("não constitui benchmark externo" in item for item in result["limitations"]))
+
     def test_security_identity_does_not_treat_missing_coverage_as_zero_risk(self):
         result = build_security_identity_intelligence(
             {"defender_alerts": [], "defender_vulnerabilities": [], "rbac": [], "pim_assignments": []},
