@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0-beta.80
+
+- Adiciona camada consultiva de Lifecycle & FinOps sobre sinais já coletados de Advisor, Service Health, retirement/EOL e recursos órfãos.
+- Trata a soma de economias disponíveis como upper bound sujeito a sobreposição, nunca como economia realizável ou comprometida.
+- Mantém retirement, órfãos e Service Health como sinais de investigação, sem comandos operacionais ou inferência automática de causalidade.
+- Exige owner, criticidade, dependências, backup/rollback e janela de mudança antes de qualquer recomendação operacional.
+- Integra a inteligência ao payload normalizado sem ampliar permissões nem realizar chamadas adicionais ao tenant.
+- Adiciona testes de regressão para guardrails financeiros e lifecycle.
+
 ## 0.2.0-beta.79
 
 - Reforça a integridade da taxonomia de limitações operacionais sem inferir causa além da evidência.
