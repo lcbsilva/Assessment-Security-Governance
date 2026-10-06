@@ -446,7 +446,8 @@ def write_one_page_brief(data: dict, path: Path, catalog: dict) -> None:
                    any(item.get("status") in {"partial", "not_available", "error", "not_run"} for item in logs))
     score = quality.get("overall_score")
     score_label = f"{score:.1f}/100" if isinstance(score, (int, float)) else "N/D"
-    findings = sorted(data.get("findings", []), key=lambda row: row.get("risk_score", 0), reverse=True)
+    findings = prioritize_findings(data.get("findings", []), data.get("metadata", {}).get("evidence_quality", {}), data.get("discovery", {}).get("lifecycle", {}).get("summary", {}).get("Custo mensal potencial", "Não quantificado"))
+    executive = build_executive_intelligence(findings)
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle("BriefTitle", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=20, leading=24, textColor=colors.HexColor("#40205f"), spaceAfter=4)
     body_style = ParagraphStyle("BriefBody", parent=styles["BodyText"], fontSize=9, leading=12, spaceAfter=4)
@@ -468,6 +469,12 @@ def write_one_page_brief(data: dict, path: Path, catalog: dict) -> None:
         story.append(Paragraph(f"• <b>{escape(str(item.get('title', 'Achado')))}</b> — risco {escape(str(item.get('risk_score', 'N/D')))} · alcance {escape(str(item.get('affected', 'N/D')))} {escape(str(item.get('affected_unit', 'itens')))} · confiança {escape(str(item.get('evidence_confidence', 'não avaliada')))}", body_style))
     if not findings:
         story.append(Paragraph("Sem achados priorizados disponíveis nesta execução.", body_style))
+    summary = executive["summary"]
+    story.append(Paragraph("Decisão e próximos passos", heading_style))
+    story.append(Paragraph(f"P1: {summary['p1']} · P2: {summary['p2']} · quick wins: {summary['quick_wins']} · validar evidência: {summary['conditional_review']}.", body_style))
+    if executive["quick_wins"]:
+        for item in executive["quick_wins"][:2]:
+            story.append(Paragraph(f"• <b>{escape(str(item['title']))}</b> — {escape(str(item['priority']))} · esforço {escape(str(item['effort']))} · owner {escape(str(item['owner']))}", small_style))
     story.append(Paragraph("Limitações que afetam a leitura", heading_style))
     if context["limitations"]:
         for item in context["limitations"][:4]:
