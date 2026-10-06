@@ -256,7 +256,8 @@ class EngineContractTests(unittest.TestCase):
         result = collect_m365(domains=[])
         self.assertEqual(result["metadata"]["modules"]["m365"], "not_available")
         self.assertEqual(result["discovery"]["collection_log"][0]["status"], "not_available")
-        self.assertGreaterEqual(len(capability_manifest()), 5)\n        self.assertTrue({"Purview DLP policies", "Purview sensitivity labels", "Purview retention policies"}.issubset({item["module"] for item in capability_manifest()}))
+        self.assertGreaterEqual(len(capability_manifest()), 5)
+        self.assertTrue({"Purview DLP policies", "Purview sensitivity labels", "Purview retention policies"}.issubset({item["module"] for item in capability_manifest()}))
         self.assertTrue(all(item["status"] == "not_configured" for item in capability_manifest()))
 
     def test_legacy_auth_is_scored_from_aggregated_signin_evidence(self):
@@ -982,7 +983,10 @@ class EngineContractTests(unittest.TestCase):
     def test_engagement_config_is_local_metadata_only(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "engagement.yaml"
-            path.write_text("customer_name: Cliente Demo\nconsultant_name: Lucas\nsubscriptions: all\n", encoding="utf-8")
+            path.write_text("customer_name: Cliente Demo
+consultant_name: Lucas
+subscriptions: all
+", encoding="utf-8")
             result = load_engagement(path)
         self.assertEqual(result["customer_name"], "Cliente Demo")
         self.assertEqual(result["consultant_name"], "Lucas")
