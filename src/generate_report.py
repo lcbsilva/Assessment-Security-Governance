@@ -91,6 +91,25 @@ def calculate(catalog: dict, data: dict) -> tuple[dict, float, float]:
     return domain_scores, overall, coverage
 
 
+def render_cross_domain_summary(data: dict) -> str:
+    """Resumo curto para decisão, sem repetir evidência bruta."""
+    items = (data.get("discovery", {}) or {}).get("cross_domain_insights", []) or []
+    if not items:
+        return '<section><h2>Insights cross-domain</h2><p>Nenhuma correlação cross-domain suportada pelas evidências desta execução.</p></section>'
+    rows = []
+    for item in items[:6]:
+        domains = item.get("domains") or [item.get("domain", "—")]
+        rows.append(
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>".format(
+                esc(item.get("title", "Insight")),
+                esc(" + ".join(str(x) for x in domains if x)),
+                esc(item.get("priority", "Revisar")),
+                esc(item.get("coverage_guardrail", item.get("interpretation", "Validar contexto antes de remediar."))),
+            )
+        )
+    return '<section><h2>Insights cross-domain</h2><p>Correlações consultivas baseadas somente em sinais coletados; não alteram o score.</p><table><thead><tr><th>Insight</th><th>Domínios</th><th>Prioridade</th><th>Guardrail</th></tr></thead><tbody>' + "".join(rows) + "</tbody></table></section>"
+
+
 def radar_svg(domain_scores: dict) -> str:
     labels = list(domain_scores.values())
     cx, cy, radius = 180, 150, 105
@@ -1002,7 +1021,7 @@ th{{background:#eef7fb;color:#075985}}
 {discovery_html}
 <section class="section panel" id="transparency"><h2>Transparência e limitações</h2><ul><li><b>Origem:</b> {esc(report_origin)}</li><li><b>Privacidade:</b> {esc(privacy_note)}</li><li><b>Perfil:</b> {esc(meta.get("profile", "não informado"))} · <b>Manifesto:</b> {esc(manifest_totals.get("executed", executed_modules))} módulos executados, {esc(manifest_totals.get("unavailable_or_error", 0))} indisponíveis/erro e {esc(manifest_totals.get("out_of_profile", 0))} fora do perfil.</li><li>Resultados dependem do escopo, permissões, licenças e período de retenção disponíveis.</li><li>Achados técnicos devem ser validados pelo responsável do recurso antes da remediação.</li><li>O assessment não representa certificação, auditoria legal ou garantia absoluta de segurança.</li></ul></section>
 <footer>Engine {esc(meta["engine_version"])} · Catálogo {esc(catalog["catalog_version"])} · Run ID {esc(meta["run_id"])} · Dados coletados em UTC · Relatório autocontido para visualização offline.</footer>
-</main>
+{render_cross_domain_summary(data)}\n</main>
 <script>
 (function () {{
   const viewButtons = Array.from(document.querySelectorAll('[data-view-target]'));
