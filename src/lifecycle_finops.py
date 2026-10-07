@@ -68,7 +68,7 @@ def build(discovery: dict) -> dict:
             "raw_signal_count": len(savings),
             "deduplicated_signal_count": len(deduplicated),
             "currency": currency,
-            "method": "upper_bound é soma bruta; deduplicated_upper_bound remove apenas duplicatas com a mesma chave explícita e continua sendo teto de investigação.",
+            "method": "upper_bound é soma bruta e recomendações podem se sobrepor; deduplicated_upper_bound remove apenas duplicatas com a mesma chave explícita e continua sendo teto de investigação.",
             "realizable_savings": None,
             "guardrail": "Não apresentar como economia comprometida sem deduplicação, owner, dependências e validação financeira.",
         },
