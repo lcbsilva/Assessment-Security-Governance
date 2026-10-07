@@ -11,14 +11,15 @@ from pathlib import Path
 PROFILES = ("security", "governance", "full")
 
 
-def profile_summary(pilot: dict, manifest: dict, preflight: dict | None = None, assessment: dict | None = None) -> dict:
+def profile_summary(pilot: dict, manifest: dict, preflight: dict | None = None, assessment: dict | None = None, delivery: dict | None = None) -> dict:
     """Reduz um perfil a um contrato operacional sem expor dados do tenant."""
     pilot_status = pilot.get("status", "unknown")
     artifact_status = manifest.get("status", "unknown")
     warnings = list(pilot.get("warnings", []))
     errors = list(pilot.get("errors", []))
     preflight_status = (preflight or {}).get("status", "not_available")
-    blocked = preflight_status == "blocked" or pilot_status == "blocked" or artifact_status != "valid" or bool(errors)
+    delivery_status = (delivery or {}).get("status", "not_checked")
+    blocked = preflight_status == "blocked" or pilot_status == "blocked" or artifact_status != "valid" or delivery_status == "blocked" or bool(errors)
     collection_log = (assessment or {}).get("discovery", {}).get("collection_log", [])
     collection_counts: dict[str, int] = {}
     collection_issues = []
@@ -44,6 +45,7 @@ def profile_summary(pilot: dict, manifest: dict, preflight: dict | None = None, 
         "preflight": preflight_status,
         "pilot_status": pilot_status,
         "artifact_integrity": artifact_status,
+        "delivery_gate": delivery_status,
         "coverage": metrics.get("coverage"),
         "control_coverage_percent": metrics.get("coverage"),
         "overall_score": metrics.get("overall_score"),
@@ -66,6 +68,7 @@ def summarize(root: Path) -> dict:
         manifest_path = root / profile / "manifest-validation.json"
         preflight_path = root / profile / "preflight.json"
         assessment_path = root / profile / "assessment.json"
+        delivery_path = root / profile / "delivery-gate.json"
         if not pilot_path.exists() or not manifest_path.exists():
             summary["profiles"][profile] = {"readiness": "not_run", "pilot_status": "not_run", "artifact_integrity": "not_run"}
             continue
@@ -73,7 +76,8 @@ def summarize(root: Path) -> dict:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         preflight = json.loads(preflight_path.read_text(encoding="utf-8")) if preflight_path.exists() else None
         assessment = json.loads(assessment_path.read_text(encoding="utf-8")) if assessment_path.exists() else None
-        summary["profiles"][profile] = profile_summary(pilot, manifest, preflight, assessment)
+        delivery = json.loads(delivery_path.read_text(encoding="utf-8")) if delivery_path.exists() else None
+        summary["profiles"][profile] = profile_summary(pilot, manifest, preflight, assessment, delivery)
     readiness = [item["readiness"] for item in summary["profiles"].values()]
     if all(status == "not_run" for status in readiness):
         summary["overall_status"] = "not_run"
