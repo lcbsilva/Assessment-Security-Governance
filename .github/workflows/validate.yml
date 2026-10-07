@@ -44,6 +44,12 @@ jobs:
         run: python src/release_gate.py --data mock/assessment.json --output /tmp/assessment-runtime/release-gate.json
       - name: Run final client delivery gate
         run: python src/delivery_gate.py --data mock/assessment.json --artifact-validation /tmp/assessment-runtime/artifact-validation.json --output /tmp/assessment-runtime/delivery-gate.json
+      - name: Build sanitized client delivery package
+        run: |
+          python src/build_client_delivery.py --dist /tmp/assessment-dist --runtime /tmp/assessment-runtime --output /tmp/client-delivery
+          test -s /tmp/client-delivery/delivery-manifest.json
+          test ! -e /tmp/client-delivery/assessment.json
+          test ! -e /tmp/client-delivery/ai-payload.json
       - name: Validate synthetic scenario matrix
         run: bash scripts/run-synthetic-matrix.sh
 
