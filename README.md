@@ -1,8 +1,10 @@
 # Assessment Automatizado de Segurança & Governança
 
+> **Vai testar a ferramenta pela primeira vez?** Comece por [TESTER-START-HERE.md](TESTER-START-HERE.md). O guia reduz o fluxo ao necessário para um teste autorizado e orienta o feedback.
+
 Para conhecer o produto de ponta a ponta, consulte o [Product Tour](docs/PRODUCT-TOUR.md). Para gerar uma demonstração com cenários pequeno, médio, limitado, completo e grande sem acessar nenhum ambiente, execute `./scripts/run-product-tour.sh`.
 
-Versão 1.0.0 do Assessment Engine para avaliações read-only de Segurança, Governança, Identidade e FinOps, com cobertura e limitações de evidência explícitas.
+Versão 1.1.0 do Assessment Engine para avaliações read-only de Segurança, Governança, Identidade e FinOps, com cobertura e limitações de evidência explícitas.
 
 O repositório possui validação contínua em cada push e pull request. O pipeline
 executa compilação, testes de contrato, verificação do relatório autocontido e
