@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.0
+
+- Adiciona correlações cross-domain evidence-aware entre Identity, Security, Governance e FinOps sem alterar o score determinístico.
+- Evolui FinOps com deduplicação conservadora por chave explícita, mantendo economia realizável como não presumida e os valores como teto de investigação.
+- Estrutura o AI Advisor opcional em resumo executivo, pontos de atenção e perguntas consultivas, preservando privacy gate, opt-in e proibição de mutação do score.
+- Adiciona fluxo consultivo protegido por tenant/subscription e encadeia readiness, coleta read-only, validação de artefatos, Delivery Gate e Release Gate.
+- Adiciona pacote de entrega SoftwareOne allowlisted e condicionado ao Delivery Gate, excluindo evidência bruta, payload de IA, tokens e credenciais.
+- Melhora o HTML executivo com visão cross-domain concisa e guardrails explícitos de cobertura/interpretação.
+- Mantém a validação Azure Lab real como evidência operacional obrigatória separada; CI e cenários sintéticos não substituem a execução autorizada das Sprints 16/17.
+
 ## 1.0.0
 
 - Consolida o Assessment Engine para entrega 1.0 com execução tenant read-only e falha graciosa por coletor.
