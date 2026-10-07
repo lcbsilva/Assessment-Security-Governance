@@ -45,6 +45,7 @@ from local_privacy import protect_output_directory
 from module_diagnostics import diagnose
 from lifecycle_finops import build as build_lifecycle_finops
 from security_identity_intelligence import build as build_security_identity_intelligence
+from cross_domain_intelligence import build as build_cross_domain_intelligence
 
 
 def args() -> argparse.Namespace:
@@ -920,6 +921,9 @@ def main() -> None:
         "cross_domain_insights"
     ] = cross_domain_insights(
         payload["discovery"]
+    ) + build_cross_domain_intelligence(
+        payload["discovery"],
+        payload["discovery"]["collection_log"],
     )
 
     payload["metadata"][
