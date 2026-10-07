@@ -2,7 +2,7 @@
 
 Para conhecer o produto de ponta a ponta, consulte o [Product Tour](docs/PRODUCT-TOUR.md). Para gerar uma demonstração com cenários pequeno, médio, limitado, completo e grande sem acessar nenhum ambiente, execute `./scripts/run-product-tour.sh`.
 
-MVP inicial para validar o formato do assessment antes da conexão com um tenant real.
+Versão 1.0.0 do Assessment Engine para avaliações read-only de Segurança, Governança, Identidade e FinOps, com cobertura e limitações de evidência explícitas.
 
 O repositório possui validação contínua em cada push e pull request. O pipeline
 executa compilação, testes de contrato, verificação do relatório autocontido e
@@ -142,22 +142,20 @@ python3 -m unittest discover -s tests -v
 python3 -m py_compile src/*.py
 ```
 
-Para validar a prontidão da versão beta sem acessar nenhum tenant:
+Para validar a prontidão da release sem acessar nenhum tenant:
 
 ```bash
-python3 src/beta_gate.py --data mock/assessment.json
+python3 src/release_gate.py --data mock/assessment.json
 ```
+
+O `beta_gate.py` permanece apenas como componente de compatibilidade do conjunto de checks; o gate principal da release 1.0 é `release_gate.py`.
 
 Para personalizar o cliente, engagement e classificação dos artefatos, consulte [docs/ENGAGEMENT-CONFIG.md](docs/ENGAGEMENT-CONFIG.md). A configuração é local e não altera o escopo read-only.
 
 O gate compila o código, executa os testes, gera HTML/XLSX/PPTX/PDF, valida os
 guardrails de IA e confirma o piloto em diretório temporário.
 
-No Windows, o mesmo processo pode ser executado pelo PowerShell:
-
-```powershell
-.\scripts\run-beta-gate.ps1
-```
+No Windows, os testes de integridade continuam disponíveis pelos scripts legados de compatibilidade, enquanto a decisão final de release é produzida por `src/release_gate.py`.
 
 Para testar tenants com tamanhos e licenças diferentes sem acessar um ambiente real, use os cenários sintéticos documentados em [`docs/SIMULATION-RUNBOOK.md`](docs/SIMULATION-RUNBOOK.md). Eles são marcados como DEMO e não substituem o piloto em tenant.
 
