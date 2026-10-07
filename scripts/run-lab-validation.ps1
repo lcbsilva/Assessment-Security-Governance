@@ -49,6 +49,7 @@ foreach ($Profile in @("security", "governance", "full")) {
     Invoke-PythonChecked @("src/artifact_manifest.py", "--output-dir", $dist, "--assessment", (Join-Path $out "assessment.json"), "--input", (Join-Path $out "ai-payload.json"), "--output", (Join-Path $out "artifact-manifest.json"))
     Invoke-PythonChecked @("src/validate_manifest.py", "--manifest", (Join-Path $out "artifact-manifest.json"), "--output-dir", $dist, "--input-dir", $out, "--output", (Join-Path $out "manifest-validation.json"))
     Invoke-PythonChecked @("src/validate_pilot.py", "--data", (Join-Path $out "assessment.json"), "--manifest-validation", (Join-Path $out "manifest-validation.json"), "--output", (Join-Path $out "pilot-validation.json"))
+    Invoke-PythonChecked @("src/delivery_gate.py", "--data", (Join-Path $out "assessment.json"), "--artifact-validation", (Join-Path $out "artifact-validation.json"), "--output", (Join-Path $out "delivery-gate.json"))
 }
 
 Invoke-PythonChecked @("src/summarize_lab_validation.py", "--root", "runtime/lab-validation", "--output", "runtime/lab-validation/summary.json")
