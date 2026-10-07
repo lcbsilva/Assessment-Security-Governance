@@ -23,11 +23,24 @@ def build(discovery: dict) -> dict:
         raw = item.get("potential_savings") or item.get("annual_savings") or item.get("savings")
         amount = _money(raw)
         if amount > 0:
-            savings.append({"amount": amount, "currency": item.get("currency") or finops.get("currency") or "—"})
+            savings.append({"amount": amount, "currency": item.get("currency") or finops.get("currency") or "—", "key": str(item.get("recommendation_id") or item.get("id") or item.get("resource_id") or item.get("recommendation") or "").strip().lower()})
 
     # Advisor pode conter recomendações sobrepostas. Somar é útil apenas como
     # teto de investigação, nunca como economia realizável ou business case.
+    # A deduplicação é conservadora: só colapsa linhas que fornecem a mesma chave
+    # explícita. Itens sem chave continuam no teto bruto para não inventar equivalência.
+    keyed: dict[str, dict] = {}
+    unkeyed = []
+    for item in savings:
+        if item["key"]:
+            current = keyed.get(item["key"])
+            if current is None or item["amount"] > current["amount"]:
+                keyed[item["key"]] = item
+        else:
+            unkeyed.append(item)
+    deduplicated = list(keyed.values()) + unkeyed
     savings_upper_bound = round(sum(item["amount"] for item in savings), 2)
+    deduplicated_upper_bound = round(sum(item["amount"] for item in deduplicated), 2)
     currency = next((item["currency"] for item in savings if item["currency"] != "—"), finops.get("currency", "—"))
     anomaly = finops.get("anomalies", {}) or {}
     reservation_signal = finops.get("reservations", "Não quantificado")
@@ -51,8 +64,11 @@ def build(discovery: dict) -> dict:
         },
         "savings": {
             "upper_bound": savings_upper_bound,
+            "deduplicated_upper_bound": deduplicated_upper_bound,
+            "raw_signal_count": len(savings),
+            "deduplicated_signal_count": len(deduplicated),
             "currency": currency,
-            "method": "Soma bruta de sinais monetários disponíveis; recomendações podem se sobrepor.",
+            "method": "upper_bound é soma bruta; deduplicated_upper_bound remove apenas duplicatas com a mesma chave explícita e continua sendo teto de investigação.",
             "realizable_savings": None,
             "guardrail": "Não apresentar como economia comprometida sem deduplicação, owner, dependências e validação financeira.",
         },
