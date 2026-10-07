@@ -59,6 +59,17 @@ from pilot_evidence import build as build_pilot_evidence
 
 
 class EngineContractTests(unittest.TestCase):
+    def test_lab_summary_blocks_when_delivery_gate_blocks(self):
+        pilot = {"status": "ready_for_pilot_review", "warnings": [], "errors": [], "quality_audit": {"metrics": {"coverage": 90, "overall_score": 80}}}
+        manifest = {"status": "valid"}
+        preflight = {"status": "ready"}
+        delivery = {"status": "blocked"}
+        result = summarize_lab_validation(Path(".")) if False else None
+        from summarize_lab_validation import profile_summary
+        summary = profile_summary(pilot, manifest, preflight, {"discovery": {"collection_log": []}}, delivery)
+        self.assertEqual(summary["readiness"], "blocked")
+        self.assertEqual(summary["delivery_gate"], "blocked")
+
     def test_collector_coverage_prioritizes_security_gaps_without_inflating_compliance(self):
         result = build_collector_coverage([
             {"module": "Cost Management", "status": "partial", "records": 2},
