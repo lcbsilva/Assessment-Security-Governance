@@ -204,7 +204,7 @@ def collect() -> dict:
     token = credential.get_token("https://graph.microsoft.com/.default").token
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     logs: list[dict] = []
-    request_timeout = bounded_env_int("ASSESSMENT_GRAPH_REQUEST_TIMEOUT_SECONDS", 60, 5, 300)
+    request_timeout = bounded_env_int("ASSESSMENT_GRAPH_REQUEST_TIMEOUT_SECONDS", 30, 5, 300)
     max_retries = bounded_env_int("ASSESSMENT_GRAPH_MAX_RETRIES", 3, 0, 5)
 
     def get_all(path: str, module: str, permission_hint: str, max_pages: int | None = None) -> list[dict]:
@@ -288,7 +288,7 @@ def collect() -> dict:
     # consciente por variável de ambiente e o manifesto marcará partial.
     # Limite seguro para Cloud Shell. Defina 0 conscientemente para consultar
     # todas as páginas; quando o limite é atingido, o log fica partial.
-    sign_in_max_pages = bounded_env_int("ASSESSMENT_SIGNIN_MAX_PAGES", 20, 0, 10000)
+    sign_in_max_pages = bounded_env_int("ASSESSMENT_SIGNIN_MAX_PAGES", 10, 0, 10000)
     signins = get_all(sign_in_path(start_date), "Sign-ins / legacy auth", "AuditLog.Read.All", max_pages=sign_in_max_pages or None)
     legacy_clients = {"exchange activesync", "other clients", "imap4", "pop3", "smtp"}
     legacy_signins = [{
