@@ -246,6 +246,10 @@ def apply_control_source_gates(controls: list[dict], evidence_rows: list[dict]) 
         if source_status != "success":
             row.update({
                 "status": "not_available",
+                # Do not leave a calculated number visible after its required
+                # evidence gate failed. The report must show N/D, not a
+                # provisional score that can be mistaken for an assessment.
+                "score": None,
                 "confidence": "low",
                 "evidence_state": "INSUFFICIENT_EVIDENCE",
                 "evidence_reason": "required_source_incomplete",
