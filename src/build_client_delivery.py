@@ -5,7 +5,10 @@ import argparse, hashlib, json, shutil
 from pathlib import Path
 
 ALLOWED = {
-    "assessment.html", "assessment.pdf", "assessment.pptx", "assessment.xlsx",
+    "assessment.html",
+    "assessment-executive-summary.pdf",
+    "assessment-executive-summary.pptx",
+    "assessment-action-plan.xlsx",
     "assessment-one-page-brief.pdf",
 }
 
@@ -19,6 +22,12 @@ def build(dist: Path, runtime: Path, output: Path) -> dict:
     gate = json.loads(gate_path.read_text(encoding="utf-8"))
     if gate.get("status") != "ready_for_client_review":
         raise RuntimeError("Delivery Gate não aprovou a revisão de cliente.")
+    missing = sorted(name for name in ALLOWED if not (dist / name).is_file())
+    if missing:
+        raise RuntimeError(
+            "Artefatos obrigatórios ausentes; pacote incompleto: "
+            + ", ".join(missing)
+        )
     output.mkdir(parents=True, exist_ok=True)
     files = []
     for name in sorted(ALLOWED):

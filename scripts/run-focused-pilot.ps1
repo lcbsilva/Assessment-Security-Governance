@@ -1,6 +1,8 @@
 param(
     [Parameter(Mandatory=$true)]
     [string]$Subscriptions,
+    [Parameter(Mandatory=$true)]
+    [string]$ExpectedTenantId,
     [switch]$Fresh
 )
 
@@ -12,10 +14,14 @@ Set-Location $root
 $env:ASSESSMENT_MAX_WORKERS = "1"
 $env:ASSESSMENT_RESUME = if ($Fresh) { "0" } else { "1" }
 
-& "$PSScriptRoot/run-assessment.ps1" -Subscriptions $Subscriptions -Profile security
+& "$PSScriptRoot/run-assessment.ps1" -Subscriptions $Subscriptions -Profile security -ExpectedTenantId $ExpectedTenantId
 if ($LASTEXITCODE -ne 0) { throw "O piloto não foi concluído." }
 
-python src/release_gate.py --data runtime/assessment.json --output runtime/release-gate.json
+$pythonPath = Join-Path $root ".assessment-venv/Scripts/python.exe"
+if (-not (Test-Path $pythonPath -PathType Leaf)) {
+    throw "Ambiente isolado do assessment não encontrado. Execute novamente run-assessment.ps1."
+}
+& $pythonPath src/release_gate.py --data runtime/assessment.json --output runtime/release-gate.json
 if ($LASTEXITCODE -ne 0) {
     $gate = Get-Content .\runtime\release-gate.json | ConvertFrom-Json
     $failed = $gate.checks | Where-Object { $_.status -ne "pass" }

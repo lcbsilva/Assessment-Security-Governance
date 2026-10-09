@@ -297,6 +297,9 @@ _INSIGHT_SOURCE_REQUIREMENTS = {
     "X-002": (("Azure inventory",),),
     "X-003": (("Azure inventory",),),
     "X-004": (("RBAC",), ("Identity", "Identity basic"), ("MFA",)),
+    "XDI-001": (("RBAC",), ("Identity", "Identity basic"), ("MFA",), ("Directory roles",), ("Role members:",)),
+    "XDI-002": (("Orphan resources",), ("Azure Advisor",)),
+    "XDI-003": (("Cost Management",), ("Azure Advisor",)),
 }
 
 
@@ -330,6 +333,19 @@ def gate_insights(insights: list[dict], collection_log: list[dict]) -> list[dict
     for insight in insights:
         row = dict(insight)
         requirements = _INSIGHT_SOURCE_REQUIREMENTS.get(str(row.get("id")), ())
+        if not requirements:
+            row.update({
+                "evidence_state": "INSUFFICIENT_EVIDENCE",
+                "evidence_confidence": "baixa",
+                "priority_eligibility": "conditional_review",
+                "priority": "P2" if row.get("priority") == "P1" else row.get("priority", "P2"),
+                "source_status": "not_declared",
+                "source_statuses": ["not_declared"],
+                "coverage_guardrail": "As fontes necessárias para este insight não estão mapeadas; validar evidências antes de tratá-lo como risco confirmado.",
+                "priority_rationale": "Revisão condicional: fontes necessárias ainda não estão declaradas no contrato de evidência.",
+            })
+            result.append(row)
+            continue
         states = [group_status(group)[0] for group in requirements]
         if requirements and any(state != "success" for state in states):
             source_status = next((state for state in status_order if state in states), "unknown")
@@ -347,7 +363,7 @@ def gate_insights(insights: list[dict], collection_log: list[dict]) -> list[dict
             row.setdefault("evidence_state", "SUPPORTED")
             row.setdefault("evidence_confidence", "média")
             row.setdefault("priority_eligibility", "eligible")
-            row.setdefault("source_status", "success" if requirements else "not_declared")
+            row.setdefault("source_status", "success")
         result.append(row)
     return result
 

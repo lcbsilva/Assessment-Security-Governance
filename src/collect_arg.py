@@ -44,16 +44,79 @@ def query_arg_with_retry(client: object, request: object, attempts: int | None =
             time.sleep(min(8, 2 ** attempt))
     raise RuntimeError("Azure Resource Graph não retornou resposta")
 
+class ArgQueryResult(list):
+    """Rows returned by ARG, retaining the completeness state of pagination."""
+
+    def __init__(self):
+        super().__init__()
+        self.complete = True
+        self.error: str | None = None
+
+
+def arg_result_status(result: ArgQueryResult) -> str:
+    if result.complete:
+        return "success"
+    return "partial" if result else "not_available"
+
+
+def arg_result_note(label: str, result: ArgQueryResult, success_note: str) -> str:
+    if result.complete:
+        return success_note
+    return f"{label} parcial ({len(result)} registros preservados): {result.error}"
+
+
+def query_arg_all_pages(
+    client: object,
+    subscriptions: list[str],
+    query: str,
+    QueryRequest: object,
+    QueryRequestOptions: object,
+) -> ArgQueryResult:
+    """Fetch every ARG page and preserve first pages if a later page fails."""
+    rows = ArgQueryResult()
+    skip_token: str | None = None
+    seen_tokens: set[str] = set()
+    while True:
+        options = QueryRequestOptions(
+            result_format="objectArray",
+            top=1000,
+            skip_token=skip_token,
+        )
+        request = QueryRequest(subscriptions=subscriptions, query=query, options=options)
+        try:
+            response = query_arg_with_retry(client, request)
+        except Exception as exc:
+            rows.complete = False
+            rows.error = f"{type(exc).__name__}: {exc}"
+            return rows
+        rows.extend(response.data or [])
+        next_token = getattr(response, "skip_token", None)
+        if not next_token:
+            truncated = getattr(response, "result_truncated", False)
+            if str(truncated).strip().casefold() in {"true", "1", "yes"}:
+                rows.complete = False
+                rows.error = "Azure Resource Graph informou resultado truncado sem skip_token; a coleta não pode ser declarada completa."
+            return rows
+        next_token = str(next_token)
+        if next_token in seen_tokens:
+            rows.complete = False
+            rows.error = "Azure Resource Graph repetiu o skip_token; consulta interrompida para evitar loop."
+            return rows
+        seen_tokens.add(next_token)
+        skip_token = next_token
+
+
 QUERY = """
 Resources
 | project id, name, type, subscriptionId, resourceGroup, location, kind, sku, tags, properties
-| order by type asc, name asc
+| order by id asc
 """.strip()
 
 POLICY_QUERY = """
 PolicyResources
 | where type =~ 'Microsoft.PolicyInsights/PolicyStates'
 | extend complianceState=tostring(properties.complianceState), resourceId=tostring(properties.resourceId), policyAssignmentId=tostring(properties.policyAssignmentId), policyAssignmentName=tostring(properties.policyAssignmentName), policyDefinitionName=tostring(properties.policyDefinitionName), policyDefinitionId=tostring(properties.policyDefinitionId), policySetDefinitionId=tostring(properties.policySetDefinitionId), policyDefinitionAction=tostring(properties.policyDefinitionAction), resourceType=tostring(properties.resourceType), resourceLocation=tostring(properties.resourceLocation), timestamp=todatetime(properties.timestamp)
+| order by id asc
 | project subscriptionId, resourceId, resourceType, resourceLocation, policyAssignmentId, policyAssignmentName, policyDefinitionId, policyDefinitionName, policySetDefinitionId, policyDefinitionAction, complianceState, timestamp
 """.strip()
 
@@ -61,6 +124,7 @@ POLICY_ASSIGNMENTS_QUERY = """
 PolicyResources
 | where type =~ 'Microsoft.Authorization/PolicyAssignments'
 | extend displayName=tostring(properties.displayName), enforcementMode=tostring(properties.enforcementMode), definitionId=tostring(properties.policyDefinitionId), scope=tostring(properties.scope), notScopes=properties.notScopes, parameters=properties.parameters
+| order by id asc
 | project id, name, subscriptionId, resourceGroup, displayName, enforcementMode, definitionId, scope, notScopes, parameters
 """.strip()
 
@@ -68,6 +132,7 @@ POLICY_DEFINITIONS_QUERY = """
 PolicyResources
 | where type in~ ('Microsoft.Authorization/PolicyDefinitions','Microsoft.Authorization/PolicySetDefinitions')
 | extend displayName=tostring(properties.displayName), parameters=properties.parameters
+| order by id asc
 | project id, name, type, displayName, parameters
 """.strip()
 
@@ -78,17 +143,20 @@ Resources
 | project name, type, subscriptionId, resourceGroup, location, reason='Unattached disk', resourceId=id
 | union (Resources | where type =~ 'Microsoft.Network/publicIPAddresses' | where isempty(properties.ipConfiguration) | project name, type, subscriptionId, resourceGroup, location, reason='Unused public IP', resourceId=id)
 | union (Resources | where type =~ 'Microsoft.Network/networkInterfaces' | where isempty(properties.virtualMachine.id) and isempty(properties.privateEndpoint.id) | project name, type, subscriptionId, resourceGroup, location, reason='Unused NIC', resourceId=id)
+| order by resourceId asc
 """.strip()
 
 RESOURCE_GROUP_QUERY = """
 ResourceContainers
 | where type =~ 'microsoft.resources/subscriptions/resourcegroups'
+| order by id asc
 | project id, name, subscriptionId, location, tags
 """.strip()
 
 NETWORK_HEALTH_QUERY = """
 Resources
 | where type in~ ('microsoft.network/virtualnetworks','microsoft.network/connections','microsoft.network/virtualnetworkgateways','microsoft.network/expressroutecircuits')
+| order by id asc
 | project id, name, type, subscriptionId, resourceGroup, location, properties
 """.strip()
 
@@ -96,6 +164,7 @@ DEFENDER_SCORE_QUERY = """
 SecurityResources
 | where type =~ 'microsoft.security/securescores'
 | extend current=todouble(properties.score.current), max=todouble(properties.score.max), percentage=todouble(properties.score.percentage)
+| order by id asc
 | project subscriptionId, name, current, max, percentage
 """.strip()
 
@@ -103,12 +172,14 @@ DEFENDER_CONTROLS_QUERY = """
 SecurityResources
 | where type =~ 'microsoft.security/securescores/securescorecontrols'
 | extend displayName=tostring(properties.displayName), current=todouble(properties.score.current), max=todouble(properties.score.max), percentage=todouble(properties.score.percentage), unhealthy=tostring(properties.unhealthyResourceCount), healthy=tostring(properties.healthyResourceCount)
+| order by id asc
 | project subscriptionId, name, displayName, current, max, percentage, unhealthy, healthy
 """.strip()
 
 RETIREMENT_QUERY = """
 ServiceHealthResources
 | where type =~ 'microsoft.resourcehealth/events'
+| order by id asc
 | project name, subscriptionId, properties
 """.strip()
 
@@ -117,15 +188,15 @@ advisorresources
 | where type =~ 'microsoft.advisor/recommendations'
 | extend recommendationStatus=tostring(properties.recommendationStatus), category=tostring(properties.category), impact=tostring(properties.recommendationImpact), description=tostring(properties.label), resourceId=tostring(properties.resourceMetadata.resourceId), annualSavings=toreal(properties.extendedProperties.annualSavingsAmount), savingsCurrency=tostring(properties.extendedProperties.savingsCurrency), lastUpdated=todatetime(properties.lastUpdated), recommendationTypeId=tostring(properties.recommendationTypeId)
 | where recommendationStatus in~ ('New', 'InProgress') or isempty(recommendationStatus)
+| order by id asc
 | project id, name, subscriptionId, resourceGroup, category, impact, description, resourceId, annualSavings, savingsCurrency, lastUpdated, recommendationTypeId, recommendationStatus
-| order by impact asc, category asc
 """.strip()
 
 CONTAINERS_QUERY = """
 ResourceContainers
 | where type in~ ('microsoft.resources/subscriptions', 'microsoft.resources/resourcegroups', 'microsoft.management/managementgroups')
 | project id, name, type, subscriptionId, tenantId, properties
-| order by type asc, name asc
+| order by id asc
 """.strip()
 
 # A tabela é populada pelo inventário do Azure Resource Graph quando o
@@ -135,14 +206,14 @@ ResourceContainers
 POWER_PLATFORM_QUERY = """
 PowerPlatformResources
 | project id, name, type, subscriptionId, resourceGroup, location, properties
-| order by type asc, name asc
+| order by id asc
 """.strip()
 
 BENEFITS_QUERY = """
 Resources
 | where type has_any ('microsoft.capacity/reservation', 'microsoft.billingbenefits/reservation', 'microsoft.billingbenefits/savingsplan', 'microsoft.costmanagement/exports')
 | project id, name, type, subscriptionId, resourceGroup, location, properties, sku
-| order by type asc, name asc
+| order by id asc
 """.strip()
 
 
@@ -600,12 +671,27 @@ def resource_map(resources: list[dict]) -> dict:
 
 def defender_summary(scores: list[dict], controls: list[dict]) -> dict:
     """Calcula potencial de ganho do Secure Score sem inventar pontos."""
-    score_rows = [{"subscription": row.get("subscriptionId", "—"), "current": row.get("current", 0) or 0, "max": row.get("max", 0) or 0, "percentage": row.get("percentage", 0) or 0} for row in scores]
+    score_rows = [{
+        "subscription": row.get("subscriptionId", "—"),
+        "score_resource": row.get("name") or "—",
+        "current": row.get("current", 0) or 0,
+        "max": row.get("max", 0) or 0,
+        "percentage": row.get("percentage", 0) or 0,
+    } for row in scores]
     control_rows = []
     for row in controls:
         maximum = float(row.get("max") or 0)
         current = float(row.get("current") or 0)
-        control_rows.append({"subscription": row.get("subscriptionId", "—"), "control": row.get("displayName") or row.get("name") or "—", "score": current, "max_score": maximum, "potential_score_increase": round(max(0.0, maximum - current), 2), "unhealthy_resources": row.get("unhealthy") or "—", "healthy_resources": row.get("healthy") or "—"})
+        control_rows.append({
+            "subscription": row.get("subscriptionId", "—"),
+            "control_resource": row.get("name") or "—",
+            "control": row.get("displayName") or row.get("name") or "—",
+            "score": current,
+            "max_score": maximum,
+            "potential_score_increase": round(max(0.0, maximum - current), 2),
+            "unhealthy_resources": row.get("unhealthy") or "—",
+            "healthy_resources": row.get("healthy") or "—",
+        })
     control_rows.sort(key=lambda x: (-float(x.get("potential_score_increase", 0)), str(x.get("control", ""))))
     return {"scores": score_rows, "controls": control_rows, "top_improvements": control_rows[:10], "interpretation": "Potential score increase uses Defender Secure Score control points returned by Azure; it is prioritization context, not guaranteed risk reduction."}
 
@@ -759,24 +845,12 @@ def collect(subscription_ids: list[str]) -> dict:
     network_health_rows: list[dict] = []
     defender_score_rows: list[dict] = []
     defender_control_rows: list[dict] = []
-    skip_token: str | None = None
-
-    while True:
-        options = QueryRequestOptions(
-            result_format="objectArray",
-            top=5000,
-            skip_token=skip_token,
-        )
-        request = QueryRequest(
-            subscriptions=subscription_ids,
-            query=QUERY,
-            options=options,
-        )
-        response = query_arg_with_retry(client, request)
-        rows.extend(resource_row(item) for item in (response.data or []))
-        skip_token = getattr(response, "skip_token", None)
-        if not skip_token:
-            break
+    inventory_result = query_arg_all_pages(
+        client, subscription_ids, QUERY, QueryRequest, QueryRequestOptions
+    )
+    rows = [resource_row(item) for item in inventory_result]
+    inventory_status = arg_result_status(inventory_result)
+    inventory_note = arg_result_note("Azure inventory", inventory_result, "Consulta read-only; exposição e dependências exigem enriquecimento por módulo.")
 
     age_counts = [
         ("0–90 dias", sum(1 for item in rows if isinstance(item.get("age_days"), int) and item["age_days"] <= 90)),
@@ -787,161 +861,131 @@ def collect(subscription_ids: list[str]) -> dict:
     age_rows = [{"age_band": band, "resources": count, "percentage": f"{(count / len(rows) * 100):.1f}%" if rows else "0%"} for band, count in age_counts]
 
     try:
-        container_response = client.resources(QueryRequest(
-            subscriptions=subscription_ids,
-            query=CONTAINERS_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
+        container_result = query_arg_all_pages(client, subscription_ids, CONTAINERS_QUERY, QueryRequest, QueryRequestOptions)
         container_rows = [{
             "name": item.get("name", "—"),
             "type": item.get("type", "—"),
             "subscription": item.get("subscriptionId", "—"),
             "tenant": item.get("tenantId", "—"),
-        } for item in (container_response.data or [])]
-        hierarchy_status = "success"
-        hierarchy_note = "Subscriptions, resource groups e management groups via ResourceContainers"
+        } for item in container_result]
+        hierarchy_status = arg_result_status(container_result)
+        hierarchy_note = arg_result_note("Hierarquia", container_result, "Subscriptions, resource groups e management groups via ResourceContainers")
     except Exception as exc:
         hierarchy_status = "not_available"
         hierarchy_note = f"Hierarquia indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        policy_response = client.resources(QueryRequest(
-            subscriptions=subscription_ids,
-            query=POLICY_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        policy_rows = [policy_row(item) for item in (policy_response.data or [])]
-        policy_status = "success"
-        policy_note = "Azure Policy states via Azure Resource Graph"
+        policy_result = query_arg_all_pages(client, subscription_ids, POLICY_QUERY, QueryRequest, QueryRequestOptions)
+        policy_rows = [policy_row(item) for item in policy_result]
+        policy_status = arg_result_status(policy_result)
+        policy_note = arg_result_note("Azure Policy states", policy_result, "Azure Policy states via Azure Resource Graph")
     except Exception as exc:
         policy_status = "not_available"
         policy_note = f"Policy Insights indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        assignment_response = query_arg_with_retry(client, QueryRequest(
-            subscriptions=subscription_ids,
-            query=POLICY_ASSIGNMENTS_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        definition_response = query_arg_with_retry(client, QueryRequest(
-            subscriptions=subscription_ids,
-            query=POLICY_DEFINITIONS_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        policy_definition_rows = list(definition_response.data or [])
-        policy_assignment_rows = enrich_policy_assignments([policy_assignment_row(item) for item in (assignment_response.data or [])], policy_definition_rows)
-        assignment_status = "success"
-        assignment_note = "Policy assignments e parâmetros atribuídos via Azure Resource Graph."
+        assignment_result = query_arg_all_pages(client, subscription_ids, POLICY_ASSIGNMENTS_QUERY, QueryRequest, QueryRequestOptions)
+        definition_result = query_arg_all_pages(client, subscription_ids, POLICY_DEFINITIONS_QUERY, QueryRequest, QueryRequestOptions)
+        policy_definition_rows = list(definition_result)
+        policy_assignment_rows = enrich_policy_assignments([policy_assignment_row(item) for item in assignment_result], policy_definition_rows)
+        incomplete = not assignment_result.complete or not definition_result.complete
+        if not assignment_result.complete:
+            assignment_status = "partial" if assignment_result else "not_available"
+        elif incomplete or (assignment_result and not policy_definition_rows):
+            assignment_status = "partial"
+        else:
+            assignment_status = "success"
+        errors = [result.error for result in (assignment_result, definition_result) if result.error]
+        assignment_note = "Policy assignments e parâmetros via Azure Resource Graph."
+        if errors:
+            assignment_note += f" Coleta incompleta; {len(policy_assignment_rows)} registros preservados: " + "; ".join(errors)
+        elif assignment_result and not policy_definition_rows:
+            assignment_note += " Definições de Policy não retornadas; enriquecimento incompleto."
     except Exception as exc:
         assignment_status = "not_available"
         assignment_note = f"Policy assignments indisponíveis: {type(exc).__name__}: {exc}"
 
     try:
-        rg_response = query_arg_with_retry(client, QueryRequest(
-            subscriptions=subscription_ids,
-            query=RESOURCE_GROUP_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        resource_group_rows = list(rg_response.data or [])
-        rg_status = "success"
-        rg_note = "Resource groups via ResourceContainers"
+        rg_result = query_arg_all_pages(client, subscription_ids, RESOURCE_GROUP_QUERY, QueryRequest, QueryRequestOptions)
+        resource_group_rows = list(rg_result)
+        rg_status = arg_result_status(rg_result)
+        rg_note = arg_result_note("Resource groups", rg_result, "Resource groups via ResourceContainers")
     except Exception as exc:
         rg_status = "not_available"
         rg_note = f"Resource groups indisponíveis: {type(exc).__name__}: {exc}"
 
     try:
-        network_response = query_arg_with_retry(client, QueryRequest(
-            subscriptions=subscription_ids,
-            query=NETWORK_HEALTH_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        network_health_rows = list(network_response.data or [])
-        network_status = "success"
-        network_note = "Sinais de rede via Azure Resource Graph"
+        network_result = query_arg_all_pages(client, subscription_ids, NETWORK_HEALTH_QUERY, QueryRequest, QueryRequestOptions)
+        network_health_rows = list(network_result)
+        network_status = arg_result_status(network_result)
+        network_note = arg_result_note("Sinais de rede", network_result, "Sinais de rede via Azure Resource Graph")
     except Exception as exc:
         network_status = "not_available"
         network_note = f"Sinais de rede indisponíveis: {type(exc).__name__}: {exc}"
 
     try:
-        defender_score_response = query_arg_with_retry(client, QueryRequest(
-            subscriptions=subscription_ids,
-            query=DEFENDER_SCORE_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        defender_score_rows = list(defender_score_response.data or [])
-        defender_control_response = query_arg_with_retry(client, QueryRequest(
-            subscriptions=subscription_ids,
-            query=DEFENDER_CONTROLS_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        defender_control_rows = list(defender_control_response.data or [])
-        defender_status = "success" if (defender_score_rows or defender_control_rows) else "partial"
-        defender_note = "Secure Score e controles via SecurityResources; vazio pode significar Defender não habilitado ou sem dados."
+        defender_score_result = query_arg_all_pages(client, subscription_ids, DEFENDER_SCORE_QUERY, QueryRequest, QueryRequestOptions)
+        defender_control_result = query_arg_all_pages(client, subscription_ids, DEFENDER_CONTROLS_QUERY, QueryRequest, QueryRequestOptions)
+        defender_score_rows = list(defender_score_result)
+        defender_control_rows = list(defender_control_result)
+        incomplete = not defender_score_result.complete or not defender_control_result.complete
+        defender_status = (
+            "partial" if incomplete and (defender_score_rows or defender_control_rows)
+            else "not_available" if incomplete
+            else "success"
+        )
+        defender_note = "SecurityResources consultado no escopo; zero registros observados não comprova licenciamento ou configuração do Defender."
+        defender_errors = [result.error for result in (defender_score_result, defender_control_result) if result.error]
+        if defender_errors:
+            defender_note += f" Resultado parcial preservado: {len(defender_score_rows) + len(defender_control_rows)} registros. " + "; ".join(defender_errors)
     except Exception as exc:
         defender_status = "not_available"
         defender_note = f"Secure Score indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        orphan_response = client.resources(QueryRequest(
-            subscriptions=subscription_ids,
-            query=ORPHAN_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        orphan_rows = [orphan_row(item) for item in (orphan_response.data or [])]
-        orphan_status = "success"
-        orphan_note = "Heurísticas de associação via Azure Resource Graph; custo requer Cost Management"
+        orphan_result = query_arg_all_pages(client, subscription_ids, ORPHAN_QUERY, QueryRequest, QueryRequestOptions)
+        orphan_rows = [orphan_row(item) for item in orphan_result]
+        orphan_status = arg_result_status(orphan_result)
+        orphan_note = arg_result_note("Detecção de órfãos", orphan_result, "Heurísticas de associação via Azure Resource Graph; custo requer Cost Management")
     except Exception as exc:
         orphan_status = "not_available"
         orphan_note = f"Detecção de órfãos indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        advisor_response = client.resources(QueryRequest(
-            subscriptions=subscription_ids,
-            query=ADVISOR_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        advisor_rows = [advisor_row(item) for item in (advisor_response.data or [])]
-        advisor_status = "success"
-        advisor_note = "Recomendações ativas do Azure Advisor via Azure Resource Graph"
+        advisor_result = query_arg_all_pages(client, subscription_ids, ADVISOR_QUERY, QueryRequest, QueryRequestOptions)
+        advisor_rows = [advisor_row(item) for item in advisor_result]
+        advisor_status = arg_result_status(advisor_result)
+        advisor_note = arg_result_note("Azure Advisor", advisor_result, "Recomendações ativas do Azure Advisor via Azure Resource Graph")
     except Exception as exc:
         advisor_status = "not_available"
         advisor_note = f"Azure Advisor indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        retirement_response = client.resources(QueryRequest(
-            subscriptions=subscription_ids,
-            query=RETIREMENT_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        retirement_rows = [retirement_row(item) for item in (retirement_response.data or [])]
-        retirement_status = "success"
-        retirement_note = "Service Health advisories via Azure Resource Graph"
+        retirement_result = query_arg_all_pages(client, subscription_ids, RETIREMENT_QUERY, QueryRequest, QueryRequestOptions)
+        retirement_rows = [retirement_row(item) for item in retirement_result]
+        retirement_status = arg_result_status(retirement_result)
+        retirement_note = arg_result_note("Service Health", retirement_result, "Service Health advisories via Azure Resource Graph")
     except Exception as exc:
         retirement_status = "not_available"
         retirement_note = f"Service Health indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        power_platform_response = query_arg_with_retry(client, QueryRequest(
-            subscriptions=subscription_ids,
-            query=POWER_PLATFORM_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        power_platform_rows = [power_platform_row(item) for item in (power_platform_response.data or [])]
-        power_platform_status = "success" if power_platform_rows else "partial"
-        power_platform_note = "PowerPlatformResources via Azure Resource Graph; inventário pode exigir habilitação no tenant."
+        power_platform_result = query_arg_all_pages(client, subscription_ids, POWER_PLATFORM_QUERY, QueryRequest, QueryRequestOptions)
+        power_platform_rows = [power_platform_row(item) for item in power_platform_result]
+        if not power_platform_result.complete:
+            power_platform_status = arg_result_status(power_platform_result)
+        else:
+            power_platform_status = "success" if power_platform_rows else "partial"
+        power_platform_note = arg_result_note("Power Platform", power_platform_result, "PowerPlatformResources via Azure Resource Graph; vazio pode indicar falta de habilitação ou ausência de recursos.")
     except Exception as exc:
         power_platform_status = "not_available"
         power_platform_note = f"Inventário Power Platform indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        benefits_response = query_arg_with_retry(client, QueryRequest(
-            subscriptions=subscription_ids,
-            query=BENEFITS_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        benefit_rows = [{"name": item.get("name", "—"), "type": item.get("type", "—"), "subscription": item.get("subscriptionId", "—"), "resource_group": item.get("resourceGroup", "—"), "region": item.get("location", "—"), "benefit_kind": "Savings Plan" if "savingsplan" in str(item.get("type", "")).lower() else "Reservation"} for item in (benefits_response.data or [])]
-        benefits_status = "success"
-        benefits_note = "Inventário de benefícios via Azure Resource Graph; ausência de registros não prova inexistência fora do escopo."
+        benefit_result = query_arg_all_pages(client, subscription_ids, BENEFITS_QUERY, QueryRequest, QueryRequestOptions)
+        benefit_rows = [{"name": item.get("name", "—"), "type": item.get("type", "—"), "subscription": item.get("subscriptionId", "—"), "resource_group": item.get("resourceGroup", "—"), "region": item.get("location", "—"), "benefit_kind": "Savings Plan" if "savingsplan" in str(item.get("type", "")).lower() else "Reservation"} for item in benefit_result]
+        benefits_status = arg_result_status(benefit_result)
+        benefits_note = arg_result_note("Inventário de benefícios", benefit_result, "Inventário de benefícios via Azure Resource Graph; ausência de registros não prova inexistência fora do escopo.")
     except Exception as exc:
         benefits_status = "not_available"
         benefits_note = f"Inventário de reservas/Savings Plans indisponível: {type(exc).__name__}: {exc}"
@@ -952,7 +996,7 @@ def collect(subscription_ids: list[str]) -> dict:
             "run_id": f"arg-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}",
             "collected_at": started,
             "scope": {"subscriptions": len(subscription_ids), "resources_assessed": len(rows)},
-            "modules": {"governance": "success", "compliance": policy_status},
+            "modules": {"governance": inventory_status, "compliance": policy_status},
         },
         "controls": [],
         "findings": [],
@@ -979,9 +1023,9 @@ def collect(subscription_ids: list[str]) -> dict:
             "collection_log": [{
                 "module": "Azure inventory",
                 "source": "Azure Resource Graph",
-                "status": "success",
+                "status": inventory_status,
                 "records": len(rows),
-                "note": "Consulta read-only; exposição e dependências exigem enriquecimento por módulo.",
+                "note": inventory_note,
             }, {
                 "module": "Azure Policy",
                 "source": "PolicyResources / Azure Resource Graph",

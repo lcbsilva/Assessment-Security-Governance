@@ -41,6 +41,26 @@ class CrossDomainEvidenceGateTests(unittest.TestCase):
     def test_unmapped_insight_is_not_promoted_to_supported(self):
         result = gate_insights([{"id": "CI-999", "title": "Other correlation"}], [])[0]
         self.assertEqual(result["source_status"], "not_declared")
+        self.assertEqual(result["evidence_state"], "INSUFFICIENT_EVIDENCE")
+        self.assertEqual(result["priority_eligibility"], "conditional_review")
+
+    def test_finops_orphan_correlation_requires_both_sources(self):
+        insight = {"id": "XDI-002", "title": "Orphans and rightsizing", "priority": "P1"}
+        result = gate_insights([insight], [
+            {"module": "Orphan resources", "status": "success"},
+            {"module": "Azure Advisor", "status": "partial"},
+        ])[0]
+        self.assertEqual(result["evidence_state"], "INSUFFICIENT_EVIDENCE")
+        self.assertEqual(result["priority_eligibility"], "conditional_review")
+        self.assertEqual(result["priority"], "P2")
+
+    def test_cost_anomaly_correlation_requires_cost_and_advisor_sources(self):
+        insight = {"id": "XDI-003", "title": "Cost anomaly and recommendations", "priority": "P2"}
+        result = gate_insights([insight], [
+            {"module": "Cost Management", "status": "success"},
+            {"module": "Azure Advisor", "status": "success"},
+        ])[0]
+        self.assertEqual(result["evidence_state"], "SUPPORTED")
         self.assertEqual(result["priority_eligibility"], "eligible")
 
 

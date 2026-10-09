@@ -170,9 +170,10 @@ def main() -> int:
     protect_output_parent(options.output)
     subscription_ids = [item.strip() for item in options.subscriptions.split(",") if item.strip()]
     checks: list[dict] = []
-    checks.append(check("python", "Python", "local", "pass" if sys.version_info >= (3, 10) else "blocked",
-                        sys.version.split()[0], "O renderer e os coletores precisam de Python 3.10+.",
-                        "Instale Python 3.11 ou superior.", sys.version_info < (3, 10)))
+    python_supported = sys.version_info >= (3, 11)
+    checks.append(check("python", "Python", "local", "pass" if python_supported else "blocked",
+                        sys.version.split()[0], "O renderer e os coletores precisam de Python 3.11+.",
+                        "Instale Python 3.11 ou superior.", not python_supported))
     checks.append(check_command("az"))
     credential_mode = "service_principal" if os.getenv("AZURE_CLIENT_ID") and os.getenv("AZURE_TENANT_ID") else "azure_cli"
     checks.append(check("credential_mode", "Modo de credencial", "local", "pass",

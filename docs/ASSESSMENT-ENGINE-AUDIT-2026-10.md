@@ -30,6 +30,16 @@ Base revisada: branch `main`, repositório `lcbsilva/Assessment-Security-Governa
 
 **Aceite:** falha ou fonte desconhecida nunca vira zero; sucesso confirmado sem registros pode virar zero; HTML/PDF/PPTX/XLSX/JSON mantêm semântica compatível; diferenças de agregação (325 × 345) declaram método e unidade; recomendações repetidas expõem chave/dimensão ou são deduplicadas com regra verificável.
 
+### P0 — normalização resiliente e estado real dos endpoints Graph
+
+**Achados estáticos adicionais:** respostas Graph podem conter campos opcionais explicitamente nulos. A normalização de exclusões de Conditional Access somava esses valores como listas, e métodos MFA/tipos de grupo eram unidos diretamente. Um nulo nesses pontos poderia repetir o padrão da falha da Julia: exceção depois das chamadas e descarte do conjunto coletado.
+
+Também havia um indicador agregado baseado em contagem de registros: `identity` dependia de `users` não vazio e `security` de `secure_scores` não vazio. Isso confundia consulta bem-sucedida sem linhas com indisponibilidade e não refletia os resultados dos demais endpoints.
+
+**Correção proposta no PR de refinamento:** campos opcionais nulos são normalizados como coleções vazias sem inventar evidência; os estados de Identity e Security são derivados dos logs dos respectivos endpoints. Um teste sintético chama o coletor Graph completo e cobre usuários, políticas, grupos e métodos MFA com campos nulos; testes adicionais garantem que sucesso vazio permaneça sucesso e estados mistos resultem em parcial.
+
+**Aceite:** respostas sintéticas vazias com HTTP 200 produzem estado `success`; sucesso misturado com endpoint indisponível produz `partial`; falha total continua `error`/ `not_available` conforme os logs; nenhum dado de tenant é necessário para o teste.
+
 ### P1 — estados por módulo
 
 A metadata do coletor Graph declara apenas estados agregados de identidade e Secure Score. Outras áreas dependem de `collection_log` por endpoint, e consumidores que olham somente `metadata.modules` não conseguem distinguir cobertura de Conditional Access, Intune, PIM, aplicações, auditoria e Defender.
@@ -43,6 +53,14 @@ CI e cenários sintéticos verificam comportamento offline, mas não validam con
 **Achado adicional confirmado na amostra da Julia:** o readiness check confirmou apenas a emissão de token pela sessão Azure CLI; não comprovou chamadas Graph nem consentimentos efetivos. O log do relatório registra `AttributeError: 'NoneType' object has no attribute 'lower'`. O caminho de normalização de usuários chamava `.lower()` diretamente em `userType`; quando a resposta traz `null`, a exceção ocorre depois das consultas e pode descartar o resultado completo do coletor, inclusive evidências de endpoints que responderam. A correção neste incremento normaliza `null` como `Unknown` e adiciona regressão para `user_posture`. Isso explica a falha observada nessa execução; não prova que todos os endpoints estavam autorizados. Após nova coleta, revisar os estados e HTTP 401/403 de cada endpoint para separar permissão, licença, retenção e disponibilidade.
 
 **Aceite operacional:** executar em tenant de laboratório autorizado, registrar endpoint/escopo/contagem/estado e reconciliar amostras com Graph Explorer ou portal. Não conceder permissões automaticamente. Token emitido pelo CLI é apenas prontidão de sessão, nunca evidência de autorização por endpoint.
+
+### P0 — pacote de entrega omitia formatos executivos
+
+**Achado:** o builder permitia apenas `assessment.pdf`, `assessment.pptx` e `assessment.xlsx`, enquanto o exportador e as amostras da Julia usam `assessment-executive-summary.pdf`, `assessment-executive-summary.pptx` e `assessment-action-plan.xlsx`. Como a rotina aceitava qualquer arquivo disponível, o gate podia aprovar uma pasta de entrega sem PDF executivo, PowerPoint ou planilha.
+
+**Correção proposta neste PR:** alinhar a allowlist aos cinco nomes realmente exportados e bloquear o pacote se qualquer um estiver ausente; testes verificam os cinco formatos e o bloqueio por pacote incompleto.
+
+**Aceite:** pacote autorizado contém HTML, PDF executivo, PPTX, XLSX e briefing de uma página; manifesto lista os nomes e hashes; runtime bruto permanece excluído.
 
 ### P1 — rastreabilidade entre artefatos
 
