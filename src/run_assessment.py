@@ -461,7 +461,7 @@ def main() -> None:
             )
         ),
         "graph": (
-            collect_graph
+            lambda: collect_graph(options.profile)
         )
         if options.profile in {
             "security",

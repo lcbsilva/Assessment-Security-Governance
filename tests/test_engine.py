@@ -498,7 +498,7 @@ class EngineContractTests(unittest.TestCase):
         manifest = module_readiness("full")
         self.assertGreaterEqual(len(manifest), 10)
         self.assertIn("será confirmado", " ".join(item["detail"] for item in manifest))
-        self.assertTrue(any(item["module"] == "RBAC / PIM" and "RoleManagement" in item["expected_read_scope"] for item in manifest))
+        self.assertTrue(any(item["module"] == "Entra PIM" and "RoleManagement" in item["expected_read_scope"] for item in manifest))
 
     def test_execution_health_does_not_turn_unavailable_into_zero_risk(self):
         result = summarize_execution([

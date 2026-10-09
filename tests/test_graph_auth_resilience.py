@@ -8,10 +8,20 @@ import urllib.error
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from collect_graph import collect
+from collect_graph import collect, profile_allows_module
 
 
 class GraphAuthenticationResilienceTests(unittest.TestCase):
+    def test_governance_profile_allows_only_entra_pim_graph_endpoints(self):
+        self.assertTrue(profile_allows_module("governance", "PIM active assignments"))
+        self.assertTrue(profile_allows_module("governance", "PIM eligible assignments"))
+        self.assertTrue(profile_allows_module("governance", "Directory roles"))
+        self.assertFalse(profile_allows_module("governance", "Identity"))
+        self.assertFalse(profile_allows_module("governance", "MFA"))
+        self.assertFalse(profile_allows_module("governance", "Defender alerts"))
+        self.assertTrue(profile_allows_module("security", "Identity"))
+        self.assertTrue(profile_allows_module("full", "Defender alerts"))
+
     def test_graph_collection_preserves_null_optional_fields_and_empty_success(self):
         import io
         import json
