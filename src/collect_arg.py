@@ -896,50 +896,68 @@ def collect(subscription_ids: list[str]) -> dict:
         network_note = f"Sinais de rede indisponíveis: {type(exc).__name__}: {exc}"
 
     try:
-        defender_score_rows = query_arg_all_pages(client, subscription_ids, DEFENDER_SCORE_QUERY, QueryRequest, QueryRequestOptions)
-        defender_control_rows = query_arg_all_pages(client, subscription_ids, DEFENDER_CONTROLS_QUERY, QueryRequest, QueryRequestOptions)
-        defender_status = "success" if (defender_score_rows or defender_control_rows) else "partial"
-        defender_note = "Secure Score e controles via SecurityResources; vazio pode significar Defender não habilitado ou sem dados."
+        defender_score_result = query_arg_all_pages(client, subscription_ids, DEFENDER_SCORE_QUERY, QueryRequest, QueryRequestOptions)
+        defender_control_result = query_arg_all_pages(client, subscription_ids, DEFENDER_CONTROLS_QUERY, QueryRequest, QueryRequestOptions)
+        defender_score_rows = list(defender_score_result)
+        defender_control_rows = list(defender_control_result)
+        incomplete = not defender_score_result.complete or not defender_control_result.complete
+        defender_status = (
+            "partial" if incomplete and (defender_score_rows or defender_control_rows)
+            else "not_available" if incomplete
+            else "success"
+        )
+        defender_note = "SecurityResources consultado no escopo; zero registros observados não comprova licenciamento ou configuração do Defender."
+        defender_errors = [result.error for result in (defender_score_result, defender_control_result) if result.error]
+        if defender_errors:
+            defender_note += f" Resultado parcial preservado: {len(defender_score_rows) + len(defender_control_rows)} registros. " + "; ".join(defender_errors)
     except Exception as exc:
         defender_status = "not_available"
         defender_note = f"Secure Score indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        orphan_rows = [orphan_row(item) for item in query_arg_all_pages(client, subscription_ids, ORPHAN_QUERY, QueryRequest, QueryRequestOptions)]
-        orphan_status = "success"
-        orphan_note = "Heurísticas de associação via Azure Resource Graph; custo requer Cost Management"
+        orphan_result = query_arg_all_pages(client, subscription_ids, ORPHAN_QUERY, QueryRequest, QueryRequestOptions)
+        orphan_rows = [orphan_row(item) for item in orphan_result]
+        orphan_status = arg_result_status(orphan_result)
+        orphan_note = arg_result_note("Detecção de órfãos", orphan_result, "Heurísticas de associação via Azure Resource Graph; custo requer Cost Management")
     except Exception as exc:
         orphan_status = "not_available"
         orphan_note = f"Detecção de órfãos indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        advisor_rows = [advisor_row(item) for item in query_arg_all_pages(client, subscription_ids, ADVISOR_QUERY, QueryRequest, QueryRequestOptions)]
-        advisor_status = "success"
-        advisor_note = "Recomendações ativas do Azure Advisor via Azure Resource Graph"
+        advisor_result = query_arg_all_pages(client, subscription_ids, ADVISOR_QUERY, QueryRequest, QueryRequestOptions)
+        advisor_rows = [advisor_row(item) for item in advisor_result]
+        advisor_status = arg_result_status(advisor_result)
+        advisor_note = arg_result_note("Azure Advisor", advisor_result, "Recomendações ativas do Azure Advisor via Azure Resource Graph")
     except Exception as exc:
         advisor_status = "not_available"
         advisor_note = f"Azure Advisor indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        retirement_rows = [retirement_row(item) for item in query_arg_all_pages(client, subscription_ids, RETIREMENT_QUERY, QueryRequest, QueryRequestOptions)]
-        retirement_status = "success"
-        retirement_note = "Service Health advisories via Azure Resource Graph"
+        retirement_result = query_arg_all_pages(client, subscription_ids, RETIREMENT_QUERY, QueryRequest, QueryRequestOptions)
+        retirement_rows = [retirement_row(item) for item in retirement_result]
+        retirement_status = arg_result_status(retirement_result)
+        retirement_note = arg_result_note("Service Health", retirement_result, "Service Health advisories via Azure Resource Graph")
     except Exception as exc:
         retirement_status = "not_available"
         retirement_note = f"Service Health indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        power_platform_rows = [power_platform_row(item) for item in query_arg_all_pages(client, subscription_ids, POWER_PLATFORM_QUERY, QueryRequest, QueryRequestOptions)]
-        power_platform_status = "success" if power_platform_rows else "partial"
-        power_platform_note = "PowerPlatformResources via Azure Resource Graph; inventário pode exigir habilitação no tenant."
+        power_platform_result = query_arg_all_pages(client, subscription_ids, POWER_PLATFORM_QUERY, QueryRequest, QueryRequestOptions)
+        power_platform_rows = [power_platform_row(item) for item in power_platform_result]
+        if not power_platform_result.complete:
+            power_platform_status = arg_result_status(power_platform_result)
+        else:
+            power_platform_status = "success" if power_platform_rows else "partial"
+        power_platform_note = arg_result_note("Power Platform", power_platform_result, "PowerPlatformResources via Azure Resource Graph; vazio pode indicar falta de habilitação ou ausência de recursos.")
     except Exception as exc:
         power_platform_status = "not_available"
         power_platform_note = f"Inventário Power Platform indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        benefit_rows = [{"name": item.get("name", "—"), "type": item.get("type", "—"), "subscription": item.get("subscriptionId", "—"), "resource_group": item.get("resourceGroup", "—"), "region": item.get("location", "—"), "benefit_kind": "Savings Plan" if "savingsplan" in str(item.get("type", "")).lower() else "Reservation"} for item in query_arg_all_pages(client, subscription_ids, BENEFITS_QUERY, QueryRequest, QueryRequestOptions)]
-        benefits_status = "success"
-        benefits_note = "Inventário de benefícios via Azure Resource Graph; ausência de registros não prova inexistência fora do escopo."
+        benefit_result = query_arg_all_pages(client, subscription_ids, BENEFITS_QUERY, QueryRequest, QueryRequestOptions)
+        benefit_rows = [{"name": item.get("name", "—"), "type": item.get("type", "—"), "subscription": item.get("subscriptionId", "—"), "resource_group": item.get("resourceGroup", "—"), "region": item.get("location", "—"), "benefit_kind": "Savings Plan" if "savingsplan" in str(item.get("type", "")).lower() else "Reservation"} for item in benefit_result]
+        benefits_status = arg_result_status(benefit_result)
+        benefits_note = arg_result_note("Inventário de benefícios", benefit_result, "Inventário de benefícios via Azure Resource Graph; ausência de registros não prova inexistência fora do escopo.")
     except Exception as exc:
         benefits_status = "not_available"
         benefits_note = f"Inventário de reservas/Savings Plans indisponível: {type(exc).__name__}: {exc}"
@@ -950,7 +968,7 @@ def collect(subscription_ids: list[str]) -> dict:
             "run_id": f"arg-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}",
             "collected_at": started,
             "scope": {"subscriptions": len(subscription_ids), "resources_assessed": len(rows)},
-            "modules": {"governance": "success", "compliance": policy_status},
+            "modules": {"governance": inventory_status, "compliance": policy_status},
         },
         "controls": [],
         "findings": [],
@@ -977,9 +995,9 @@ def collect(subscription_ids: list[str]) -> dict:
             "collection_log": [{
                 "module": "Azure inventory",
                 "source": "Azure Resource Graph",
-                "status": "success",
+                "status": inventory_status,
                 "records": len(rows),
-                "note": "Consulta read-only; exposição e dependências exigem enriquecimento por módulo.",
+                "note": inventory_note,
             }, {
                 "module": "Azure Policy",
                 "source": "PolicyResources / Azure Resource Graph",
