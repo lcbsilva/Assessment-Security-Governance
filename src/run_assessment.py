@@ -233,6 +233,24 @@ def safe_collect(
         return name, result
 
     except Exception as exc:
+        # Preserve the failing collector's exception type, without serializing
+        # tokens, environment variables, or a full traceback into deliverables.
+        error_type = type(exc).__name__
+        if name == "graph" and error_type in {
+            "ClientAuthenticationError", "CredentialUnavailableError",
+        }:
+            failure_note = (
+                f"{error_type}: falha ao obter token Microsoft Graph. "
+                "Verifique o tenant da sessão Azure CLI, a identidade ativa "
+                "e as permissões de leitura aprovadas; consulte o erro local."
+            )
+        elif name == "graph":
+            failure_note = (
+                f"{error_type}: falha do coletor Graph antes de concluir "
+                "a coleta. Consulte os logs locais para a causa original."
+            )
+        else:
+            failure_note = f"{error_type}: {exc}"
         finished_at = (
             datetime.now(timezone.utc)
             .isoformat()
@@ -263,7 +281,7 @@ def safe_collect(
                         "source": "collector",
                         "status": "error",
                         "records": 0,
-                        "note": f"{type(exc).__name__}: {exc}",
+                        "note": failure_note,
                         "started_at": started_at,
                         "finished_at": finished_at,
                         "duration_seconds": duration,
