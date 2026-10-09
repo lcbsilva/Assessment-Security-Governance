@@ -102,6 +102,7 @@ jobs:
         shell: pwsh
         run: |
           function global:az {
+            $global:LASTEXITCODE = 0
             if ($args -contains "show") {
               return '{"tenantId":"tenant-a","id":"subscription-a"}'
             }
