@@ -9,9 +9,9 @@ from preflight import module_readiness
 
 class ProfileReadinessTests(unittest.TestCase):
     EXPECTED = {
-        "security": {"Azure inventory", "Azure Policy / hierarchy", "Identity / users", "MFA / registration", "Conditional Access", "Sign-ins / legacy auth", "Secure Score", "Defender", "Intune", "Power Platform", "Directory audit", "M365 domain posture"},
-        "governance": {"Azure inventory", "Azure Policy / hierarchy", "RBAC / PIM", "Identity / users", "MFA / registration", "Conditional Access", "Sign-ins / legacy auth", "Secure Score", "Defender", "Intune", "Power Platform", "Directory audit"},
-        "full": {"Azure inventory", "Azure Policy / hierarchy", "RBAC / PIM", "Identity / users", "MFA / registration", "Conditional Access", "Sign-ins / legacy auth", "Secure Score", "Defender", "Intune", "Cost Management", "Power Platform", "Azure DevOps", "Purview / Synapse / Databricks", "Directory audit", "Power BI / Fabric", "M365 domain posture"},
+        "security": {"Azure inventory", "Azure Policy / hierarchy", "Entra PIM", "Identity / users", "MFA / registration", "Conditional Access", "Sign-ins / legacy auth", "Secure Score", "Defender", "Intune", "Power Platform", "Directory audit", "M365 domain posture"},
+        "governance": {"Azure inventory", "Azure Policy / hierarchy", "Azure RBAC assignments", "Entra PIM", "Power Platform"},
+        "full": {"Azure inventory", "Azure Policy / hierarchy", "Azure RBAC assignments", "Entra PIM", "Identity / users", "MFA / registration", "Conditional Access", "Sign-ins / legacy auth", "Secure Score", "Defender", "Intune", "Cost Management", "Power Platform", "Azure DevOps", "Purview / Synapse / Databricks", "Directory audit", "Power BI / Fabric", "M365 domain posture"},
     }
 
     def test_manifest_matches_collectors_for_each_profile(self):

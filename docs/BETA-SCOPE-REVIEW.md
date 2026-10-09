@@ -58,8 +58,9 @@ O critério adotado é:
 
 - `security`: ARG, Graph e postura de domínios M365; módulos DevOps,
   analytics e custo não são chamados.
-- `governance`: ARG e RBAC; integrações M365, DevOps e analytics ficam
-  explicitamente como `not_run`.
+- `governance`: ARG, RBAC Azure e endpoints Graph de Entra PIM; os demais
+  endpoints de identidade/segurança, M365, DevOps e analytics ficam
+  explicitamente como `not_run` e não são consultados.
 - `full`: executa também custo, Power Platform, analytics e integrações
   opcionais, mantendo limitações no manifesto.
 

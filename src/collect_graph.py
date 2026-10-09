@@ -225,7 +225,20 @@ def graph_failure_note(code: int, permission_hint: str) -> str:
     return f"HTTP {code}; chamada Graph não concluída. Escopo esperado: {permission_hint}"
 
 
-def collect() -> dict:
+GOVERNANCE_GRAPH_MODULES = {
+    "PIM active assignments",
+    "PIM eligible assignments",
+    "PIM role definitions",
+    "Directory roles",
+}
+
+
+def profile_allows_module(profile: str, module: str) -> bool:
+    """Limit the governance profile to Entra PIM evidence; avoid broad Graph reads."""
+    return profile != "governance" or module in GOVERNANCE_GRAPH_MODULES
+
+
+def collect(profile: str = "full") -> dict:
     started = utc_now()
     from azure.identity import AzureCliCredential, DefaultAzureCredential
 
@@ -247,6 +260,15 @@ def collect() -> dict:
     def get_all(path: str, module: str, permission_hint: str, max_pages: int | None = None) -> list[dict]:
         nonlocal authentication_failed
         rows: list[dict] = []
+        if not profile_allows_module(profile, module):
+            logs.append({
+                "module": module,
+                "source": "Microsoft Graph",
+                "status": "not_run",
+                "records": 0,
+                "note": "Consulta fora do perfil governance; nenhum endpoint foi chamado.",
+            })
+            return rows
         page_limit = max_pages if max_pages is not None else bounded_env_int(
             "ASSESSMENT_GRAPH_MAX_PAGES", 1000, 1, 10000
         )
@@ -517,10 +539,17 @@ def collect() -> dict:
         "Defender vulnerabilities", "Directory audit events",
         "Sign-ins / legacy auth",
     }
-    result["metadata"]["modules"] = {
-        "identity": aggregate_graph_status(logs, identity_endpoints),
-        "security": aggregate_graph_status(logs, security_endpoints),
-    }
+    if profile == "governance":
+        result["metadata"]["modules"] = {
+            "identity": "not_run",
+            "security": "not_run",
+            "governance": aggregate_graph_status(logs, GOVERNANCE_GRAPH_MODULES),
+        }
+    else:
+        result["metadata"]["modules"] = {
+            "identity": aggregate_graph_status(logs, identity_endpoints),
+            "security": aggregate_graph_status(logs, security_endpoints),
+        }
     result["discovery"]["user_summary"] = identity_summary
     result["discovery"]["secure_score_summary"] = score_summary
     return result
