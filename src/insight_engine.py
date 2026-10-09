@@ -277,6 +277,77 @@ def attach_finding_lineage(findings: list[dict], control_rows: list[dict]) -> li
     return enriched
 
 
+
+_INSIGHT_SOURCE_REQUIREMENTS = {
+    "I-001": (("Identity", "Identity basic"), ("Directory roles",), ("Role members:",)),
+    "I-002": (("Identity", "Identity basic"), ("Directory roles",), ("Role members:",)),
+    "I-003": (("Conditional Access",),),
+    "I-004": (("RBAC",),),
+    "I-005": (("App registrations",),),
+    "I-006": (("Application consents",),),
+    "I-007": (("Azure inventory",),),
+    "I-008": (("Azure inventory",),),
+    "I-009": (("Azure inventory",),),
+    "I-010": (("Azure Policy",),),
+    "X-001": (("Identity", "Identity basic"), ("MFA",), ("Directory roles",), ("Role members:",)),
+    "X-002": (("Azure inventory",),),
+    "X-003": (("Azure inventory",),),
+    "X-004": (("RBAC",), ("Identity", "Identity basic"), ("MFA",)),
+}
+
+
+def gate_insights(insights: list[dict], collection_log: list[dict]) -> list[dict]:
+    """Keeps correlations visible but makes incomplete-source insights conditional."""
+    status_order = ("error", "partial", "not_available", "not_run", "unknown")
+
+    def matches(module: str, token: str) -> bool:
+        module = module.casefold()
+        token = token.casefold()
+        return module.startswith(token) if token.endswith(":") else module == token
+
+    def group_status(tokens: tuple[str, ...]) -> tuple[str, list[dict]]:
+        rows = [row for row in collection_log if any(matches(str(row.get("module", "")), token) for token in tokens)]
+        if not rows:
+            return "not_available", []
+        states = [str(row.get("status", "unknown")).casefold() for row in rows]
+        if len(tokens) == 1 and tokens[0].endswith(":"):
+            for state in status_order:
+                if state in states:
+                    return state, rows
+            return "unknown", rows
+        if "success" in states:
+            return "success", rows
+        for state in status_order:
+            if state in states:
+                return state, rows
+        return "unknown", rows
+
+    result = []
+    for insight in insights:
+        row = dict(insight)
+        requirements = _INSIGHT_SOURCE_REQUIREMENTS.get(str(row.get("id")), ())
+        states = [group_status(group)[0] for group in requirements]
+        if requirements and any(state != "success" for state in states):
+            source_status = next((state for state in status_order if state in states), "unknown")
+            row.update({
+                "evidence_state": "INSUFFICIENT_EVIDENCE",
+                "evidence_confidence": "baixa",
+                "priority_eligibility": "conditional_review",
+                "priority": "P2" if row.get("priority") == "P1" else row.get("priority", "P2"),
+                "source_status": source_status,
+                "source_statuses": states,
+                "coverage_guardrail": "Sinal observado em cobertura incompleta; validar o escopo e as fontes ausentes antes de tratar como risco confirmado.",
+                "priority_rationale": "Revisão condicional: uma ou mais fontes necessárias estão parciais, indisponíveis ou não foram coletadas.",
+            })
+        else:
+            row.setdefault("evidence_state", "SUPPORTED")
+            row.setdefault("evidence_confidence", "média")
+            row.setdefault("priority_eligibility", "eligible")
+            row.setdefault("source_status", "success" if requirements else "not_declared")
+        result.append(row)
+    return result
+
+
 def executive_actions(findings: list[dict]) -> list[dict]:
     outcomes = {"ID-001": "Reduzir exposição de identidade", "ID-002": "Reduzir risco de comprometimento privilegiado", "ID-009": "Reduzir privilégio permanente", "SEC-005": "Diminuir tempo de resposta a alertas", "GOV-003": "Reduzir superfície de acesso", "GOV-004": "Reduzir exposição de rede", "GOV-006": "Aumentar conformidade de workloads"}
     actions = []
