@@ -27,9 +27,10 @@ class Response:
 
 
 class FakeClient:
-    def __init__(self, role_failure=False, empty_assignments=False):
+    def __init__(self, role_failure=False, empty_assignments=False, missing_roles=False):
         self.role_failure = role_failure
         self.empty_assignments = empty_assignments
+        self.missing_roles = missing_roles
         self.calls = []
 
     def resources(self, request):
@@ -54,6 +55,8 @@ class FakeClient:
             }])
         if self.role_failure:
             raise RuntimeError("role definitions unavailable")
+        if self.missing_roles:
+            return Response([])
         return Response([{"roleDefinitionId": "owner-id", "roleName": "Owner"}])
 
 
@@ -118,6 +121,17 @@ class RbacArgPaginationTests(unittest.TestCase):
         self.assertEqual(result["discovery"]["collection_log"][0]["status"], "partial")
         self.assertIn("classificação de funções incompletos", result["discovery"]["collection_log"][0]["note"])
         self.assertEqual(result["metadata"]["modules"]["governance"], "partial")
+
+
+    def test_unresolved_role_is_not_labeled_moderate(self):
+        client = FakeClient(missing_roles=True)
+        with patch.dict(sys.modules, fake_azure_modules(client)):
+            result = collect(["sub-1"])
+        row = result["discovery"]["rbac"][0]
+        self.assertEqual(row["access_risk"], "Não classificado")
+        self.assertIn("não foi resolvida", row["review_reason"])
+        self.assertEqual(result["discovery"]["collection_log"][0]["status"], "partial")
+        self.assertIn("2 atribuições", result["discovery"]["collection_log"][0]["note"])
 
     def test_missing_subscription_scope_is_not_reported_as_success(self):
         with patch.dict(sys.modules, fake_azure_modules(FakeClient())):
