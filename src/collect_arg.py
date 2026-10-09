@@ -44,6 +44,36 @@ def query_arg_with_retry(client: object, request: object, attempts: int | None =
             time.sleep(min(8, 2 ** attempt))
     raise RuntimeError("Azure Resource Graph não retornou resposta")
 
+def query_arg_all_pages(
+    client: object,
+    subscriptions: list[str],
+    query: str,
+    QueryRequest: object,
+    QueryRequestOptions: object,
+) -> list[dict]:
+    """Read all Resource Graph pages; success means the full result was fetched."""
+    rows: list[dict] = []
+    skip_token: str | None = None
+    seen_tokens: set[str] = set()
+    while True:
+        options = QueryRequestOptions(
+            result_format="objectArray",
+            top=5000,
+            skip_token=skip_token,
+        )
+        request = QueryRequest(subscriptions=subscriptions, query=query, options=options)
+        response = query_arg_with_retry(client, request)
+        rows.extend(response.data or [])
+        next_token = getattr(response, "skip_token", None)
+        if not next_token:
+            return rows
+        next_token = str(next_token)
+        if next_token in seen_tokens:
+            raise RuntimeError("Azure Resource Graph repetiu o skip_token; consulta interrompida para evitar loop.")
+        seen_tokens.add(next_token)
+        skip_token = next_token
+
+
 QUERY = """
 Resources
 | project id, name, type, subscriptionId, resourceGroup, location, kind, sku, tags, properties
@@ -759,24 +789,9 @@ def collect(subscription_ids: list[str]) -> dict:
     network_health_rows: list[dict] = []
     defender_score_rows: list[dict] = []
     defender_control_rows: list[dict] = []
-    skip_token: str | None = None
-
-    while True:
-        options = QueryRequestOptions(
-            result_format="objectArray",
-            top=5000,
-            skip_token=skip_token,
-        )
-        request = QueryRequest(
-            subscriptions=subscription_ids,
-            query=QUERY,
-            options=options,
-        )
-        response = query_arg_with_retry(client, request)
-        rows.extend(resource_row(item) for item in (response.data or []))
-        skip_token = getattr(response, "skip_token", None)
-        if not skip_token:
-            break
+    rows = [resource_row(item) for item in query_arg_all_pages(
+        client, subscription_ids, QUERY, QueryRequest, QueryRequestOptions
+    )]
 
     age_counts = [
         ("0–90 dias", sum(1 for item in rows if isinstance(item.get("age_days"), int) and item["age_days"] <= 90)),
@@ -787,17 +802,12 @@ def collect(subscription_ids: list[str]) -> dict:
     age_rows = [{"age_band": band, "resources": count, "percentage": f"{(count / len(rows) * 100):.1f}%" if rows else "0%"} for band, count in age_counts]
 
     try:
-        container_response = client.resources(QueryRequest(
-            subscriptions=subscription_ids,
-            query=CONTAINERS_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
         container_rows = [{
             "name": item.get("name", "—"),
             "type": item.get("type", "—"),
             "subscription": item.get("subscriptionId", "—"),
             "tenant": item.get("tenantId", "—"),
-        } for item in (container_response.data or [])]
+        } for item in query_arg_all_pages(client, subscription_ids, CONTAINERS_QUERY, QueryRequest, QueryRequestOptions)]
         hierarchy_status = "success"
         hierarchy_note = "Subscriptions, resource groups e management groups via ResourceContainers"
     except Exception as exc:
@@ -805,12 +815,7 @@ def collect(subscription_ids: list[str]) -> dict:
         hierarchy_note = f"Hierarquia indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        policy_response = client.resources(QueryRequest(
-            subscriptions=subscription_ids,
-            query=POLICY_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        policy_rows = [policy_row(item) for item in (policy_response.data or [])]
+        policy_rows = [policy_row(item) for item in query_arg_all_pages(client, subscription_ids, POLICY_QUERY, QueryRequest, QueryRequestOptions)]
         policy_status = "success"
         policy_note = "Azure Policy states via Azure Resource Graph"
     except Exception as exc:
@@ -818,18 +823,9 @@ def collect(subscription_ids: list[str]) -> dict:
         policy_note = f"Policy Insights indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        assignment_response = query_arg_with_retry(client, QueryRequest(
-            subscriptions=subscription_ids,
-            query=POLICY_ASSIGNMENTS_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        definition_response = query_arg_with_retry(client, QueryRequest(
-            subscriptions=subscription_ids,
-            query=POLICY_DEFINITIONS_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        policy_definition_rows = list(definition_response.data or [])
-        policy_assignment_rows = enrich_policy_assignments([policy_assignment_row(item) for item in (assignment_response.data or [])], policy_definition_rows)
+        assignment_rows = query_arg_all_pages(client, subscription_ids, POLICY_ASSIGNMENTS_QUERY, QueryRequest, QueryRequestOptions)
+        policy_definition_rows = query_arg_all_pages(client, subscription_ids, POLICY_DEFINITIONS_QUERY, QueryRequest, QueryRequestOptions)
+        policy_assignment_rows = enrich_policy_assignments([policy_assignment_row(item) for item in assignment_rows], policy_definition_rows)
         assignment_status = "success"
         assignment_note = "Policy assignments e parâmetros atribuídos via Azure Resource Graph."
     except Exception as exc:
@@ -837,12 +833,7 @@ def collect(subscription_ids: list[str]) -> dict:
         assignment_note = f"Policy assignments indisponíveis: {type(exc).__name__}: {exc}"
 
     try:
-        rg_response = query_arg_with_retry(client, QueryRequest(
-            subscriptions=subscription_ids,
-            query=RESOURCE_GROUP_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        resource_group_rows = list(rg_response.data or [])
+        resource_group_rows = query_arg_all_pages(client, subscription_ids, RESOURCE_GROUP_QUERY, QueryRequest, QueryRequestOptions)
         rg_status = "success"
         rg_note = "Resource groups via ResourceContainers"
     except Exception as exc:
@@ -850,12 +841,7 @@ def collect(subscription_ids: list[str]) -> dict:
         rg_note = f"Resource groups indisponíveis: {type(exc).__name__}: {exc}"
 
     try:
-        network_response = query_arg_with_retry(client, QueryRequest(
-            subscriptions=subscription_ids,
-            query=NETWORK_HEALTH_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        network_health_rows = list(network_response.data or [])
+        network_health_rows = query_arg_all_pages(client, subscription_ids, NETWORK_HEALTH_QUERY, QueryRequest, QueryRequestOptions)
         network_status = "success"
         network_note = "Sinais de rede via Azure Resource Graph"
     except Exception as exc:
@@ -863,18 +849,8 @@ def collect(subscription_ids: list[str]) -> dict:
         network_note = f"Sinais de rede indisponíveis: {type(exc).__name__}: {exc}"
 
     try:
-        defender_score_response = query_arg_with_retry(client, QueryRequest(
-            subscriptions=subscription_ids,
-            query=DEFENDER_SCORE_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        defender_score_rows = list(defender_score_response.data or [])
-        defender_control_response = query_arg_with_retry(client, QueryRequest(
-            subscriptions=subscription_ids,
-            query=DEFENDER_CONTROLS_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        defender_control_rows = list(defender_control_response.data or [])
+        defender_score_rows = query_arg_all_pages(client, subscription_ids, DEFENDER_SCORE_QUERY, QueryRequest, QueryRequestOptions)
+        defender_control_rows = query_arg_all_pages(client, subscription_ids, DEFENDER_CONTROLS_QUERY, QueryRequest, QueryRequestOptions)
         defender_status = "success" if (defender_score_rows or defender_control_rows) else "partial"
         defender_note = "Secure Score e controles via SecurityResources; vazio pode significar Defender não habilitado ou sem dados."
     except Exception as exc:
@@ -882,12 +858,7 @@ def collect(subscription_ids: list[str]) -> dict:
         defender_note = f"Secure Score indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        orphan_response = client.resources(QueryRequest(
-            subscriptions=subscription_ids,
-            query=ORPHAN_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        orphan_rows = [orphan_row(item) for item in (orphan_response.data or [])]
+        orphan_rows = [orphan_row(item) for item in query_arg_all_pages(client, subscription_ids, ORPHAN_QUERY, QueryRequest, QueryRequestOptions)]
         orphan_status = "success"
         orphan_note = "Heurísticas de associação via Azure Resource Graph; custo requer Cost Management"
     except Exception as exc:
@@ -895,12 +866,7 @@ def collect(subscription_ids: list[str]) -> dict:
         orphan_note = f"Detecção de órfãos indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        advisor_response = client.resources(QueryRequest(
-            subscriptions=subscription_ids,
-            query=ADVISOR_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        advisor_rows = [advisor_row(item) for item in (advisor_response.data or [])]
+        advisor_rows = [advisor_row(item) for item in query_arg_all_pages(client, subscription_ids, ADVISOR_QUERY, QueryRequest, QueryRequestOptions)]
         advisor_status = "success"
         advisor_note = "Recomendações ativas do Azure Advisor via Azure Resource Graph"
     except Exception as exc:
@@ -908,12 +874,7 @@ def collect(subscription_ids: list[str]) -> dict:
         advisor_note = f"Azure Advisor indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        retirement_response = client.resources(QueryRequest(
-            subscriptions=subscription_ids,
-            query=RETIREMENT_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        retirement_rows = [retirement_row(item) for item in (retirement_response.data or [])]
+        retirement_rows = [retirement_row(item) for item in query_arg_all_pages(client, subscription_ids, RETIREMENT_QUERY, QueryRequest, QueryRequestOptions)]
         retirement_status = "success"
         retirement_note = "Service Health advisories via Azure Resource Graph"
     except Exception as exc:
@@ -921,12 +882,7 @@ def collect(subscription_ids: list[str]) -> dict:
         retirement_note = f"Service Health indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        power_platform_response = query_arg_with_retry(client, QueryRequest(
-            subscriptions=subscription_ids,
-            query=POWER_PLATFORM_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        power_platform_rows = [power_platform_row(item) for item in (power_platform_response.data or [])]
+        power_platform_rows = [power_platform_row(item) for item in query_arg_all_pages(client, subscription_ids, POWER_PLATFORM_QUERY, QueryRequest, QueryRequestOptions)]
         power_platform_status = "success" if power_platform_rows else "partial"
         power_platform_note = "PowerPlatformResources via Azure Resource Graph; inventário pode exigir habilitação no tenant."
     except Exception as exc:
@@ -934,12 +890,7 @@ def collect(subscription_ids: list[str]) -> dict:
         power_platform_note = f"Inventário Power Platform indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        benefits_response = query_arg_with_retry(client, QueryRequest(
-            subscriptions=subscription_ids,
-            query=BENEFITS_QUERY,
-            options=QueryRequestOptions(result_format="objectArray", top=5000),
-        ))
-        benefit_rows = [{"name": item.get("name", "—"), "type": item.get("type", "—"), "subscription": item.get("subscriptionId", "—"), "resource_group": item.get("resourceGroup", "—"), "region": item.get("location", "—"), "benefit_kind": "Savings Plan" if "savingsplan" in str(item.get("type", "")).lower() else "Reservation"} for item in (benefits_response.data or [])]
+        benefit_rows = [{"name": item.get("name", "—"), "type": item.get("type", "—"), "subscription": item.get("subscriptionId", "—"), "resource_group": item.get("resourceGroup", "—"), "region": item.get("location", "—"), "benefit_kind": "Savings Plan" if "savingsplan" in str(item.get("type", "")).lower() else "Reservation"} for item in query_arg_all_pages(client, subscription_ids, BENEFITS_QUERY, QueryRequest, QueryRequestOptions)]
         benefits_status = "success"
         benefits_note = "Inventário de benefícios via Azure Resource Graph; ausência de registros não prova inexistência fora do escopo."
     except Exception as exc:
