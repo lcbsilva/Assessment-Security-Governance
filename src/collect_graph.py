@@ -198,9 +198,16 @@ def graph_failure_note(code: int, permission_hint: str) -> str:
 
 def collect() -> dict:
     started = utc_now()
-    from azure.identity import DefaultAzureCredential
+    from azure.identity import AzureCliCredential, DefaultAzureCredential
 
-    credential = DefaultAzureCredential(exclude_interactive_browser_credential=True)
+    # Preflight checks the Azure CLI Graph session. Use that same identity for
+    # interactive consultant runs rather than a different cached credential
+    # that DefaultAzureCredential might select on the machine.
+    service_principal_mode = bool(os.getenv("AZURE_CLIENT_ID") and os.getenv("AZURE_TENANT_ID"))
+    credential = (
+        DefaultAzureCredential(exclude_interactive_browser_credential=True)
+        if service_principal_mode else AzureCliCredential()
+    )
     token = credential.get_token("https://graph.microsoft.com/.default").token
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     logs: list[dict] = []
