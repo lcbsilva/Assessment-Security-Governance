@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from ai_payload import SENSITIVE_VALUE_PATTERNS, build
 from validate_artifacts import validate, validate_payload
+from security_identity_intelligence import build as build_security_identity_intelligence
 
 
 class ArtifactTests(unittest.TestCase):
@@ -105,6 +106,42 @@ class ArtifactTests(unittest.TestCase):
         self.assertIn("Discovery Beta", deck_text)
         self.assertIn("Cliente Demo", deck_text)
         self.assertIn("Cliente Demo", pdf_text)
+
+    def test_unavailable_identity_evidence_stays_unknown_in_exports(self):
+        source = json.loads((ROOT / "mock/assessment.json").read_text(encoding="utf-8"))
+        discovery = source.setdefault("discovery", {})
+        discovery["users"] = []
+        discovery["identity_risks"] = []
+        discovery["conditional_access"] = []
+        log = [{"module": "Graph", "status": "error", "records": 0, "note": "synthetic auth failure"}]
+        discovery["security_identity_intelligence"] = build_security_identity_intelligence(discovery, log)
+        values = discovery["security_identity_intelligence"]["identity_posture"]
+        self.assertIsNone(values["privileged_without_mfa"])
+        self.assertEqual(values["evidence_status"], "error")
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            from export_artifacts import write_pptx, write_pdf, write_xlsx
+            write_pptx(source, output / "summary.pptx")
+            write_pdf(source, output / "summary.pdf")
+            write_xlsx(source, output / "summary.xlsx")
+            deck = Presentation(output / "summary.pptx")
+            pptx_text = " ".join(shape.text for slide in deck.slides for shape in slide.shapes if shape.has_text_frame)
+            pdf_text = "\n".join(page.extract_text() or "" for page in PdfReader(output / "summary.pdf").pages)
+            workbook = load_workbook(output / "summary.xlsx", read_only=True)
+            xlsx_text = " ".join(str(cell.value) for row in workbook["Prioridades executivas"].iter_rows() for cell in row if cell.value is not None)
+            workbook.close()
+        for artifact_text in (pptx_text, pdf_text, xlsx_text):
+            self.assertIn("N/D", artifact_text)
+            self.assertNotIn("privilegiados sem MFA observado: 0", artifact_text)
+            self.assertNotIn("privilegiados sem MFA observado: None", artifact_text)
+            self.assertNotIn("economia realizável None", artifact_text)
+        self.assertIn("fonte: error", pptx_text)
+        self.assertIn("fonte error", pdf_text)
+
+    def test_successful_empty_identity_collection_is_zero(self):
+        result = build_security_identity_intelligence({}, [{"module": "Graph", "status": "success", "records": 0}])
+        self.assertEqual(result["identity_posture"]["privileged_without_mfa"], 0)
+        self.assertEqual(result["identity_posture"]["evidence_status"], "success")
 
     def test_ai_payload_contains_aggregates_only(self):
         source = json.loads((ROOT / "mock/assessment.json").read_text(encoding="utf-8"))

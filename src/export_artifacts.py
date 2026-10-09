@@ -18,6 +18,11 @@ from report_context import build as build_report_context
 from quality_audit import audit
 
 
+def _display_metric(value: object) -> str:
+    """Não transforma ausência de evidência em zero nem imprime None no relatório."""
+    return "N/D · fonte indisponível" if value is None else str(value)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Exporta artefatos do assessment")
     parser.add_argument("--data", type=Path, required=True)
@@ -116,10 +121,14 @@ def write_xlsx(data: dict, path: Path) -> None:
     exec_sheet.append([])
     exec_sheet.append(["Sinais executivos adicionais", "Valor"])
     exec_sheet.append(["FinOps · economia potencial (limite superior)", savings.get("upper_bound", "N/D")])
-    exec_sheet.append(["FinOps · economia realizável", savings.get("realizable_savings", "Não determinada")])
+    exec_sheet.append(["FinOps · economia realizável", _display_metric(savings.get("realizable_savings", "Não determinada"))])
     exec_sheet.append(["FinOps · interpretação", savings.get("method", "Sinais financeiros exigem validação e deduplicação antes de compromisso.")])
     exec_sheet.append(["Segurança/Identidade · atribuições privilegiadas alto/crítico", (security_identity.get("privileged_access", {}) or {}).get("high_or_critical_assignments", "N/D")])
-    exec_sheet.append(["Segurança/Identidade · escopo amplo", (security_identity.get("privileged_access", {}) or {}).get("broad_scope_assignments", "N/D")])
+    exec_sheet.append(["Segurança/Identidade · escopo amplo", _display_metric((security_identity.get("privileged_access", {}) or {}).get("broad_scope_assignments", "N/D"))])
+    identity_posture = security_identity.get("identity_posture", {}) or {}
+    exec_sheet.append(["Identidade · privilegiados sem MFA observado", _display_metric(identity_posture.get("privileged_without_mfa", "N/D"))])
+    exec_sheet.append(["Identidade · usuários em risco alto/médio", _display_metric(identity_posture.get("risky_users_high_or_medium", "N/D"))])
+    exec_sheet.append(["Identidade · estado da fonte", identity_posture.get("evidence_status", "unknown")])
     exec_sheet.append(["Guardrail", "Ausência de evidência não é conformidade; nenhuma recomendação implica mudança automática no tenant."])
     exec_sheet.append([])
     exec_sheet.append(["Quick wins", "Prioridade", "Risco", "Esforço", "Owner", "Resultado esperado"])
@@ -325,10 +334,10 @@ def write_pptx(data: dict, path: Path) -> None:
     title.text_frame.paragraphs[0].font.size = Pt(22)
     body = slide.shapes.add_textbox(Inches(0.9), Inches(1.3), Inches(11.2), Inches(5.2))
     body.text_frame.text = (
-        f"FinOps · limite superior de economia: {savings.get('upper_bound', 'N/D')} {savings.get('currency', '')} · economia realizável: {savings.get('realizable_savings', 'não determinada')}\n"
+        f"FinOps · limite superior de economia: {_display_metric(savings.get('upper_bound', 'N/D'))} {savings.get('currency', '')} · economia realizável: {_display_metric(savings.get('realizable_savings', 'não determinada'))}\n"
         f"FinOps · dias com sinal de anomalia: {optimization.get('anomaly_days', 'N/D')} · candidatos de rightsizing: {optimization.get('rightsizing_candidates', 'N/D')}\n"
-        f"Identidade · atribuições privilegiadas alto/crítico: {privileged.get('high_or_critical_assignments', 'N/D')} · escopo amplo: {privileged.get('broad_scope_assignments', 'N/D')}\n"
-        f"Identidade · privilegiados sem MFA observado: {identity_posture.get('privileged_without_mfa', 'N/D')} · usuários em risco alto/médio: {identity_posture.get('risky_users_high_or_medium', 'N/D')}\n\n"
+        f"Identidade · atribuições privilegiadas alto/crítico: {_display_metric(privileged.get('high_or_critical_assignments', 'N/D'))} · escopo amplo: {_display_metric(privileged.get('broad_scope_assignments', 'N/D'))}\n"
+        f"Identidade · privilegiados sem MFA observado: {_display_metric(identity_posture.get('privileged_without_mfa', 'N/D'))} · usuários em risco alto/médio: {_display_metric(identity_posture.get('risky_users_high_or_medium', 'N/D'))} · fonte: {identity_posture.get('evidence_status', 'unknown')}\n\n"
         "Guardrail executivo: economia potencial exige deduplicação e validação financeira; sinais de identidade exigem validação de owner, contexto e cobertura antes de remediação."
     )
     body.text_frame.paragraphs[0].font.size = Pt(14)
@@ -422,8 +431,8 @@ def write_pdf(data: dict, path: Path) -> None:
     privileged = security_identity.get("privileged_access", {}) or {}
     identity_posture = security_identity.get("identity_posture", {}) or {}
     story.append(Paragraph("Sinais executivos — FinOps, Segurança e Identidade", styles["Heading2"]))
-    story.append(Paragraph(f"FinOps: limite superior de economia {savings.get('upper_bound', 'N/D')} {savings.get('currency', '')}; economia realizável {savings.get('realizable_savings', 'não determinada')}; dias com sinal de anomalia {optimization.get('anomaly_days', 'N/D')}; rightsizing {optimization.get('rightsizing_candidates', 'N/D')}.", styles["BodyText"]))
-    story.append(Paragraph(f"Identidade: atribuições privilegiadas alto/crítico {privileged.get('high_or_critical_assignments', 'N/D')}; escopo amplo {privileged.get('broad_scope_assignments', 'N/D')}; privilegiados sem MFA observado {identity_posture.get('privileged_without_mfa', 'N/D')}; risco alto/médio {identity_posture.get('risky_users_high_or_medium', 'N/D')}.", styles["BodyText"]))
+    story.append(Paragraph(f"FinOps: limite superior de economia {_display_metric(savings.get('upper_bound', 'N/D'))} {savings.get('currency', '')}; economia realizável {_display_metric(savings.get('realizable_savings', 'não determinada'))}; dias com sinal de anomalia {_display_metric(optimization.get('anomaly_days', 'N/D'))}; rightsizing {_display_metric(optimization.get('rightsizing_candidates', 'N/D'))}.", styles["BodyText"]))
+    story.append(Paragraph(f"Identidade: atribuições privilegiadas alto/crítico {_display_metric(privileged.get('high_or_critical_assignments', 'N/D'))}; escopo amplo {_display_metric(privileged.get('broad_scope_assignments', 'N/D'))}; privilegiados sem MFA observado {_display_metric(identity_posture.get('privileged_without_mfa', 'N/D'))}; risco alto/médio {_display_metric(identity_posture.get('risky_users_high_or_medium', 'N/D'))}; fonte {identity_posture.get('evidence_status', 'unknown')}.", styles["BodyText"]))
     story.append(Paragraph("Guardrail: economia potencial exige deduplicação e validação financeira; sinais de identidade exigem validação de owner, contexto e cobertura antes de remediação.", styles["BodyText"]))
     story.append(Paragraph("Roadmap 30 / 60 / 90", styles["Heading2"]))
     for horizon in ("30", "60", "90"):
