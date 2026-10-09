@@ -789,24 +789,9 @@ def collect(subscription_ids: list[str]) -> dict:
     network_health_rows: list[dict] = []
     defender_score_rows: list[dict] = []
     defender_control_rows: list[dict] = []
-    skip_token: str | None = None
-
-    while True:
-        options = QueryRequestOptions(
-            result_format="objectArray",
-            top=5000,
-            skip_token=skip_token,
-        )
-        request = QueryRequest(
-            subscriptions=subscription_ids,
-            query=QUERY,
-            options=options,
-        )
-        response = query_arg_with_retry(client, request)
-        rows.extend(resource_row(item) for item in (response.data or []))
-        skip_token = getattr(response, "skip_token", None)
-        if not skip_token:
-            break
+    rows = [resource_row(item) for item in query_arg_all_pages(
+        client, subscription_ids, QUERY, QueryRequest, QueryRequestOptions
+    )]
 
     age_counts = [
         ("0–90 dias", sum(1 for item in rows if isinstance(item.get("age_days"), int) and item["age_days"] <= 90)),
