@@ -247,6 +247,9 @@ def collect() -> dict:
     def get_all(path: str, module: str, permission_hint: str, max_pages: int | None = None) -> list[dict]:
         nonlocal authentication_failed
         rows: list[dict] = []
+        page_limit = max_pages if max_pages is not None else bounded_env_int(
+            "ASSESSMENT_GRAPH_MAX_PAGES", 1000, 1, 10000
+        )
         if authentication_failed:
             logs.append({
                 "module": module,
@@ -303,9 +306,9 @@ def collect() -> dict:
                         })
                         return rows
                     requested_urls.add(next_url)
-                if max_pages and pages >= max_pages:
+                if pages >= page_limit:
                     if next_url:
-                        logs.append({"module": module, "source": "Microsoft Graph", "status": "partial", "records": len(rows), "note": f"Limite de {max_pages} páginas aplicada para proteger duração e carga da coleta."})
+                        logs.append({"module": module, "source": "Microsoft Graph", "status": "partial", "records": len(rows), "note": f"Limite de {page_limit} páginas atingido; a evidência recebida foi preservada e a coleta ficou parcial."})
                     else:
                         logs.append({"module": module, "source": "Microsoft Graph", "status": "success", "records": len(rows), "note": permission_hint})
                     return rows

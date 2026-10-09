@@ -59,6 +59,21 @@ class ArgPaginationTests(unittest.TestCase):
         self.assertIn("repetiu o skip_token", result.error)
         self.assertEqual(client.calls, 2)
 
+    def test_page_budget_preserves_rows_and_marks_collection_partial(self):
+        class Client:
+            def __init__(self):
+                self.calls = 0
+            def resources(self, request):
+                self.calls += 1
+                return Response([{"id": str(self.calls)}], f"page-{self.calls + 1}")
+
+        client = Client()
+        result = query_arg_all_pages(client, ["sub-1"], "Resources", QueryRequest, QueryRequestOptions, max_pages=2)
+        self.assertEqual([row["id"] for row in result], ["1", "2"])
+        self.assertFalse(result.complete)
+        self.assertIn("Limite de 2 páginas", result.error)
+        self.assertEqual(client.calls, 2)
+
     def test_later_page_failure_preserves_first_page_and_marks_partial(self):
         class Client:
             def __init__(self):

@@ -187,5 +187,34 @@ class GraphAuthenticationResilienceTests(unittest.TestCase):
         self.assertIn("host Microsoft Graph esperado", identity["note"])
         self.assertNotIn("https://unexpected.example/collect", requested)
 
+    def test_graph_page_budget_stops_and_preserves_partial_evidence(self):
+        import io
+        import json
+
+        requested = []
+
+        def response_for(request, timeout=None):
+            url = request.full_url
+            requested.append(url)
+            if "/users?" in url and "page=2" not in url:
+                payload = {"value": [{"id": "user-1", "displayName": "User 1", "userPrincipalName": "u1@example.invalid", "userType": "Member", "accountEnabled": True}], "@odata.nextLink": "https://graph.microsoft.com/v1.0/users?page=2"}
+            elif "page=2" in url:
+                payload = {"value": [{"id": "user-2", "displayName": "User 2", "userPrincipalName": "u2@example.invalid", "userType": "Member", "accountEnabled": True}], "@odata.nextLink": "https://graph.microsoft.com/v1.0/users?page=3"}
+            else:
+                payload = {"value": []}
+            return io.BytesIO(json.dumps(payload).encode("utf-8"))
+
+        with patch.dict("os.environ", {"ASSESSMENT_GRAPH_MAX_PAGES": "2"}), patch(
+            "azure.identity.AzureCliCredential"
+        ) as credential_type, patch("urllib.request.urlopen", side_effect=response_for):
+            credential_type.return_value.get_token.return_value = SimpleNamespace(token="test-token")
+            result = collect()
+
+        identity = next(item for item in result["discovery"]["collection_log"] if item["module"] == "Identity")
+        self.assertEqual(identity["status"], "partial")
+        self.assertEqual(identity["records"], 2)
+        self.assertIn("Limite de 2 páginas", identity["note"])
+        self.assertNotIn("https://graph.microsoft.com/v1.0/users?page=3", requested)
+
 if __name__ == "__main__":
     unittest.main()

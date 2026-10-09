@@ -301,21 +301,25 @@ as permissões descritas na matriz; endpoints indisponíveis são registrados no
 `collection_log` para que o relatório não transforme ausência de licença em
 falso sinal de conformidade.
 
-Por padrão, os sign-ins percorrem todas as páginas disponíveis dentro da janela
-configurada. Em tenants muito grandes, `ASSESSMENT_SIGNIN_MAX_PAGES` permite
-limitar conscientemente a duração; nesse caso o coletor registra `partial` e o
-relatório informa a limitação.
+Sign-ins e auditoria percorrem até os limites específicos de suas fontes. Em
+tenants muito grandes, `ASSESSMENT_SIGNIN_MAX_PAGES` e
+`ASSESSMENT_AUDIT_MAX_PAGES` permitem ajustar a duração; quando um limite é
+atingido com continuação disponível, os registros recebidos são preservados e
+o coletor registra `partial`.
 
 Auditoria de diretório também usa paginação limitada para evitar que tenants
 extensos esgotem o tempo de execução: `ASSESSMENT_AUDIT_MAX_PAGES` é 10 por
-padrão e `0` remove o limite conscientemente. Se uma página falhar após páginas
-válidas, os registros recebidos são mantidos e o módulo é marcado como
-`partial`. No resumo do laboratório, `control_coverage_percent` é cobertura do
-catálogo de controles, não percentual de APIs/coletas concluídas; o score é
-marcado como provisório quando há módulos indisponíveis ou parciais.
+padrão. `0` remove o limite específico da fonte, mantendo o teto global de
+segurança. Se uma página falhar após páginas válidas, os registros recebidos
+são mantidos e o módulo é marcado como `partial`. No resumo do laboratório,
+`control_coverage_percent` é cobertura do catálogo de controles, não percentual
+de APIs/coletas concluídas; o score é marcado como provisório quando há módulos
+indisponíveis ou parciais.
 
 Limites operacionais configuráveis: `ASSESSMENT_GRAPH_REQUEST_TIMEOUT_SECONDS`
 (60 s, faixa 5–300), `ASSESSMENT_GRAPH_MAX_RETRIES` (3, faixa 0–5),
+`ASSESSMENT_GRAPH_MAX_PAGES` e `ASSESSMENT_ARG_MAX_PAGES` (1.000 por padrão,
+faixa 1–10.000),
 `ASSESSMENT_COST_REQUEST_TIMEOUT_SECONDS` (60 s, faixa 5–300),
 `ASSESSMENT_COST_MAX_RETRIES` (3, faixa 0–5), `ASSESSMENT_ARG_MAX_ATTEMPTS`
 (3, faixa 1–6) e `ASSESSMENT_CHECKPOINT_MAX_AGE_HOURS` (168 h, faixa 1–8760).

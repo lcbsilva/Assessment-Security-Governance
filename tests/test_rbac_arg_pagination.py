@@ -162,6 +162,20 @@ class RbacArgPaginationTests(unittest.TestCase):
         self.assertIn("repetiu o skip_token", error)
         self.assertEqual(client.calls, 2)
 
+    def test_page_budget_returns_partial_rows_and_a_limitation(self):
+        class Client:
+            def __init__(self):
+                self.calls = 0
+            def resources(self, request):
+                self.calls += 1
+                return Response([{"id": str(self.calls)}], f"page-{self.calls + 1}")
+
+        client = Client()
+        rows, error = query_all_pages(client, "Resources", ["sub-1"], QueryRequest, QueryRequestOptions, max_pages=2)
+        self.assertEqual([row["id"] for row in rows], ["1", "2"])
+        self.assertIn("Limite de 2 páginas", error)
+        self.assertEqual(client.calls, 2)
+
 
 
     def test_rbac_queries_order_pages_by_unique_resource_id(self):
