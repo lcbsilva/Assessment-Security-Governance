@@ -79,7 +79,7 @@ def query_arg_all_pages(
     while True:
         options = QueryRequestOptions(
             result_format="objectArray",
-            top=5000,
+            top=1000,
             skip_token=skip_token,
         )
         request = QueryRequest(subscriptions=subscriptions, query=query, options=options)
@@ -92,6 +92,10 @@ def query_arg_all_pages(
         rows.extend(response.data or [])
         next_token = getattr(response, "skip_token", None)
         if not next_token:
+            truncated = getattr(response, "result_truncated", False)
+            if str(truncated).strip().casefold() in {"true", "1", "yes"}:
+                rows.complete = False
+                rows.error = "Azure Resource Graph informou resultado truncado sem skip_token; a coleta não pode ser declarada completa."
             return rows
         next_token = str(next_token)
         if next_token in seen_tokens:
