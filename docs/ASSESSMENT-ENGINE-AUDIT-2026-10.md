@@ -40,7 +40,9 @@ A metadata do coletor Graph declara apenas estados agregados de identidade e Sec
 
 CI e cenários sintéticos verificam comportamento offline, mas não validam consentimento, licenciamento, respostas atuais do Graph nem divergências com o portal.
 
-**Aceite operacional:** executar em tenant de laboratório autorizado, registrar endpoint/escopo/contagem/estado e reconciliar amostras com Graph Explorer ou portal. Não conceder permissões automaticamente.
+**Achado adicional confirmado na amostra da Julia:** o readiness check confirmou apenas a emissão de token pela sessão Azure CLI; não comprovou chamadas Graph nem consentimentos efetivos. O log do relatório registra `AttributeError: 'NoneType' object has no attribute 'lower'`. O caminho de normalização de usuários chamava `.lower()` diretamente em `userType`; quando a resposta traz `null`, a exceção ocorre depois das consultas e pode descartar o resultado completo do coletor, inclusive evidências de endpoints que responderam. A correção neste incremento normaliza `null` como `Unknown` e adiciona regressão para `user_posture`. Isso explica a falha observada nessa execução; não prova que todos os endpoints estavam autorizados. Após nova coleta, revisar os estados e HTTP 401/403 de cada endpoint para separar permissão, licença, retenção e disponibilidade.
+
+**Aceite operacional:** executar em tenant de laboratório autorizado, registrar endpoint/escopo/contagem/estado e reconciliar amostras com Graph Explorer ou portal. Não conceder permissões automaticamente. Token emitido pelo CLI é apenas prontidão de sessão, nunca evidência de autorização por endpoint.
 
 ### P1 — rastreabilidade entre artefatos
 
