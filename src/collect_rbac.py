@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import os
+import time
 from datetime import datetime, timezone
 
 
@@ -71,6 +73,29 @@ def summarize_rbac_posture(rows: list[dict]) -> dict:
     }
 
 
+def retryable_arg_error(error: Exception) -> bool:
+    """Recognize Resource Graph throttling and transient service failures."""
+    code = getattr(error, "status_code", None) or getattr(error, "status", None)
+    return code in {429, 500, 502, 503, 504}
+
+
+def query_arg_with_retry(client: object, request: object, attempts: int | None = None) -> object:
+    """Retry only read-only Azure Resource Graph queries after transient errors."""
+    if attempts is None:
+        try:
+            attempts = min(6, max(1, int(os.getenv("ASSESSMENT_ARG_MAX_ATTEMPTS", "3"))))
+        except ValueError:
+            attempts = 3
+    for attempt in range(attempts):
+        try:
+            return client.resources(request)
+        except Exception as error:
+            if not retryable_arg_error(error) or attempt == attempts - 1:
+                raise
+            time.sleep(min(8, 2 ** attempt))
+    raise RuntimeError("Azure Resource Graph did not return a response")
+
+
 def query_all_pages(client: object, query: str, subscription_ids: list[str], QueryRequest: object, QueryRequestOptions: object) -> tuple[list[dict], str | None]:
     """Fetch every ARG page; return rows and an error note when coverage is incomplete."""
     rows: list[dict] = []
@@ -80,7 +105,7 @@ def query_all_pages(client: object, query: str, subscription_ids: list[str], Que
         options = QueryRequestOptions(result_format="objectArray", top=5000, skip_token=skip_token)
         request = QueryRequest(subscriptions=subscription_ids, query=query, options=options)
         try:
-            response = client.resources(request)
+            response = query_arg_with_retry(client, request)
         except Exception as exc:
             note = f"{type(exc).__name__}: {exc}"
             return rows, note
