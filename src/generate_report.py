@@ -474,7 +474,12 @@ def render_executive_security_kpis(data: dict) -> str:
     device_summary = discovery.get("device_summary", {}) or {}
     endpoint_gap = int(device_summary.get("non_compliant", 0) or 0) + int(device_summary.get("unmanaged", 0) or 0)
 
-    users_ready = source_succeeded("Identity", "Identity basic")
+    identity_status = str((data.get("metadata", {}).get("modules", {}) or {}).get("identity", "")).lower()
+    # O coletor agrega também as consultas de membros privilegiados. Se uma
+    # delas falhar, não usar apenas o sucesso do endpoint /users para concluir
+    # um total de identidade que pode estar subestimado.
+    identity_complete = not identity_status or identity_status == "success"
+    users_ready = identity_complete and source_succeeded("Identity", "Identity basic")
     mfa_ready = users_ready and source_succeeded("MFA")
     devices_ready = source_succeeded("Entra devices") and source_succeeded("Intune managed devices")
     metrics = [
