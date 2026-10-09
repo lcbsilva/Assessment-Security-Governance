@@ -97,3 +97,34 @@ jobs:
               throw "PowerShell parse failed: $path"
             }
           }
+
+      - name: Exercise tenant and subscription guards without Azure access
+        shell: pwsh
+        run: |
+          function global:az {
+            if ($args -contains "show") {
+              return '{"tenantId":"tenant-a","id":"subscription-a"}'
+            }
+            return '[{"tenantId":"tenant-a","id":"subscription-other"}]'
+          }
+
+          $runner = Join-Path $PWD "scripts/run-assessment.ps1"
+          $venv = Join-Path $PWD ".assessment-venv"
+          if (Test-Path $venv) { throw "Guard test requires a clean checkout without a venv." }
+
+          $tenantBlocked = $false
+          try {
+            & $runner -Subscriptions "subscription-a" -ExpectedTenantId "tenant-b"
+          } catch {
+            $tenantBlocked = $_.Exception.Message -like "*Tenant bloqueado pelo guardrail*"
+          }
+          if (-not $tenantBlocked) { throw "Mismatched tenant was not blocked." }
+
+          $subscriptionBlocked = $false
+          try {
+            & $runner -Subscriptions "subscription-a" -ExpectedTenantId "tenant-a"
+          } catch {
+            $subscriptionBlocked = $_.Exception.Message -like "*Escopo bloqueado*"
+          }
+          if (-not $subscriptionBlocked) { throw "Subscription outside the expected tenant was not blocked." }
+          if (Test-Path $venv) { throw "A guardrail failure created the Python environment before validation." }
