@@ -29,6 +29,7 @@ from evidence_quality import summarize
 from insight_engine import (
     risk_intersections,
     control_evidence,
+    apply_control_source_gates,
     attach_finding_lineage,
     enrich_rbac_identity,
     cross_domain_insights,
@@ -950,6 +951,19 @@ def main() -> None:
         payload,
         catalog,
     )
+    payload["controls"] = apply_control_source_gates(
+        payload.get("controls", []),
+        payload["metadata"]["evidence_by_control"],
+    )
+    control_index = {
+        item.get("id"): item
+        for item in payload.get("controls", [])
+    }
+    for item in payload.get("findings", []):
+        control = control_index.get(item.get("control_id"), {})
+        item["evidence_state"] = control.get("evidence_state", "INSUFFICIENT_EVIDENCE")
+        item["control_confidence"] = control.get("confidence", "low")
+        item["license_gate_status"] = control.get("license_gate_status", "not_declared")
 
     payload["findings"] = (
         attach_finding_lineage(
