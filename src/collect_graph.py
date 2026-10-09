@@ -66,7 +66,10 @@ def user_posture(user: dict) -> tuple[str, str]:
     signals = []
     if user.get("privileged") and user.get("mfa_status") == "Not registered":
         signals.append("Privilegiado sem MFA")
-    if user.get("account_type", "").lower() == "guest":
+    # Graph can return userType as null. Preserve the user record and treat
+    # an unknown type as unknown instead of failing the entire collection.
+    account_type = str(user.get("account_type") or "").strip().lower()
+    if account_type == "guest":
         signals.append("Convidado externo")
     if user.get("account_enabled") is False:
         signals.append("Conta desabilitada")
@@ -349,13 +352,14 @@ def collect() -> dict:
         upn = item.get("userPrincipalName", "")
         registration = registration_by_upn.get(str(upn).lower(), {})
         risk = risky_by_id.get(item.get("id"), {})
-        base_user = {"privileged": bool(privileged_by_id.get(item.get("id"))), "mfa_status": "Registered" if registration.get("isMfaRegistered") else ("Not registered" if registration else "Unknown"), "account_type": item.get("userType", "Member"), "account_enabled": item.get("accountEnabled", "—"), "last_sign_in": (item.get("signInActivity") or {}).get("lastSignInDateTime", "Never"), "risk": risk.get("riskLevel", "None")}
+        account_type = str(item.get("userType") or "Unknown")
+        base_user = {"privileged": bool(privileged_by_id.get(item.get("id"))), "mfa_status": "Registered" if registration.get("isMfaRegistered") else ("Not registered" if registration else "Unknown"), "account_type": account_type, "account_enabled": item.get("accountEnabled", "—"), "last_sign_in": (item.get("signInActivity") or {}).get("lastSignInDateTime", "Never"), "risk": risk.get("riskLevel", "None")}
         posture_level, posture_signal = user_posture(base_user)
         normalized_users.append({
             "id": item.get("id", "—"),
             "display_name": item.get("displayName", "—"),
             "user_principal_name": upn or "—",
-            "account_type": item.get("userType", "Member"),
+            "account_type": account_type,
             "account_enabled": item.get("accountEnabled", "—"),
             "mfa_status": "Registered" if registration.get("isMfaRegistered") else ("Not registered" if registration else "Unknown"),
             "mfa_methods": ", ".join(registration.get("methodsRegistered", [])) or "—",
