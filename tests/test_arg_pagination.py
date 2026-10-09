@@ -22,6 +22,7 @@ class Response:
     def __init__(self, data, skip_token=None):
         self.data = data
         self.skip_token = skip_token
+        self.result_truncated = False
 
 
 class ArgPaginationTests(unittest.TestCase):
@@ -39,6 +40,7 @@ class ArgPaginationTests(unittest.TestCase):
         rows = query_arg_all_pages(client, ["sub-1"], "Resources", QueryRequest, QueryRequestOptions)
         self.assertEqual([row["id"] for row in rows], ["a", "b"])
         self.assertEqual([request.options.skip_token for request in client.requests], [None, "page-2"])
+        self.assertTrue(all(request.options.top == 1000 for request in client.requests))
 
     def test_repeated_skip_token_preserves_rows_as_partial(self):
         class Client:
@@ -82,6 +84,20 @@ class ArgPaginationTests(unittest.TestCase):
         self.assertFalse(result.complete)
         self.assertEqual(arg_result_status(result), "not_available")
 
+
+
+    def test_truncated_response_without_skip_token_is_partial(self):
+        class Client:
+            def resources(self, request):
+                response = Response([{"id": "first-page"}])
+                response.result_truncated = True
+                return response
+
+        result = query_arg_all_pages(Client(), ["sub-1"], "Resources", QueryRequest, QueryRequestOptions)
+        self.assertEqual([row["id"] for row in result], ["first-page"])
+        self.assertFalse(result.complete)
+        self.assertEqual(arg_result_status(result), "partial")
+        self.assertIn("truncado sem skip_token", result.error)
 
 if __name__ == "__main__":
     unittest.main()
