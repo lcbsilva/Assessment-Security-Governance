@@ -26,6 +26,7 @@ class ControlEvidenceGateTests(unittest.TestCase):
         self.assertEqual(evidence["confidence"], "baixa")
         control = apply_control_source_gates(data["controls"], [evidence])[0]
         self.assertEqual(control["status"], "not_available")
+        self.assertIsNone(control["score"])
         self.assertEqual(control["evidence_state"], "INSUFFICIENT_EVIDENCE")
         self.assertEqual(control["source_collection_status"], "not_available")
 
