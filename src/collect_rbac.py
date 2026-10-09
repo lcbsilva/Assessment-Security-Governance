@@ -114,6 +114,9 @@ def query_all_pages(client: object, query: str, subscription_ids: list[str], Que
         rows.extend(response.data or [])
         next_token = getattr(response, "skip_token", None)
         if not next_token:
+            truncated = getattr(response, "result_truncated", False)
+            if str(truncated).strip().casefold() in {"true", "1", "yes"}:
+                return rows, "Azure Resource Graph informou resultado truncado sem skip_token; a coleta RBAC não pode ser declarada completa."
             return rows, None
         next_token = str(next_token)
         if next_token in seen_tokens:
