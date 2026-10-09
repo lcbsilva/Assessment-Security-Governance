@@ -134,31 +134,34 @@ def estimate(subscription_count: int, profile: str, resource_probe: str = "unkno
 
 def module_readiness(profile: str) -> list[dict]:
     """Manifesto de cobertura: escopo esperado, sem alegar consentimento não verificado."""
+    # Keep this matrix aligned with the collector dispatch in run_assessment.
+    # ``not_checked`` means the profile invokes a collector for the module;
+    # ``not_run`` means it is out of profile or has no implemented collector.
     modules = [
-        ("Azure inventory", "Governança", ["Reader"]),
-        ("Azure Policy / hierarchy", "Governança", ["Reader"]),
-        ("RBAC / PIM", "Governança", ["Reader", "RoleAssignmentSchedule.Read.Directory", "RoleEligibilitySchedule.Read.Directory", "RoleManagement.Read.Directory", "Directory.Read.All"]),
-        ("Identity / users", "Identidade", ["User.Read.All"]),
-        ("MFA / registration", "Identidade", ["Reports.Read.All"]),
-        ("Conditional Access", "Segurança", ["Policy.Read.All"]),
-        ("Sign-ins / legacy auth", "Segurança", ["AuditLog.Read.All"]),
-        ("Secure Score", "Segurança", ["SecurityEvents.Read.All"]),
-        ("Defender", "Segurança", ["SecurityIncident.Read.All", "Vulnerability.Read.All"]),
-        ("Intune", "Segurança", ["DeviceManagementManagedDevices.Read.All"]),
-        ("Cost Management", "FinOps", ["Cost Management Reader"]),
-        ("Power Platform", "Ecossistema", ["Reader / inventário ARG"]),
-        ("Azure DevOps", "Ecossistema", ["AZDO_ORG_URL + PAT somente leitura"]),
-        ("Purview / Synapse / Databricks", "Dados", ["Reader / Resource Graph"]),
-        ("Directory audit", "Compliance", ["AuditLog.Read.All"]),
-        ("Purview DLP / retention", "Compliance", ["Integração Purview específica / licenciamento"]),
-        ("Power BI / Fabric", "Dados", ["Fabric admin ou Tenant.Read.All read-only"]),
-        ("M365 domain posture", "Segurança", ["DNS read-only; Domain.Read.All somente se os domínios forem descobertos pelo Graph"]),
+        ("Azure inventory", "Governança", ["Reader"], {"security", "governance", "full"}),
+        ("Azure Policy / hierarchy", "Governança", ["Reader"], {"security", "governance", "full"}),
+        ("RBAC / PIM", "Governança", ["Reader", "RoleAssignmentSchedule.Read.Directory", "RoleEligibilitySchedule.Read.Directory", "RoleManagement.Read.Directory", "Directory.Read.All"], {"governance", "full"}),
+        ("Identity / users", "Identidade", ["User.Read.All"], {"security", "governance", "full"}),
+        ("MFA / registration", "Identidade", ["Reports.Read.All"], {"security", "governance", "full"}),
+        ("Conditional Access", "Segurança", ["Policy.Read.All"], {"security", "governance", "full"}),
+        ("Sign-ins / legacy auth", "Segurança", ["AuditLog.Read.All"], {"security", "governance", "full"}),
+        ("Secure Score", "Segurança", ["SecurityEvents.Read.All"], {"security", "governance", "full"}),
+        ("Defender", "Segurança", ["SecurityIncident.Read.All", "Vulnerability.Read.All"], {"security", "governance", "full"}),
+        ("Intune", "Segurança", ["DeviceManagementManagedDevices.Read.All"], {"security", "governance", "full"}),
+        ("Cost Management", "FinOps", ["Cost Management Reader"], {"full"}),
+        ("Power Platform", "Ecossistema", ["Reader / inventário ARG"], {"security", "governance", "full"}),
+        ("Azure DevOps", "Ecossistema", ["AZDO_ORG_URL + PAT somente leitura"], {"full"}),
+        ("Purview / Synapse / Databricks", "Dados", ["Reader / Resource Graph"], {"full"}),
+        ("Directory audit", "Compliance", ["AuditLog.Read.All"], {"security", "governance", "full"}),
+        ("Purview DLP / retention", "Compliance", ["Integração Purview específica / licenciamento"], set()),
+        ("Power BI / Fabric", "Dados", ["Fabric admin ou Tenant.Read.All read-only"], {"full"}),
+        ("M365 domain posture", "Segurança", ["DNS read-only; Domain.Read.All somente se os domínios forem descobertos pelo Graph"], {"security", "full"}),
     ]
-    active_domains = {"segurança", "identidade"} if profile == "security" else {"governança"} if profile == "governance" else {"segurança", "identidade", "governança", "finops", "ecossistema", "dados", "compliance"}
     return [{"module": name, "domain": domain, "expected_read_scope": ", ".join(scopes),
-             "status": "not_run" if name == "Purview DLP / retention" else ("not_checked" if domain.lower() in active_domains else "not_run"),
-             "detail": "Escopo será confirmado pelo coletor; não representa consentimento concedido."}
-            for name, domain, scopes in modules]
+             "status": "not_checked" if profile in active_profiles else "not_run",
+             "detail": ("Perfil inclui o coletor; o status será confirmado pelo resultado, sem representar consentimento concedido." if profile in active_profiles
+                        else "Fora do perfil ou sem coletor implementado; não será consultado nesta execução.")}
+            for name, domain, scopes, active_profiles in modules]
 
 
 def main() -> int:
