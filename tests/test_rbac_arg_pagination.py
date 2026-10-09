@@ -108,6 +108,7 @@ class RbacArgPaginationTests(unittest.TestCase):
             result = collect(["sub-1"])
         self.assertEqual(len(result["discovery"]["rbac"]), 2)
         self.assertEqual([call.options.skip_token for call in client.calls[:2]], [None, "page-2"])
+        self.assertTrue(all(call.options.top == 1000 for call in client.calls))
         self.assertEqual(result["discovery"]["collection_log"][0]["status"], "success")
         self.assertEqual(result["discovery"]["collection_log"][0]["records"], 2)
         self.assertEqual(result["metadata"]["modules"]["governance"], "success")
