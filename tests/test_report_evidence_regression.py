@@ -53,6 +53,24 @@ class ReportEvidenceRegressionTests(unittest.TestCase):
                       "Policy: soma de não conformidades", "Endpoints em atenção"):
             self.assertIn(f"<span>{label}</span><b>Sem evidência</b>", html)
 
+    def test_partial_aggregate_identity_hides_counts_after_role_member_failure(self):
+        data = {
+            "metadata": {"modules": {"identity": "partial"}},
+            "discovery": {
+                "users": [{"privileged": False, "mfa_status": "Not registered"}],
+                "user_summary": {"Usuários sem MFA": 1, "Privilegiados sem MFA": 0},
+                "collection_log": [
+                    {"module": "Identity", "status": "success"},
+                    {"module": "MFA", "status": "success"},
+                    {"module": "Role members: Global Administrator", "status": "not_available"},
+                ],
+            },
+        }
+        html = render_executive_security_kpis(data)
+        self.assertIn("<span>Sem MFA</span><b>Sem evidência</b>", html)
+        self.assertIn("<span>Privilegiados sem MFA</span><b>Sem evidência</b>", html)
+        self.assertNotIn("<span>Privilegiados sem MFA</span><b>0</b>", html)
+
     def test_successful_empty_sources_may_render_verified_zeroes(self):
         data = {"discovery": {
             "users": [], "resources": [], "rbac": [], "policy_compliance": [],
