@@ -44,15 +44,36 @@ def query_arg_with_retry(client: object, request: object, attempts: int | None =
             time.sleep(min(8, 2 ** attempt))
     raise RuntimeError("Azure Resource Graph não retornou resposta")
 
+class ArgQueryResult(list):
+    """Rows returned by ARG, retaining the completeness state of pagination."""
+
+    def __init__(self):
+        super().__init__()
+        self.complete = True
+        self.error: str | None = None
+
+
+def arg_result_status(result: ArgQueryResult) -> str:
+    if result.complete:
+        return "success"
+    return "partial" if result else "not_available"
+
+
+def arg_result_note(label: str, result: ArgQueryResult, success_note: str) -> str:
+    if result.complete:
+        return success_note
+    return f"{label} parcial ({len(result)} registros preservados): {result.error}"
+
+
 def query_arg_all_pages(
     client: object,
     subscriptions: list[str],
     query: str,
     QueryRequest: object,
     QueryRequestOptions: object,
-) -> list[dict]:
-    """Read all Resource Graph pages; success means the full result was fetched."""
-    rows: list[dict] = []
+) -> ArgQueryResult:
+    """Fetch every ARG page and preserve first pages if a later page fails."""
+    rows = ArgQueryResult()
     skip_token: str | None = None
     seen_tokens: set[str] = set()
     while True:
@@ -62,14 +83,21 @@ def query_arg_all_pages(
             skip_token=skip_token,
         )
         request = QueryRequest(subscriptions=subscriptions, query=query, options=options)
-        response = query_arg_with_retry(client, request)
+        try:
+            response = query_arg_with_retry(client, request)
+        except Exception as exc:
+            rows.complete = False
+            rows.error = f"{type(exc).__name__}: {exc}"
+            return rows
         rows.extend(response.data or [])
         next_token = getattr(response, "skip_token", None)
         if not next_token:
             return rows
         next_token = str(next_token)
         if next_token in seen_tokens:
-            raise RuntimeError("Azure Resource Graph repetiu o skip_token; consulta interrompida para evitar loop.")
+            rows.complete = False
+            rows.error = "Azure Resource Graph repetiu o skip_token; consulta interrompida para evitar loop."
+            return rows
         seen_tokens.add(next_token)
         skip_token = next_token
 
@@ -789,9 +817,12 @@ def collect(subscription_ids: list[str]) -> dict:
     network_health_rows: list[dict] = []
     defender_score_rows: list[dict] = []
     defender_control_rows: list[dict] = []
-    rows = [resource_row(item) for item in query_arg_all_pages(
+    inventory_result = query_arg_all_pages(
         client, subscription_ids, QUERY, QueryRequest, QueryRequestOptions
-    )]
+    )
+    rows = [resource_row(item) for item in inventory_result]
+    inventory_status = arg_result_status(inventory_result)
+    inventory_note = arg_result_note("Azure inventory", inventory_result, "Consulta read-only; exposição e dependências exigem enriquecimento por módulo.")
 
     age_counts = [
         ("0–90 dias", sum(1 for item in rows if isinstance(item.get("age_days"), int) and item["age_days"] <= 90)),
