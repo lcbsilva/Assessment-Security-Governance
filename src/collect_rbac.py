@@ -166,11 +166,18 @@ def collect(subscription_ids: list[str]) -> dict:
         role_map[role_id.lower()] = item.get("roleName", "Unknown")
         role_map[role_id.rsplit("/", 1)[-1].lower()] = item.get("roleName", "Unknown")
     rows = []
+    unresolved_roles = 0
     for item in assignments:
         role_id = str(item.get("roleDefinitionId", ""))
         scope_kind, scope_level, inheritance = scope_details(item.get("assignmentScope", ""))
-        role_name = role_map.get(role_id.lower(), role_map.get(role_id.rsplit("/", 1)[-1].lower(), role_id.rsplit("/", 1)[-1] or "Unknown"))
-        risk_level, review_reason = access_risk(role_name, scope_kind)
+        resolved_role = role_map.get(role_id.lower(), role_map.get(role_id.rsplit("/", 1)[-1].lower()))
+        role_name = resolved_role or role_id.rsplit("/", 1)[-1] or "Unknown"
+        if resolved_role:
+            risk_level, review_reason = access_risk(role_name, scope_kind)
+        else:
+            unresolved_roles += 1
+            risk_level = "Não classificado"
+            review_reason = "A definição desta função não foi resolvida; confirmar a função antes de avaliar privilégios."
         rows.append({
             "principal": item.get("principalId", "—"),
             "principal_type": item.get("principalType", "—"),
@@ -191,11 +198,17 @@ def collect(subscription_ids: list[str]) -> dict:
     if assignment_error:
         status = "partial"
         note = f"Atribuições RBAC parcialmente coletadas: {assignment_error}"
-    elif rows and (role_error or not roles):
+    elif rows and (role_error or not roles or unresolved_roles):
         status = "partial"
-        detail = role_error or "nenhuma definição de função foi retornada para enriquecer as atribuições."
-        note = f"Atribuições coletadas, mas nomes/classificação de funções incompletos: {detail}"
+        details = []
+        if role_error:
+            details.append(role_error)
+        if not roles:
+            details.append("nenhuma definição de função foi retornada para enriquecer as atribuições")
+        if unresolved_roles:
+            details.append(f"{unresolved_roles} atribuições usam uma definição de função não resolvida")
+        note = "Atribuições coletadas, mas nomes/classificação de funções incompletos: " + "; ".join(details)
     else:
         status = "success"
-        note = "Atribuições e definições de função paginadas no escopo informado; PIM e revisão de acesso exigem enriquecimento adicional."
+        note = "Atribuições e definições de função paginadas e resolvidas no escopo informado; PIM e revisão de acesso exigem enriquecimento adicional."
     return _collection_result(started, rows, status, note)
