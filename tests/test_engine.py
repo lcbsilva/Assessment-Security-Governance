@@ -976,6 +976,11 @@ class EngineContractTests(unittest.TestCase):
         self.assertEqual(level, "Atenção")
         self.assertIn("Convidado externo", signal)
 
+    def test_user_posture_handles_null_graph_account_type(self):
+        level, signal = user_posture({"account_type": None})
+        self.assertEqual(level, "Sem sinal básico")
+        self.assertEqual(signal, "Nenhum sinal básico")
+
     def test_graph_retry_policy_handles_throttling_and_transient_errors(self):
         self.assertTrue(retryable_graph_status(429))
         self.assertTrue(retryable_graph_status(503))
