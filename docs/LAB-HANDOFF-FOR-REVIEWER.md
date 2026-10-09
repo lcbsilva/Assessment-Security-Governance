@@ -21,11 +21,12 @@ responsável pelo tenant aprovar o escopo, o perfil e as permissões de leitura.
 PowerShell 7:
 
 ```powershell
-python -m pip install -r requirements.txt
-az login
-az account set --subscription "<subscription-id>"
+az login --tenant "<tenant-id>"
 az account show --query "{tenantId:tenantId,subscriptionId:id}" -o table
 ```
+
+O fluxo PowerShell instala as dependências em `.assessment-venv`; não é
+necessário instalar pacotes no Python global.
 
 Cloud Shell Linux:
 
@@ -38,16 +39,9 @@ az account show --query '{tenantId:tenantId,subscriptionId:id}' -o table
 
 ## Readiness obrigatório
 
-Executar primeiro o preflight. Ele não concede permissões e não altera o
-tenant:
-
-```powershell
-python src/preflight.py --subscriptions "<subscription-id>" --profile security --output runtime/preflight-security.json
-```
-
-Para Linux, trocar `python` por `python3` quando necessário. Só continuar se
-`execution_decision` for `run_full_with_limitations` ou equivalente pronto;
-qualquer bloqueio deve ser corrigido pelo responsável antes da coleta.
+Os wrappers executam o Readiness Gate antes da coleta, dentro do ambiente
+Python isolado no Windows. Ele não concede permissões nem altera o tenant.
+Qualquer bloqueio interrompe o fluxo antes dos coletores.
 
 ## Execução recomendada
 
@@ -55,13 +49,13 @@ Começar com `security`, revisar o resultado e depois executar `full` somente
 se o escopo ampliado estiver autorizado:
 
 ```powershell
-.\scripts\run-focused-pilot.ps1 -Subscriptions "<subscription-id>"
+.\scripts\run-focused-pilot.ps1 -ExpectedTenantId "<tenant-id>" -Subscriptions "<subscription-id>"
 ```
 
 Ou, para a execução ampliada:
 
 ```powershell
-.\scripts\run-assessment.ps1 -Subscriptions "<subscription-id>" -Profile full
+.\scripts\run-assessment.ps1 -ExpectedTenantId "<tenant-id>" -Subscriptions "<subscription-id>" -Profile full
 ```
 
 No Cloud Shell:
