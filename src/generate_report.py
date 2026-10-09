@@ -653,9 +653,9 @@ def render_scope_coverage(data: dict) -> str:
         ("Power Platform", "Ambientes, Power Apps, Power Automate, conectores e owners.", ("Power Platform",), "power_platform"),
         ("Copilot Studio / Agents", "Inventário e governança de agentes quando publicado no inventário Power Platform.", ("Power Platform",), None),
         ("Azure DevOps", "Projetos, repositórios, pipelines e políticas de branch.", ("Azure DevOps",), "azure_devops"),
-        ("Purview / Compliance", "Contas Purview e sinais de governança de dados; DLP, retenção e auditoria dependem de APIs/licenças adicionais.", ("Purview", "Compliance"), "analytics"),
-        ("Power BI", "Workspaces, datasets, gateways, compartilhamento e refresh.", ("Power BI",), None),
-        ("Fabric / Synapse / Databricks", "Analytics, workspaces, lakehouse e governança de dados via metadados read-only.", ("Fabric", "Synapse", "Databricks"), "analytics"),
+        ("Purview / Compliance", "Inventário de contas e metadados Azure; políticas DLP, rótulos, retenção e auditoria não são comprovados por esse inventário.", ("Purview", "Compliance"), "analytics"),
+        ("Power BI", "Inventário e metadados disponíveis; datasets, gateways, compartilhamentos e refresh não são necessariamente avaliados.", ("Power BI",), None),
+        ("Fabric / Synapse / Databricks", "Inventário de recursos e metadados Azure; conteúdo de workspaces, lakehouses e governança interna exigem integrações adicionais.", ("Fabric", "Synapse", "Databricks"), "analytics"),
     ]
     labels = {"success": "Coletado", "partial": "Parcial", "not_available": "Indisponível", "error": "Erro controlado", "not_run": "Não executado", "roadmap": "Próxima integração"}
     cards = []
