@@ -162,7 +162,8 @@ class EngineContractTests(unittest.TestCase):
             {"defender_alerts": [], "defender_vulnerabilities": [], "rbac": [], "pim_assignments": []},
             [{"module": "Defender alerts", "status": "not_available", "note": "HTTP 403"}],
         )
-        self.assertEqual(result["defender"]["alerts"], 0)
+        self.assertIsNone(result["defender"]["alerts"])
+        self.assertEqual(result["defender"]["evidence_status"], "not_available")
         self.assertTrue(result["coverage_limitations"])
         self.assertIn("zero não implica", result["defender"]["interpretation"])
         self.assertTrue(any("Não interpretar zero registros" in item for item in result["guardrails"]))

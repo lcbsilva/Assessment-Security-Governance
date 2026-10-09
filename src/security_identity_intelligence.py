@@ -36,6 +36,8 @@ def _source_status(collection_log: list[dict], module_names: tuple[str, ...]) ->
         return "error" if "error" in graph_statuses else "not_available"
     if any(status == "partial" for status in graph_statuses):
         return "partial"
+    if any(status == "success" for status in graph_statuses):
+        return "success"
     return "unknown"
 
 
