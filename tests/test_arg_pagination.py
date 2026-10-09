@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from collect_arg import query_arg_all_pages
+from collect_arg import arg_result_status, query_arg_all_pages
 
 
 class QueryRequest:
@@ -40,7 +40,7 @@ class ArgPaginationTests(unittest.TestCase):
         self.assertEqual([row["id"] for row in rows], ["a", "b"])
         self.assertEqual([request.options.skip_token for request in client.requests], [None, "page-2"])
 
-    def test_repeated_skip_token_fails_closed_instead_of_reporting_complete(self):
+    def test_repeated_skip_token_preserves_rows_as_partial(self):
         class Client:
             def __init__(self):
                 self.calls = 0
@@ -49,11 +49,14 @@ class ArgPaginationTests(unittest.TestCase):
                 return Response([{"id": str(self.calls)}], "same-token")
 
         client = Client()
-        with self.assertRaisesRegex(RuntimeError, "repetiu o skip_token"):
-            query_arg_all_pages(client, ["sub-1"], "Resources", QueryRequest, QueryRequestOptions)
+        result = query_arg_all_pages(client, ["sub-1"], "Resources", QueryRequest, QueryRequestOptions)
+        self.assertEqual(len(result), 2)
+        self.assertFalse(result.complete)
+        self.assertEqual(arg_result_status(result), "partial")
+        self.assertIn("repetiu o skip_token", result.error)
         self.assertEqual(client.calls, 2)
 
-    def test_later_page_failure_does_not_return_first_page_as_complete(self):
+    def test_later_page_failure_preserves_first_page_and_marks_partial(self):
         class Client:
             def __init__(self):
                 self.calls = 0
@@ -63,8 +66,21 @@ class ArgPaginationTests(unittest.TestCase):
                     return Response([{"id": "partial"}], "page-2")
                 raise RuntimeError("service unavailable")
 
-        with self.assertRaisesRegex(RuntimeError, "service unavailable"):
-            query_arg_all_pages(Client(), ["sub-1"], "Resources", QueryRequest, QueryRequestOptions)
+        result = query_arg_all_pages(Client(), ["sub-1"], "Resources", QueryRequest, QueryRequestOptions)
+        self.assertEqual([row["id"] for row in result], ["partial"])
+        self.assertFalse(result.complete)
+        self.assertEqual(arg_result_status(result), "partial")
+        self.assertIn("service unavailable", result.error)
+
+    def test_first_page_failure_has_no_partial_rows(self):
+        class Client:
+            def resources(self, request):
+                raise RuntimeError("service unavailable")
+
+        result = query_arg_all_pages(Client(), ["sub-1"], "Resources", QueryRequest, QueryRequestOptions)
+        self.assertEqual(result, [])
+        self.assertFalse(result.complete)
+        self.assertEqual(arg_result_status(result), "not_available")
 
 
 if __name__ == "__main__":
