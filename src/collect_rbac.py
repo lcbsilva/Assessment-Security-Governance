@@ -71,17 +71,70 @@ def summarize_rbac_posture(rows: list[dict]) -> dict:
     }
 
 
+def query_all_pages(client: object, query: str, subscription_ids: list[str], QueryRequest: object, QueryRequestOptions: object) -> tuple[list[dict], str | None]:
+    """Fetch every ARG page; return rows and an error note when coverage is incomplete."""
+    rows: list[dict] = []
+    skip_token: str | None = None
+    seen_tokens: set[str] = set()
+    while True:
+        options = QueryRequestOptions(result_format="objectArray", top=5000, skip_token=skip_token)
+        request = QueryRequest(subscriptions=subscription_ids, query=query, options=options)
+        try:
+            response = client.resources(request)
+        except Exception as exc:
+            note = f"{type(exc).__name__}: {exc}"
+            return rows, note
+        rows.extend(response.data or [])
+        next_token = getattr(response, "skip_token", None)
+        if not next_token:
+            return rows, None
+        next_token = str(next_token)
+        if next_token in seen_tokens:
+            return rows, "Azure Resource Graph repetiu o skip_token; a paginação foi interrompida para evitar loop."
+        seen_tokens.add(next_token)
+        skip_token = next_token
+
+
+def _collection_result(started: str, rows: list[dict], status: str, note: str) -> dict:
+    return {
+        "metadata": {"collected_at": started, "modules": {"governance": status}},
+        "discovery": {
+            "rbac": rows,
+            "rbac_summary": summarize_rbac_posture(rows),
+            "collection_log": [{
+                "module": "RBAC",
+                "source": "AuthorizationResources / Azure Resource Graph",
+                "status": status,
+                "records": len(rows),
+                "note": note,
+            }],
+        },
+    }
+
+
 def collect(subscription_ids: list[str]) -> dict:
     from azure.identity import DefaultAzureCredential
     from azure.mgmt.resourcegraph import ResourceGraphClient
     from azure.mgmt.resourcegraph.models import QueryRequest, QueryRequestOptions
 
     started = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    if not subscription_ids:
+        return _collection_result(started, [], "not_available", "Nenhuma subscription foi informada; não é possível validar RBAC.")
+
     credential = DefaultAzureCredential(exclude_interactive_browser_credential=True)
     client = ResourceGraphClient(credential)
-    options = QueryRequestOptions(result_format="objectArray", top=5000)
-    assignments = client.resources(QueryRequest(subscriptions=subscription_ids, query=ASSIGNMENTS_QUERY, options=options)).data or []
-    roles = client.resources(QueryRequest(subscriptions=subscription_ids, query=ROLES_QUERY, options=options)).data or []
+    assignments, assignment_error = query_all_pages(
+        client, ASSIGNMENTS_QUERY, subscription_ids, QueryRequest, QueryRequestOptions
+    )
+    if assignment_error and not assignments:
+        return _collection_result(
+            started, [], "not_available",
+            f"Falha ao coletar atribuições RBAC: {assignment_error}",
+        )
+
+    roles, role_error = query_all_pages(
+        client, ROLES_QUERY, subscription_ids, QueryRequest, QueryRequestOptions
+    )
     role_map = {}
     for item in roles:
         role_id = str(item.get("roleDefinitionId", ""))
@@ -109,7 +162,15 @@ def collect(subscription_ids: list[str]) -> dict:
             "review_reason": review_reason,
             "subscription": item.get("subscriptionId", "—"),
         })
-    return {
-        "metadata": {"collected_at": started, "modules": {"governance": "success"}},
-        "discovery": {"rbac": rows, "rbac_summary": summarize_rbac_posture(rows), "collection_log": [{"module": "RBAC", "source": "AuthorizationResources / Azure Resource Graph", "status": "success", "records": len(rows), "note": "Atribuições e funções; PIM e revisão de acesso exigem enriquecimento adicional."}]},
-    }
+
+    if assignment_error:
+        status = "partial"
+        note = f"Atribuições RBAC parcialmente coletadas: {assignment_error}"
+    elif rows and (role_error or not roles):
+        status = "partial"
+        detail = role_error or "nenhuma definição de função foi retornada para enriquecer as atribuições."
+        note = f"Atribuições coletadas, mas nomes/classificação de funções incompletos: {detail}"
+    else:
+        status = "success"
+        note = "Atribuições e definições de função paginadas no escopo informado; PIM e revisão de acesso exigem enriquecimento adicional."
+    return _collection_result(started, rows, status, note)
