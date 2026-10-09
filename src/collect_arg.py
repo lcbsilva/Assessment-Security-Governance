@@ -630,12 +630,27 @@ def resource_map(resources: list[dict]) -> dict:
 
 def defender_summary(scores: list[dict], controls: list[dict]) -> dict:
     """Calcula potencial de ganho do Secure Score sem inventar pontos."""
-    score_rows = [{"subscription": row.get("subscriptionId", "—"), "current": row.get("current", 0) or 0, "max": row.get("max", 0) or 0, "percentage": row.get("percentage", 0) or 0} for row in scores]
+    score_rows = [{
+        "subscription": row.get("subscriptionId", "—"),
+        "score_resource": row.get("name") or "—",
+        "current": row.get("current", 0) or 0,
+        "max": row.get("max", 0) or 0,
+        "percentage": row.get("percentage", 0) or 0,
+    } for row in scores]
     control_rows = []
     for row in controls:
         maximum = float(row.get("max") or 0)
         current = float(row.get("current") or 0)
-        control_rows.append({"subscription": row.get("subscriptionId", "—"), "control": row.get("displayName") or row.get("name") or "—", "score": current, "max_score": maximum, "potential_score_increase": round(max(0.0, maximum - current), 2), "unhealthy_resources": row.get("unhealthy") or "—", "healthy_resources": row.get("healthy") or "—"})
+        control_rows.append({
+            "subscription": row.get("subscriptionId", "—"),
+            "control_resource": row.get("name") or "—",
+            "control": row.get("displayName") or row.get("name") or "—",
+            "score": current,
+            "max_score": maximum,
+            "potential_score_increase": round(max(0.0, maximum - current), 2),
+            "unhealthy_resources": row.get("unhealthy") or "—",
+            "healthy_resources": row.get("healthy") or "—",
+        })
     control_rows.sort(key=lambda x: (-float(x.get("potential_score_increase", 0)), str(x.get("control", ""))))
     return {"scores": score_rows, "controls": control_rows, "top_improvements": control_rows[:10], "interpretation": "Potential score increase uses Defender Secure Score control points returned by Azure; it is prioritization context, not guaranteed risk reduction."}
 
