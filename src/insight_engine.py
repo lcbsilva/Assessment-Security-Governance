@@ -246,8 +246,9 @@ def apply_control_source_gates(controls: list[dict], evidence_rows: list[dict]) 
         if source_status != "success":
             row.update({
                 "status": "not_available",
-                # Hide derived scores when their required evidence gate fails;
-                # the report should show N/D instead of a provisional number.
+                # Do not leave a calculated number visible after its required
+                # evidence gate failed. The report must show N/D, not a
+                # provisional score that can be mistaken for an assessment.
                 "score": None,
                 "confidence": "low",
                 "evidence_state": "INSUFFICIENT_EVIDENCE",
@@ -278,6 +279,93 @@ def attach_finding_lineage(findings: list[dict], control_rows: list[dict]) -> li
             row.setdefault("control_confidence", {"alta": "high", "média": "medium", "baixa": "low"}.get(source.get("confidence"), "low"))
         enriched.append(row)
     return enriched
+
+
+
+_INSIGHT_SOURCE_REQUIREMENTS = {
+    "I-001": (("Identity", "Identity basic"), ("Directory roles",), ("Role members:",)),
+    "I-002": (("Identity", "Identity basic"), ("Directory roles",), ("Role members:",)),
+    "I-003": (("Conditional Access",),),
+    "I-004": (("RBAC",),),
+    "I-005": (("App registrations",),),
+    "I-006": (("Application consents",),),
+    "I-007": (("Azure inventory",),),
+    "I-008": (("Azure inventory",),),
+    "I-009": (("Azure inventory",),),
+    "I-010": (("Azure Policy",),),
+    "X-001": (("Identity", "Identity basic"), ("MFA",), ("Directory roles",), ("Role members:",)),
+    "X-002": (("Azure inventory",),),
+    "X-003": (("Azure inventory",),),
+    "X-004": (("RBAC",), ("Identity", "Identity basic"), ("MFA",)),
+    "XDI-001": (("RBAC",), ("Identity", "Identity basic"), ("MFA",), ("Directory roles",), ("Role members:",)),
+    "XDI-002": (("Orphan resources",), ("Azure Advisor",)),
+    "XDI-003": (("Cost Management",), ("Azure Advisor",)),
+}
+
+
+def gate_insights(insights: list[dict], collection_log: list[dict]) -> list[dict]:
+    """Keeps correlations visible but makes incomplete-source insights conditional."""
+    status_order = ("error", "partial", "not_available", "not_run", "unknown")
+
+    def matches(module: str, token: str) -> bool:
+        module = module.casefold()
+        token = token.casefold()
+        return module.startswith(token) if token.endswith(":") else module == token
+
+    def group_status(tokens: tuple[str, ...]) -> tuple[str, list[dict]]:
+        rows = [row for row in collection_log if any(matches(str(row.get("module", "")), token) for token in tokens)]
+        if not rows:
+            return "not_available", []
+        states = [str(row.get("status", "unknown")).casefold() for row in rows]
+        if len(tokens) == 1 and tokens[0].endswith(":"):
+            for state in status_order:
+                if state in states:
+                    return state, rows
+            return "unknown", rows
+        if "success" in states:
+            return "success", rows
+        for state in status_order:
+            if state in states:
+                return state, rows
+        return "unknown", rows
+
+    result = []
+    for insight in insights:
+        row = dict(insight)
+        requirements = _INSIGHT_SOURCE_REQUIREMENTS.get(str(row.get("id")), ())
+        if not requirements:
+            row.update({
+                "evidence_state": "INSUFFICIENT_EVIDENCE",
+                "evidence_confidence": "baixa",
+                "priority_eligibility": "conditional_review",
+                "priority": "P2" if row.get("priority") == "P1" else row.get("priority", "P2"),
+                "source_status": "not_declared",
+                "source_statuses": ["not_declared"],
+                "coverage_guardrail": "As fontes necessárias para este insight não estão mapeadas; validar evidências antes de tratá-lo como risco confirmado.",
+                "priority_rationale": "Revisão condicional: fontes necessárias ainda não estão declaradas no contrato de evidência.",
+            })
+            result.append(row)
+            continue
+        states = [group_status(group)[0] for group in requirements]
+        if requirements and any(state != "success" for state in states):
+            source_status = next((state for state in status_order if state in states), "unknown")
+            row.update({
+                "evidence_state": "INSUFFICIENT_EVIDENCE",
+                "evidence_confidence": "baixa",
+                "priority_eligibility": "conditional_review",
+                "priority": "P2" if row.get("priority") == "P1" else row.get("priority", "P2"),
+                "source_status": source_status,
+                "source_statuses": states,
+                "coverage_guardrail": "Sinal observado em cobertura incompleta; validar o escopo e as fontes ausentes antes de tratar como risco confirmado.",
+                "priority_rationale": "Revisão condicional: uma ou mais fontes necessárias estão parciais, indisponíveis ou não foram coletadas.",
+            })
+        else:
+            row.setdefault("evidence_state", "SUPPORTED")
+            row.setdefault("evidence_confidence", "média")
+            row.setdefault("priority_eligibility", "eligible")
+            row.setdefault("source_status", "success")
+        result.append(row)
+    return result
 
 
 def executive_actions(findings: list[dict]) -> list[dict]:

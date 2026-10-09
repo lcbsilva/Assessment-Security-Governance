@@ -78,6 +78,7 @@ class ReportEvidenceRegressionTests(unittest.TestCase):
             "collection_log": [
                 {"module": "Identity basic", "status": "success"},
                 {"module": "MFA", "status": "success"},
+                {"module": "Directory roles", "status": "success"},
                 {"module": "RBAC", "status": "success"},
                 {"module": "Azure inventory", "status": "success"},
                 {"module": "Azure Policy", "status": "success"},
@@ -90,6 +91,18 @@ class ReportEvidenceRegressionTests(unittest.TestCase):
                       "RBAC alto risco", "Recursos públicos",
                       "Policy: soma de não conformidades", "Endpoints em atenção"):
             self.assertIn(f"<span>{label}</span><b>0</b>", html)
+
+
+    def test_missing_directory_roles_source_does_not_claim_zero_privileged_accounts(self):
+        data = {"discovery": {
+            "users": [], "user_summary": {"Privilegiados sem MFA": 0},
+            "collection_log": [
+                {"module": "Identity", "status": "success"},
+                {"module": "MFA", "status": "success"},
+            ],
+        }}
+        html = render_executive_security_kpis(data)
+        self.assertIn("<span>Privilegiados sem MFA</span><b>Sem evidência</b>", html)
 
     def test_policy_exempt_and_unknown_not_counted_as_noncompliant(self):
         data = {

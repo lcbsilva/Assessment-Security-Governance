@@ -133,14 +133,18 @@ def credential_posture(credentials: list[dict], now: datetime | None = None) -> 
 
 
 def secure_score_summary(scores: list[dict], controls: list[dict]) -> dict:
-    """Normaliza a postura do Secure Score sem enviar detalhes sensíveis à IA."""
-    latest = scores[0] if scores else {}
-    current = float(latest.get("currentScore", 0) or 0)
-    maximum = float(latest.get("maxScore", 0) or 0)
+    """Normaliza somente o snapshot mais recente cuja data possa ser verificada."""
+    from secure_score import latest_secure_score
+
+    latest = latest_secure_score(scores)
+    current = float(latest.get("currentScore", 0) or 0) if latest else None
+    maximum = float(latest.get("maxScore", 0) or 0) if latest else None
     return {
         "current": current,
         "maximum": maximum,
-        "percentage": round(current / maximum * 100, 1) if maximum else None,
+        "percentage": round(current / maximum * 100, 1) if current is not None and maximum else None,
+        "snapshot_status": "verified_latest" if latest else ("unverifiable_order" if scores else "not_available"),
+        "snapshots_received": len(scores),
         "recommendations": len(controls),
         "high_impact_recommendations": sum(1 for item in controls if str(item.get("implementationCost", "")).lower() in {"low", "medium"} and float(item.get("maxScore", 0) or 0) > 0),
     }
@@ -338,7 +342,7 @@ def collect() -> dict:
     subscribed_skus = get_all("/subscribedSkus?$select=skuPartNumber,skuId,consumedUnits,prepaidUnits,capabilityStatus&$top=999", "M365 licenses", "LicenseAssignment.Read.All")
     policies = get_all("/identity/conditionalAccess/policies", "Conditional Access", "Policy.Read.All")
     risky = get_all("/identityProtection/riskyUsers?$select=id,userDisplayName,userPrincipalName,riskLevel,riskState", "Identity risk", "IdentityRiskyUser.Read.All")
-    secure_scores = get_all("/security/secureScores?$top=5", "Secure Score", "SecurityEvents.Read.All")
+    secure_scores = get_all("/security/secureScores?$top=5&$orderby=createdDateTime%20desc", "Secure Score", "SecurityEvents.Read.All")
     secure_score_controls = get_all("/security/secureScoreControlProfiles?$top=999", "Secure Score controls", "SecurityEvents.Read.All")
     devices = get_all("/devices?$select=id,displayName,operatingSystem,operatingSystemVersion,trustType,isCompliant,isManaged,approximateLastSignInDateTime&$top=999", "Entra devices", "Device.Read.All")
     managed_devices = get_all("/deviceManagement/managedDevices?$select=id,deviceName,operatingSystem,osVersion,complianceState,managementState,lastSyncDateTime,userPrincipalName&$top=999", "Intune managed devices", "DeviceManagementManagedDevices.Read.All")

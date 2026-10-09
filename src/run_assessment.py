@@ -34,6 +34,7 @@ from insight_engine import (
     enrich_rbac_identity,
     cross_domain_insights,
     prioritize_findings,
+    gate_insights,
 )
 from version import engine_version
 from execution_health import (
@@ -930,19 +931,16 @@ def main() -> None:
         )
     )
 
-    payload["discovery"][
-        "risk_intersections"
-    ] = risk_intersections(
-        payload["discovery"]
+    collection_log = payload["discovery"]["collection_log"]
+    payload["discovery"]["risk_intersections"] = gate_insights(
+        risk_intersections(payload["discovery"]),
+        collection_log,
     )
 
-    payload["discovery"][
-        "cross_domain_insights"
-    ] = cross_domain_insights(
-        payload["discovery"]
-    ) + build_cross_domain_intelligence(
-        payload["discovery"],
-        payload["discovery"]["collection_log"],
+    payload["discovery"]["cross_domain_insights"] = gate_insights(
+        cross_domain_insights(payload["discovery"])
+        + build_cross_domain_intelligence(payload["discovery"], collection_log),
+        collection_log,
     )
 
     payload["metadata"][

@@ -7,6 +7,8 @@ As regras são intencionalmente conservadoras: falta de evidência gera
 
 from __future__ import annotations
 
+from secure_score import latest_secure_score
+
 
 def status(score: int | None) -> str:
     if score is None:
@@ -97,6 +99,7 @@ def derive(data: dict, catalog: dict) -> dict:
     policy_rows = discovery.get("policy_compliance", [])
     legacy_summary = discovery.get("legacy_auth_summary", {})
     secure_scores = discovery.get("secure_score", [])
+    latest_secure_score_row = latest_secure_score(secure_scores)
     secure_score_controls = discovery.get("secure_score_controls", [])
     devices = discovery.get("devices", [])
     pim_summary = discovery.get("pim_summary", {})
@@ -235,8 +238,8 @@ def derive(data: dict, catalog: dict) -> dict:
         findings.append(finding("COST-002", "Avisos de ciclo de vida exigem acompanhamento", "high", 76, 4, len(retirements), f"{len(retirements)} avisos de Service Health relacionados ao ciclo de vida foram encontrados.", [f"Avisos encontrados: {len(retirements)}"], "Confirmar impacto por recurso, alternativa suportada e plano de migração.", "Cloud Governance + Owners", "ServiceHealthResources / Azure Resource Graph", {"30": "Confirmar escopo e responsáveis.", "60": "Executar atualização ou migração prioritária.", "90": "Implantar acompanhamento contínuo."}))
     else:
         put("COST-002", None, "low")
-    if secure_scores:
-        latest = secure_scores[0]
+    if latest_secure_score_row:
+        latest = latest_secure_score_row
         current = float(latest.get("currentScore", 0) or 0)
         maximum = float(latest.get("maxScore", 0) or 0)
         secure_score = round(current / maximum * 100) if maximum else None

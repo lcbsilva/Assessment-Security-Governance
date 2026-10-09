@@ -60,7 +60,8 @@ def build_executive_metrics(data: dict) -> list[dict]:
         row for row in logs
         if str(row.get("module", "")).casefold().startswith("role members:")
     ]
-    privileged_statuses = [identity_status, mfa_status]
+    directory_roles_status = _status_for_names(logs, ("Directory roles",))
+    privileged_statuses = [identity_status, mfa_status, directory_roles_status]
     if role_member_logs:
         privileged_statuses.extend(str(row.get("status", "unknown")).casefold() for row in role_member_logs)
     privileged_mfa_status = _combined_status(privileged_statuses)
@@ -103,7 +104,7 @@ def build_executive_metrics(data: dict) -> list[dict]:
 
     return [
         item("identity_mfa", "Sem MFA", mfa_users, identity_mfa_status, ["Identity", "MFA"], "Contagem observada; depende de usuários e registro MFA completos."),
-        item("privileged_mfa", "Privilegiados sem MFA", privileged_without_mfa, privileged_mfa_status, ["Identity", "MFA", "Role members"], "Contagem observada; depende da resolução completa de membros privilegiados."),
+        item("privileged_mfa", "Privilegiados sem MFA", privileged_without_mfa, privileged_mfa_status, ["Identity", "MFA", "Directory roles", "Role members"], "Contagem observada; depende da resolução completa de membros privilegiados."),
         item("identity_guests", "Convidados externos", guests, identity_status, ["Identity"], "Contagem de contas classificadas como guest na fonte Identity."),
         item("rbac_high_risk", "RBAC alto risco", high_risk_rbac, _status_for_names(logs, ("RBAC",)), ["RBAC"], "Atribuições de alto/crítico observadas; não equivale a uso efetivo."),
         item("azure_public_resources", "Recursos públicos", public_resources, _status_for_names(logs, ("Azure inventory",)), ["Azure inventory"], "Sinais públicos explícitos encontrados no inventário concluído."),
