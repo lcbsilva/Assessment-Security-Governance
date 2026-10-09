@@ -108,33 +108,90 @@ def risk_intersections(discovery: dict) -> list[dict]:
 
 
 def control_evidence(data: dict, catalog: dict) -> list[dict]:
-    """Relaciona cada controle às fontes e janelas de coleta que podem sustentá-lo."""
-    tokens_by_control = {
-        "ID-001": ("MFA",), "ID-002": ("MFA", "Directory roles"), "ID-003": ("Conditional Access",),
-        "ID-004": ("Conditional Access",), "ID-005": ("Sign-ins / legacy auth",),
-        "ID-006": ("Identity basic", "Groups"), "ID-007": ("PIM",), "ID-008": ("Identity", "Groups"),
-        "ID-009": ("PIM",), "SEC-001": ("Secure Score",), "SEC-002": ("Entra devices", "Intune managed devices"),
-        "SEC-003": ("Enterprise applications", "App registrations"), "SEC-004": ("Directory audit events",),
-        "SEC-005": ("Defender alerts", "Defender vulnerabilities"), "GOV-001": ("Azure hierarchy",),
-        "GOV-002": ("Azure inventory",), "GOV-003": ("RBAC",), "GOV-004": ("Azure inventory",),
-        "GOV-005": ("Azure Policy",), "GOV-006": ("Azure Policy",), "COST-001": ("Orphan resources", "Cost Management"),
-        "COST-002": ("Service retirement",), "CMP-001": ("Purview DLP", "DLP policies"),
-        "CMP-002": ("Purview labels", "Sensitivity labels"), "CMP-003": ("Purview retention", "Retention policies"),
+    """Relates controls to all required sources and reports the least-complete state."""
+    source_requirements = {
+        "ID-001": (("MFA",),),
+        "ID-002": (("Identity", "Identity basic"), ("MFA",), ("Directory roles",), ("Role members:",)),
+        "ID-003": (("Conditional Access",),),
+        "ID-004": (("Conditional Access",),),
+        "ID-005": (("Sign-ins / legacy auth",),),
+        "ID-006": (("Identity", "Identity basic"),),
+        "ID-007": (("PIM active assignments",), ("PIM eligible assignments",)),
+        "ID-008": (("Identity", "Identity basic"),),
+        "ID-009": (("PIM active assignments",), ("PIM eligible assignments",)),
+        "SEC-001": (("Secure Score",),),
+        "SEC-002": (("Entra devices",), ("Intune managed devices",)),
+        "SEC-003": (("Enterprise applications",), ("App registrations",)),
+        "SEC-004": (("Directory audit events",),),
+        "SEC-005": (("Defender alerts",),),
+        "GOV-001": (("Azure hierarchy",),),
+        "GOV-002": (("Azure inventory",),),
+        "GOV-003": (("RBAC",),),
+        "GOV-004": (("Azure inventory",),),
+        "GOV-005": (("Azure Policy",),),
+        "GOV-006": (("Azure Policy",),),
+        "COST-001": (("Orphan resources",),),
+        "COST-002": (("Service retirement",),),
+        "CMP-001": (("Purview DLP", "DLP policies"),),
+        "CMP-002": (("Purview labels", "Sensitivity labels"),),
+        "CMP-003": (("Purview retention", "Retention policies"),),
     }
-    logs = data.get("discovery", {}).get("collection_log", [])
+    logs = data.get("discovery", {}).get("collection_log", []) or []
     controls_by_id = {str(item.get("id")): item for item in data.get("controls", [])}
     rank = {"success": 0, "partial": 1, "not_available": 2, "not_run": 3, "error": 4}
+    status_precedence = ("error", "partial", "not_available", "not_run", "unknown")
     rows = []
+
+    def matches_token(module: str, token: str) -> bool:
+        normalized = module.casefold()
+        expected = token.casefold()
+        return normalized.startswith(expected) if expected.endswith(":") else normalized == expected
+
+    def group_status(tokens: tuple[str, ...]) -> tuple[str, list[dict]]:
+        candidates = [log for log in logs if any(matches_token(str(log.get("module", "")), token) for token in tokens)]
+        if not candidates:
+            return "not_available", []
+        # A source group can contain explicit fallbacks (for example Identity
+        # with/without signInActivity). A successful fallback is usable unless
+        # a separate required source group is incomplete.
+        statuses = [str(log.get("status", "unknown")).casefold() for log in candidates]
+        if "success" in statuses:
+            return "success", candidates
+        for state in status_precedence:
+            if state in statuses:
+                return state, candidates
+        return "unknown", candidates
+
     for control in catalog.get("controls", []):
         control_id = str(control.get("id"))
-        tokens = tokens_by_control.get(control_id, ())
-        matches = [log for log in logs if any(token.casefold() in str(log.get("module", "")).casefold() for token in tokens)]
-        matches.sort(key=lambda log: (rank.get(str(log.get("status", "unknown")), 5), str(log.get("module", ""))))
-        best = matches[0] if matches else {}
+        requirements = source_requirements.get(control_id, ())
+        required_statuses = []
+        required_logs = []
+        for group in requirements:
+            state, candidates = group_status(group)
+            required_statuses.append(state)
+            required_logs.extend(candidates)
+        tokens = tuple(token for group in requirements for token in group)
+        if not requirements:
+            tokens = ()
+        matches = [
+            log for log in logs
+            if any(token.casefold() in str(log.get("module", "")).casefold() for token in tokens)
+        ]
+        # Preserve all source rows linked to the control, including related
+        # rows that are useful for diagnosis but are not a required gate.
+        matches = list({id(log): log for log in [*matches, *required_logs]}.values())
+        matches.sort(key=lambda log: (rank.get(str(log.get("status", "unknown")).casefold(), 5), str(log.get("module", ""))), reverse=True)
+        worst = matches[0] if matches else {}
         result = controls_by_id.get(control_id, {})
-        status = best.get("status", "not_available")
-        control_confidence = str(result.get("confidence", "low"))
-        confidence = {"high": "alta", "medium": "média", "low": "baixa"}.get(control_confidence, "baixa")
+        if required_statuses:
+            status = next((state for state in status_precedence if state in required_statuses), "success")
+            if all(state == "success" for state in required_statuses):
+                status = "success"
+        else:
+            status = str(worst.get("status", "not_available")).casefold()
+        control_confidence = str(result.get("confidence", "low")).lower()
+        confidence = "baixa" if status != "success" else {"high": "alta", "medium": "média", "low": "baixa"}.get(control_confidence, "baixa")
         source_list = [
             {key: log.get(key) for key in ("module", "source", "status", "records", "started_at", "finished_at", "duration_seconds", "limitation_category") if log.get(key) not in (None, "")}
             for log in matches
@@ -151,23 +208,46 @@ def control_evidence(data: dict, catalog: dict) -> list[dict]:
                 "error": "Falha controlada; consultar o manifesto técnico confidencial.",
             }
             limitation = "; ".join(dict.fromkeys(
-                limitation_by_status.get(str(log.get("status")), "Consultar evidência normalizada do controle.")
+                limitation_by_status.get(str(log.get("status", "")).casefold(), "Consultar evidência normalizada do controle.")
                 for log in matches
             ))
+            if status != "success" and all(str(log.get("status", "")).casefold() == "success" for log in matches):
+                limitation += "; Uma ou mais fontes requeridas não foram registradas."
         else:
             window = {"started_at": None, "finished_at": None}
             window_display = "Não coletado nesta execução"
             limitation = "Nenhuma fonte correspondente foi coletada nesta execução; evidência insuficiente."
+        evidence_state = result.get("evidence_state", "INSUFFICIENT_EVIDENCE") if status == "success" else "INSUFFICIENT_EVIDENCE"
         rows.append({
             "control_id": control_id, "control": control.get("title"), "domain": control.get("domain"),
-            "module": best.get("module", "Fonte não coletada"), "source": best.get("source", "Não disponível"),
-            "status": status, "evidence_state": result.get("evidence_state", "INSUFFICIENT_EVIDENCE"),
-            "records": best.get("records", 0), "confidence": confidence, "limitation": limitation,
+            "module": worst.get("module", "Fonte não coletada"), "source": worst.get("source", "Não disponível"),
+            "status": status, "evidence_state": evidence_state,
+            "records": worst.get("records", 0), "confidence": confidence, "limitation": limitation,
             "collection_window": window, "collection_window_display": window_display,
             "sources": source_list,
             "sources_display": "; ".join(dict.fromkeys(str(item.get("source", "")) for item in source_list if item.get("source"))) or "Não disponível",
         })
     return rows
+
+
+def apply_control_source_gates(controls: list[dict], evidence_rows: list[dict]) -> list[dict]:
+    """Prevents scores from appearing evaluated when a required source is incomplete."""
+    evidence_by_id = {str(item.get("control_id")): item for item in evidence_rows}
+    gated = []
+    for control in controls:
+        row = dict(control)
+        evidence = evidence_by_id.get(str(row.get("id")), {})
+        source_status = str(evidence.get("status", "not_available")).casefold()
+        if source_status != "success":
+            row.update({
+                "status": "not_available",
+                "confidence": "low",
+                "evidence_state": "INSUFFICIENT_EVIDENCE",
+                "evidence_reason": "required_source_incomplete",
+                "source_collection_status": source_status,
+            })
+        gated.append(row)
+    return gated
 
 
 def attach_finding_lineage(findings: list[dict], control_rows: list[dict]) -> list[dict]:
