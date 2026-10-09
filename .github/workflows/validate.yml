@@ -74,3 +74,26 @@ jobs:
         run: python3 src/generate_report.py --data mock/assessment.json --output dist/assessment.html
       - name: Run report E2E
         run: npx playwright test
+
+  powershell-runner:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Parse tenant-scoped PowerShell entry points
+        shell: pwsh
+        run: |
+          $paths = @("scripts/run-assessment.ps1", "scripts/run-consultant-flow.ps1")
+          foreach ($path in $paths) {
+            $tokens = $null
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path $PWD $path),
+              [ref]$tokens,
+              [ref]$parseErrors
+            )
+            if ($parseErrors.Count -gt 0) {
+              $parseErrors | ForEach-Object { Write-Error $_.Message }
+              throw "PowerShell parse failed: $path"
+            }
+          }
