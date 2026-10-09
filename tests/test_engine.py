@@ -458,6 +458,11 @@ class EngineContractTests(unittest.TestCase):
         control = next(item for item in result["controls"] if item["id"] == "GOV-001")
         self.assertEqual(control["score"], 85)
 
+    def test_preflight_requires_python_version_tested_in_ci(self):
+        preflight = (ROOT / "src" / "preflight.py").read_text(encoding="utf-8")
+        self.assertIn("sys.version_info >= (3, 11)", preflight)
+        self.assertIn("Python 3.11+", preflight)
+
     def test_preflight_contract_has_safe_status_and_no_write_actions(self):
         preflight = (ROOT / "src" / "preflight.py").read_text(encoding="utf-8")
         self.assertIn("preflight.json", preflight)

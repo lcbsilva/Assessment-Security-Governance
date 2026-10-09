@@ -10,15 +10,14 @@ Para uma primeira avaliação, o mais importante é observar se o fluxo é intui
 
 ## Pré-requisitos
 
-Use PowerShell 7, Python 3.10+ e Azure CLI. Você precisa estar autenticada em um tenant de teste/autorizado e possuir acesso de leitura suficiente para o escopo que pretende avaliar. Módulos opcionais podem aparecer como `partial` ou `not_available`; isso é esperado quando faltam licença, consentimento, retenção, configuração ou cobertura da API e **não significa conformidade**.
+Use PowerShell 7, Python 3.11+ e Azure CLI. Você precisa estar autenticada em um tenant de teste/autorizado e possuir acesso de leitura suficiente para o escopo que pretende avaliar. Módulos opcionais podem aparecer como `partial` ou `not_available`; isso é esperado quando faltam licença, consentimento, retenção, configuração ou cobertura da API e **não significa conformidade**.
 
-Clone o repositório e instale as dependências:
+Clone o repositório. O próprio fluxo instala as dependências em um ambiente Python isolado dentro da pasta do projeto; ele não instala pacotes no Python global:
 
 ```powershell
 git clone https://github.com/lcbsilva/Assessment-Security-Governance.git assessment-swo
 cd assessment-swo
-python -m pip install -r requirements.txt
-az login
+az login --tenant "<tenant-id>"
 ```
 
 Confirme explicitamente onde está autenticada:

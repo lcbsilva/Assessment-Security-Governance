@@ -21,14 +21,19 @@ foreach ($id in $requested) {
 }
 
 Write-Host "1/4 Guardrail de tenant e subscriptions aprovado."
-& "$PSScriptRoot/run-assessment.ps1" -Subscriptions ($requested -join ",") -OutputRoot $OutputRoot -Profile $Profile
+& "$PSScriptRoot/run-assessment.ps1" -Subscriptions ($requested -join ",") -OutputRoot $OutputRoot -Profile $Profile -ExpectedTenantId $ExpectedTenantId
 if ($LASTEXITCODE -ne 0) { throw "Assessment bloqueado. Consulte os diagnósticos em $OutputRoot." }
 
+$pythonPath = Join-Path $root ".assessment-venv/Scripts/python.exe"
+if (-not (Test-Path $pythonPath -PathType Leaf)) {
+    throw "Ambiente isolado do assessment não encontrado. Execute novamente run-assessment.ps1."
+}
+
 Write-Host "2/4 Assessment e artefatos concluídos."
-python src/delivery_gate.py --data (Join-Path $OutputRoot "assessment.json") --artifact-validation (Join-Path $OutputRoot "artifact-validation.json") --output (Join-Path $OutputRoot "delivery-gate.json")
+& $pythonPath src/delivery_gate.py --data (Join-Path $OutputRoot "assessment.json") --artifact-validation (Join-Path $OutputRoot "artifact-validation.json") --output (Join-Path $OutputRoot "delivery-gate.json")
 if ($LASTEXITCODE -ne 0) { throw "Delivery Gate bloqueou a entrega. Consulte delivery-gate.json." }
 
 Write-Host "3/4 Delivery Gate aprovado."
-python src/release_gate.py --data (Join-Path $OutputRoot "assessment.json") --output (Join-Path $OutputRoot "release-gate.json")
+& $pythonPath src/release_gate.py --data (Join-Path $OutputRoot "assessment.json") --output (Join-Path $OutputRoot "release-gate.json")
 if ($LASTEXITCODE -ne 0) { throw "Release Gate bloqueou a execução." }
 Write-Host "4/4 Fluxo consultivo concluído. Revise dist/assessment.html e os artefatos antes da entrega ao cliente."

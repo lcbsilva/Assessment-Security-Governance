@@ -74,3 +74,58 @@ jobs:
         run: python3 src/generate_report.py --data mock/assessment.json --output dist/assessment.html
       - name: Run report E2E
         run: npx playwright test
+
+  powershell-runner:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Parse tenant-scoped PowerShell entry points
+        shell: pwsh
+        run: |
+          $paths = @("scripts/run-assessment.ps1", "scripts/run-consultant-flow.ps1", "scripts/run-focused-pilot.ps1")
+          foreach ($path in $paths) {
+            $tokens = $null
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path $PWD $path),
+              [ref]$tokens,
+              [ref]$parseErrors
+            )
+            if ($parseErrors.Count -gt 0) {
+              $parseErrors | ForEach-Object { Write-Error $_.Message }
+              throw "PowerShell parse failed: $path"
+            }
+          }
+
+      - name: Exercise tenant and subscription guards without Azure access
+        shell: pwsh
+        run: |
+          function global:az {
+            $global:LASTEXITCODE = 0
+            if ($args -contains "show") {
+              return '{"tenantId":"tenant-a","id":"subscription-a"}'
+            }
+            return '[{"tenantId":"tenant-a","id":"subscription-other"}]'
+          }
+
+          $runner = Join-Path $PWD "scripts/run-assessment.ps1"
+          $venv = Join-Path $PWD ".assessment-venv"
+          if (Test-Path $venv) { throw "Guard test requires a clean checkout without a venv." }
+
+          $tenantBlocked = $false
+          try {
+            & $runner -Subscriptions "subscription-a" -ExpectedTenantId "tenant-b"
+          } catch {
+            $tenantBlocked = $_.Exception.Message -like "*Tenant bloqueado pelo guardrail*"
+          }
+          if (-not $tenantBlocked) { throw "Mismatched tenant was not blocked." }
+
+          $subscriptionBlocked = $false
+          try {
+            & $runner -Subscriptions "subscription-a" -ExpectedTenantId "tenant-a"
+          } catch {
+            $subscriptionBlocked = $_.Exception.Message -like "*Escopo bloqueado*"
+          }
+          if (-not $subscriptionBlocked) { throw "Subscription outside the expected tenant was not blocked." }
+          if (Test-Path $venv) { throw "A guardrail failure created the Python environment before validation." }

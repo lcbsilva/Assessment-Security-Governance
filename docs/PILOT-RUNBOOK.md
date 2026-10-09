@@ -11,14 +11,14 @@ VM e sem executar alterações no tenant.
 2. Criar ou selecionar uma identidade dedicada somente leitura.
 3. Confirmar `Reader` no escopo Azure e as permissões Graph documentadas na
    [matriz de permissões](PERMISSIONS-MATRIX.md).
-4. Instalar Python 3.10 ou superior e Azure CLI.
+4. Instalar Python 3.11 ou superior e Azure CLI.
 5. Executar `az login` no tenant correto.
 
 ## Execução rápida no Windows
 
 ```powershell
 az login --tenant <tenant-id>
-.\scripts\run-assessment.ps1 -Subscriptions "<subscription-id>"
+.\scripts\run-consultant-flow.ps1 -ExpectedTenantId "<tenant-id>" -Subscriptions "<subscription-id>"
 ```
 
 Antes de uma coleta longa, execute o diagnóstico operacional:
