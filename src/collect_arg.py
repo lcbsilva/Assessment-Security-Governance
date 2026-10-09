@@ -833,48 +833,64 @@ def collect(subscription_ids: list[str]) -> dict:
     age_rows = [{"age_band": band, "resources": count, "percentage": f"{(count / len(rows) * 100):.1f}%" if rows else "0%"} for band, count in age_counts]
 
     try:
+        container_result = query_arg_all_pages(client, subscription_ids, CONTAINERS_QUERY, QueryRequest, QueryRequestOptions)
         container_rows = [{
             "name": item.get("name", "—"),
             "type": item.get("type", "—"),
             "subscription": item.get("subscriptionId", "—"),
             "tenant": item.get("tenantId", "—"),
-        } for item in query_arg_all_pages(client, subscription_ids, CONTAINERS_QUERY, QueryRequest, QueryRequestOptions)]
-        hierarchy_status = "success"
-        hierarchy_note = "Subscriptions, resource groups e management groups via ResourceContainers"
+        } for item in container_result]
+        hierarchy_status = arg_result_status(container_result)
+        hierarchy_note = arg_result_note("Hierarquia", container_result, "Subscriptions, resource groups e management groups via ResourceContainers")
     except Exception as exc:
         hierarchy_status = "not_available"
         hierarchy_note = f"Hierarquia indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        policy_rows = [policy_row(item) for item in query_arg_all_pages(client, subscription_ids, POLICY_QUERY, QueryRequest, QueryRequestOptions)]
-        policy_status = "success"
-        policy_note = "Azure Policy states via Azure Resource Graph"
+        policy_result = query_arg_all_pages(client, subscription_ids, POLICY_QUERY, QueryRequest, QueryRequestOptions)
+        policy_rows = [policy_row(item) for item in policy_result]
+        policy_status = arg_result_status(policy_result)
+        policy_note = arg_result_note("Azure Policy states", policy_result, "Azure Policy states via Azure Resource Graph")
     except Exception as exc:
         policy_status = "not_available"
         policy_note = f"Policy Insights indisponível: {type(exc).__name__}: {exc}"
 
     try:
-        assignment_rows = query_arg_all_pages(client, subscription_ids, POLICY_ASSIGNMENTS_QUERY, QueryRequest, QueryRequestOptions)
-        policy_definition_rows = query_arg_all_pages(client, subscription_ids, POLICY_DEFINITIONS_QUERY, QueryRequest, QueryRequestOptions)
-        policy_assignment_rows = enrich_policy_assignments([policy_assignment_row(item) for item in assignment_rows], policy_definition_rows)
-        assignment_status = "success"
-        assignment_note = "Policy assignments e parâmetros atribuídos via Azure Resource Graph."
+        assignment_result = query_arg_all_pages(client, subscription_ids, POLICY_ASSIGNMENTS_QUERY, QueryRequest, QueryRequestOptions)
+        definition_result = query_arg_all_pages(client, subscription_ids, POLICY_DEFINITIONS_QUERY, QueryRequest, QueryRequestOptions)
+        policy_definition_rows = list(definition_result)
+        policy_assignment_rows = enrich_policy_assignments([policy_assignment_row(item) for item in assignment_result], policy_definition_rows)
+        incomplete = not assignment_result.complete or not definition_result.complete
+        if not assignment_result.complete:
+            assignment_status = "partial" if assignment_result else "not_available"
+        elif incomplete or (assignment_result and not policy_definition_rows):
+            assignment_status = "partial"
+        else:
+            assignment_status = "success"
+        errors = [result.error for result in (assignment_result, definition_result) if result.error]
+        assignment_note = "Policy assignments e parâmetros via Azure Resource Graph."
+        if errors:
+            assignment_note += f" Coleta incompleta; {len(policy_assignment_rows)} registros preservados: " + "; ".join(errors)
+        elif assignment_result and not policy_definition_rows:
+            assignment_note += " Definições de Policy não retornadas; enriquecimento incompleto."
     except Exception as exc:
         assignment_status = "not_available"
         assignment_note = f"Policy assignments indisponíveis: {type(exc).__name__}: {exc}"
 
     try:
-        resource_group_rows = query_arg_all_pages(client, subscription_ids, RESOURCE_GROUP_QUERY, QueryRequest, QueryRequestOptions)
-        rg_status = "success"
-        rg_note = "Resource groups via ResourceContainers"
+        rg_result = query_arg_all_pages(client, subscription_ids, RESOURCE_GROUP_QUERY, QueryRequest, QueryRequestOptions)
+        resource_group_rows = list(rg_result)
+        rg_status = arg_result_status(rg_result)
+        rg_note = arg_result_note("Resource groups", rg_result, "Resource groups via ResourceContainers")
     except Exception as exc:
         rg_status = "not_available"
         rg_note = f"Resource groups indisponíveis: {type(exc).__name__}: {exc}"
 
     try:
-        network_health_rows = query_arg_all_pages(client, subscription_ids, NETWORK_HEALTH_QUERY, QueryRequest, QueryRequestOptions)
-        network_status = "success"
-        network_note = "Sinais de rede via Azure Resource Graph"
+        network_result = query_arg_all_pages(client, subscription_ids, NETWORK_HEALTH_QUERY, QueryRequest, QueryRequestOptions)
+        network_health_rows = list(network_result)
+        network_status = arg_result_status(network_result)
+        network_note = arg_result_note("Sinais de rede", network_result, "Sinais de rede via Azure Resource Graph")
     except Exception as exc:
         network_status = "not_available"
         network_note = f"Sinais de rede indisponíveis: {type(exc).__name__}: {exc}"
