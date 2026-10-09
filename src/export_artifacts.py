@@ -233,13 +233,13 @@ def write_xlsx(data: dict, path: Path) -> None:
     intel_sheet.append(["Recursos órfãos/não associados", hygiene.get("orphan_count", 0)])
     intel_sheet.append(["Sinais de rede em atenção", hygiene.get("network_attention_count", 0)])
     intel_sheet.append([])
-    intel_sheet.append(["Secure Score / Subscription", "Atual", "Máximo", "Percentual"])
+    intel_sheet.append(["Secure Score / Subscription", "Score resource", "Atual", "Máximo", "Percentual"])
     for item in secure.get("scores", []):
-        intel_sheet.append([item.get("subscription"), item.get("current"), item.get("max"), item.get("percentage")])
+        intel_sheet.append([item.get("subscription"), item.get("score_resource"), item.get("current"), item.get("max"), item.get("percentage")])
     intel_sheet.append([])
-    intel_sheet.append(["Controle Secure Score", "Atual", "Máximo", "Ganho potencial", "Recursos não saudáveis"])
+    intel_sheet.append(["Controle Secure Score", "Subscription", "Control resource", "Controle", "Atual", "Máximo", "Ganho potencial", "Recursos não saudáveis"])
     for item in secure.get("top_improvements", []):
-        intel_sheet.append([item.get("control"), item.get("score"), item.get("max_score"), item.get("potential_score_increase"), item.get("unhealthy_resources")])
+        intel_sheet.append([item.get("subscription"), item.get("control_resource"), item.get("control"), item.get("score"), item.get("max_score"), item.get("potential_score_increase"), item.get("unhealthy_resources")])
     intel_sheet.append([])
     intel_sheet.append(["Policy Assignment", "Escopo", "Definition", "Enforcement", "Parâmetro", "Default", "Assigned", "Effective", "Origem"])
     for assignment in intelligence.get("policy_assignments", []):
@@ -502,7 +502,7 @@ def write_pdf(data: dict, path: Path) -> None:
     story.append(Paragraph("Azure Intelligence", styles["Heading2"]))
     story.append(Paragraph(f"Resource Map: {graph.get('node_count', 0)} recursos e {graph.get('edge_count', 0)} relações demonstradas. Higiene: {hygiene.get('empty_resource_group_count', 0)} resource groups vazios, {hygiene.get('orphan_count', 0)} recursos órfãos/não associados e {hygiene.get('network_attention_count', 0)} sinais de rede em atenção.", styles["BodyText"]))
     for item in secure.get("top_improvements", [])[:5]:
-        story.append(Paragraph(f"Secure Score — {item.get('control')}: ganho potencial {item.get('potential_score_increase')} ponto(s), {item.get('unhealthy_resources')} recursos não saudáveis.", styles["BodyText"]))
+        story.append(Paragraph(f"Secure Score — {item.get('control')}: subscription {item.get('subscription', '—')}; controle {item.get('control_resource', '—')}; ganho potencial {item.get('potential_score_increase')} ponto(s), {item.get('unhealthy_resources')} recursos não saudáveis.", styles["BodyText"]))
     story.append(Paragraph("Indicadores executivos — cobertura e evidência", styles["Heading2"]))
     for metric in build_executive_metrics(data):
         story.append(Paragraph(
