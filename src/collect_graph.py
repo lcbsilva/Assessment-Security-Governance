@@ -476,6 +476,11 @@ def collect() -> dict:
         "Application consents", "PIM active assignments", "PIM eligible assignments",
         "PIM role definitions", "Directory roles",
     }
+    identity_endpoints.update(
+        str(item.get("module", ""))
+        for item in logs
+        if str(item.get("module", "")).startswith("Role members:")
+    )
     security_endpoints = {
         "Secure Score", "Secure Score controls", "Defender alerts",
         "Defender vulnerabilities", "Directory audit events",
