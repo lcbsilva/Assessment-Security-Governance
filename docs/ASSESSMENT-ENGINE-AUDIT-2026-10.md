@@ -30,6 +30,16 @@ Base revisada: branch `main`, repositório `lcbsilva/Assessment-Security-Governa
 
 **Aceite:** falha ou fonte desconhecida nunca vira zero; sucesso confirmado sem registros pode virar zero; HTML/PDF/PPTX/XLSX/JSON mantêm semântica compatível; diferenças de agregação (325 × 345) declaram método e unidade; recomendações repetidas expõem chave/dimensão ou são deduplicadas com regra verificável.
 
+### P0 — normalização resiliente e estado real dos endpoints Graph
+
+**Achados estáticos adicionais:** respostas Graph podem conter campos opcionais explicitamente nulos. A normalização de exclusões de Conditional Access somava esses valores como listas, e métodos MFA/tipos de grupo eram unidos diretamente. Um nulo nesses pontos poderia repetir o padrão da falha da Julia: exceção depois das chamadas e descarte do conjunto coletado.
+
+Também havia um indicador agregado baseado em contagem de registros: `identity` dependia de `users` não vazio e `security` de `secure_scores` não vazio. Isso confundia consulta bem-sucedida sem linhas com indisponibilidade e não refletia os resultados dos demais endpoints.
+
+**Correção proposta no PR de refinamento:** campos opcionais nulos são normalizados como coleções vazias sem inventar evidência; os estados de Identity e Security são derivados dos logs dos respectivos endpoints. Um teste sintético chama o coletor Graph completo e cobre usuários, políticas, grupos e métodos MFA com campos nulos; testes adicionais garantem que sucesso vazio permaneça sucesso e estados mistos resultem em parcial.
+
+**Aceite:** respostas sintéticas vazias com HTTP 200 produzem estado `success`; sucesso misturado com endpoint indisponível produz `partial`; falha total continua `error`/ `not_available` conforme os logs; nenhum dado de tenant é necessário para o teste.
+
 ### P1 — estados por módulo
 
 A metadata do coletor Graph declara apenas estados agregados de identidade e Secure Score. Outras áreas dependem de `collection_log` por endpoint, e consumidores que olham somente `metadata.modules` não conseguem distinguir cobertura de Conditional Access, Intune, PIM, aplicações, auditoria e Defender.
