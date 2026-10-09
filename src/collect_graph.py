@@ -213,9 +213,20 @@ def collect() -> dict:
     logs: list[dict] = []
     request_timeout = bounded_env_int("ASSESSMENT_GRAPH_REQUEST_TIMEOUT_SECONDS", 30, 5, 300)
     max_retries = bounded_env_int("ASSESSMENT_GRAPH_MAX_RETRIES", 3, 0, 5)
+    authentication_failed = False
 
     def get_all(path: str, module: str, permission_hint: str, max_pages: int | None = None) -> list[dict]:
+        nonlocal authentication_failed
         rows: list[dict] = []
+        if authentication_failed:
+            logs.append({
+                "module": module,
+                "source": "Microsoft Graph",
+                "status": "not_available",
+                "records": 0,
+                "note": "Consulta não executada: uma chamada anterior retornou HTTP 401; autenticação Graph indisponível nesta execução.",
+            })
+            return rows
         url = f"{GRAPH}{path}"
         pages = 0
         attempts = 0
@@ -250,6 +261,11 @@ def collect() -> dict:
             return rows
         except urllib.error.HTTPError as exc:
             note = graph_failure_note(exc.code, permission_hint)
+            if exc.code == 401:
+                # Authentication is tenant/session-wide for this bearer token.
+                # Stop issuing identical failed GETs, but keep evidence collected
+                # by earlier endpoints and make every skipped module explicit.
+                authentication_failed = True
             logs.append({"module": module, "source": "Microsoft Graph", "status": "partial" if rows else "not_available", "records": len(rows), "note": note})
             return rows
         except Exception as exc:
@@ -264,7 +280,7 @@ def collect() -> dict:
             return rows
 
     users = get_all("/users?$select=id,displayName,userPrincipalName,userType,accountEnabled,signInActivity", "Identity", "User.Read.All + AuditLog.Read.All")
-    if not users:
+    if not users and not authentication_failed:
         # signInActivity pode exigir licença/retenção/permissão adicional. A
         # indisponibilidade desse campo não deve eliminar o inventário básico.
         users = get_all("/users?$select=id,displayName,userPrincipalName,userType,accountEnabled", "Identity basic", "User.Read.All")
