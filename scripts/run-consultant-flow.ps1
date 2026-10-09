@@ -21,7 +21,7 @@ foreach ($id in $requested) {
 }
 
 Write-Host "1/4 Guardrail de tenant e subscriptions aprovado."
-& "$PSScriptRoot/run-assessment.ps1" -Subscriptions ($requested -join ",") -OutputRoot $OutputRoot -Profile $Profile
+& "$PSScriptRoot/run-assessment.ps1" -Subscriptions ($requested -join ",") -OutputRoot $OutputRoot -Profile $Profile -ExpectedTenantId $ExpectedTenantId
 if ($LASTEXITCODE -ne 0) { throw "Assessment bloqueado. Consulte os diagnósticos em $OutputRoot." }
 
 Write-Host "2/4 Assessment e artefatos concluídos."
