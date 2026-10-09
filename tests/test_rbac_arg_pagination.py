@@ -7,7 +7,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from collect_rbac import collect, query_all_pages
+from collect_rbac import collect, query_all_pages, query_arg_with_retry
 
 
 class QueryRequest:
@@ -79,6 +79,26 @@ def fake_azure_modules(client):
 
 
 class RbacArgPaginationTests(unittest.TestCase):
+
+    def test_transient_arg_throttling_is_retried(self):
+        class ThrottledClient:
+            def __init__(self):
+                self.calls = 0
+            def resources(self, request):
+                self.calls += 1
+                if self.calls == 1:
+                    error = RuntimeError("throttled")
+                    error.status_code = 429
+                    raise error
+                return Response([{"ok": True}])
+
+        client = ThrottledClient()
+        with patch("collect_rbac.time.sleep") as sleep:
+            response = query_arg_with_retry(client, object(), attempts=3)
+        self.assertEqual(response.data, [{"ok": True}])
+        self.assertEqual(client.calls, 2)
+        sleep.assert_called_once_with(1)
+
     def test_collect_paginates_assignments_and_logs_complete_count(self):
         client = FakeClient()
         with patch.dict(sys.modules, fake_azure_modules(client)):
