@@ -246,6 +246,9 @@ def apply_control_source_gates(controls: list[dict], evidence_rows: list[dict]) 
         if source_status != "success":
             row.update({
                 "status": "not_available",
+                # Hide derived scores when their required evidence gate fails;
+                # the report should show N/D instead of a provisional number.
+                "score": None,
                 "confidence": "low",
                 "evidence_state": "INSUFFICIENT_EVIDENCE",
                 "evidence_reason": "required_source_incomplete",
