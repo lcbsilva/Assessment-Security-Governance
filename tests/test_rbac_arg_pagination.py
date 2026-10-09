@@ -7,7 +7,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from collect_rbac import collect, query_all_pages, query_arg_with_retry
+from collect_rbac import ASSIGNMENTS_QUERY, ROLES_QUERY, collect, query_all_pages, query_arg_with_retry
 
 
 class QueryRequest:
@@ -161,6 +161,13 @@ class RbacArgPaginationTests(unittest.TestCase):
         self.assertIn("repetiu o skip_token", error)
         self.assertEqual(client.calls, 2)
 
+
+
+    def test_rbac_queries_order_pages_by_unique_resource_id(self):
+        import collect_rbac as rbac_collector
+
+        self.assertIn("| order by id asc", rbac_collector.ASSIGNMENTS_QUERY.lower())
+        self.assertIn("| order by id asc", rbac_collector.ROLES_QUERY.lower())
 
 if __name__ == "__main__":
     unittest.main()
