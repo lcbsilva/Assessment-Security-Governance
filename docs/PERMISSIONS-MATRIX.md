@@ -14,7 +14,6 @@ forem executados.
 | Custos | Cost Management | `Cost Management Reader` | Billing scope, management group ou subscription | Necessário para detalhamento de custo; sem `Contributor` |
 | Lifecycle | Advisor / Service Health | `Reader` | Subscription | Retirement pode depender de metadados publicados pelo serviço |
 | Identidade | Microsoft Graph | `User.Read.All` | Tenant | Leitura de usuários; validar consentimento administrativo |
-| MFA | Microsoft Graph | `UserAuthenticationMethod.Read.All` | Tenant | Métodos registrados; dados devem permanecer no tenant e ser minimizados |
 | Registro de MFA em lote | Microsoft Graph Reports | `Reports.Read.All` | Tenant | Endpoint `userRegistrationDetails`; preferir esta consulta a N chamadas por usuário |
 | Conditional Access | Microsoft Graph | `Policy.Read.All` | Tenant | Leitura de políticas; não inclui `Policy.ReadWrite.ConditionalAccess` |
 | Sign-in e risco | Microsoft Graph | `AuditLog.Read.All`, `IdentityRiskyUser.Read.All` | Tenant | Pode depender de licença e retenção; a janela de sign-in é limitada e a indisponibilidade vira `not_available` |
@@ -22,6 +21,7 @@ forem executados.
 | PIM — elegibilidade | Microsoft Graph | `RoleEligibilitySchedule.Read.Directory` | Tenant | Menor permissão de leitura para instâncias; acesso delegado também exige função Entra compatível |
 | Definições/funções e membros | Microsoft Graph | `RoleManagement.Read.Directory`, `Directory.Read.All` | Tenant | Usado separadamente para resolver definições e associação de funções; opcional para cobertura de MFA privilegiada |
 | Grupos e convidados | Microsoft Graph | `Group.Read.All`, `User.Read.All` | Tenant | Preferir coleta mínima e mascarar na camada executiva |
+| Aplicações e service principals | Microsoft Graph | `Application.Read.All` | Tenant | Metadados de registro, permissões declaradas e datas/contagens de credenciais; valores de secrets e certificados não são lidos |
 | Secure Score | Microsoft Graph | `SecurityEvents.Read.All` | Tenant | Opcional; validar disponibilidade e escopo efetivo do endpoint. Falha não reduz a validade dos demais módulos |
 | Defender alertas | Microsoft Graph | `SecurityIncident.Read.All` | Tenant | Opcional; não é requisito para iniciar o perfil Security. Falha controlada quando Defender/API não estiver disponível |
 | Defender vulnerabilidades | Microsoft Graph | `Vulnerability.Read.All` | Tenant | Opcional; retorna apenas metadados e severidade. HTTP 400 deve ser validado como endpoint/entitlement antes de solicitar novos consentimentos |
@@ -33,7 +33,7 @@ forem executados.
 | Power Platform | Azure Resource Graph | `Reader` | Subscriptions/Management Group | Inventário de metadados; não lê fórmulas, conteúdo, prompts ou dados de negócio |
 | Azure DevOps | Azure DevOps REST API | PAT somente leitura ou identidade equivalente | Organização/projeto | Opcional; não lê código, commits, logs, work items ou segredos |
 | Purview / Synapse / Databricks | Azure Resource Graph | `Reader` | Subscriptions/Management Group | Inventário de recursos e existência; não representa DLP ou retenção |
-| Power BI / Fabric | Power BI Admin REST API | `Tenant.Read.All`/Fabric admin read-only | Tenant | Opcional; somente workspaces e metadados administrativos |
+| Power BI / Fabric | Power BI Admin REST API — [GetGroupsAsAdmin](https://learn.microsoft.com/rest/api/power-bi/admin/groups-get-groups-as-admin) | `Tenant.Read.All` ou Fabric admin; service principal conforme política do Power BI | Tenant | Opcional; somente metadados de workspaces. `$top` vai até 5.000 e `$skip` pagina além; sujeito a rate limit. O coletor lê até `ASSESSMENT_POWERBI_MAX_PAGES` (10 por padrão, máximo 10) e registra `partial` ao atingir o teto ou falhar página |
 | Auditoria de diretório | Microsoft Graph | `AuditLog.Read.All` | Tenant | Contagens e categorias agregadas; atores, IPs e detalhes sensíveis ficam fora da IA |
 | Purview DLP / retenção | APIs específicas do Purview | Integração/licenciamento específico | Tenant | Não é inferido pelo inventário; aparece como não executado quando não configurado |
 | Postura de domínios M365 | DNS TXT + Microsoft Graph opcional | DNS read-only; `Domain.Read.All` quando os domínios vierem do Graph | Domínios aprovados | SPF, DMARC e DKIM; não acessa caixas, mensagens ou conteúdo |
