@@ -35,7 +35,7 @@ class ControlEvidenceGateTests(unittest.TestCase):
         ]}}
         evidence = control_evidence(data, self._catalog("SEC-003"))[0]
         self.assertEqual(evidence["status"], "not_available")
-        self.assertIn("required sources", evidence["limitation"].lower())
+        self.assertIn("fontes requeridas", evidence["limitation"].lower())
 
     def test_all_role_member_queries_must_succeed_for_privileged_mfa_control(self):
         data = {"discovery": {"collection_log": [
