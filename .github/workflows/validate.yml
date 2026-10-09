@@ -83,7 +83,7 @@ jobs:
       - name: Parse tenant-scoped PowerShell entry points
         shell: pwsh
         run: |
-          $paths = @("scripts/run-assessment.ps1", "scripts/run-consultant-flow.ps1")
+          $paths = @("scripts/run-assessment.ps1", "scripts/run-consultant-flow.ps1", "scripts/run-focused-pilot.ps1")
           foreach ($path in $paths) {
             $tokens = $null
             $parseErrors = $null
