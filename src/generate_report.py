@@ -678,7 +678,7 @@ def render_inventory_overview(data: dict) -> str:
     counts = {
         "Recursos Azure": len(resources),
         "Usuários avaliados": len(users),
-        "Não conformidades Policy": sum(1 for row in policies if str(row.get("compliance_state", "")).lower() != "compliant"),
+        "Não conformidades Policy": sum(1 for row in policies if str(row.get("classification", "")).lower() == "non_compliant" or int(row.get("non_compliant", 0) or 0) > 0),
         "Recursos públicos": sum(1 for row in resources if str(row.get("exposure", "")).lower().startswith("public")),
         "RBAC alto risco": sum(1 for row in rbac if row.get("access_risk") in {"Crítico", "Alto"}),
         "Credenciais expiradas": sum(int(row.get("expired_credentials", 0) or 0) for row in registrations),
