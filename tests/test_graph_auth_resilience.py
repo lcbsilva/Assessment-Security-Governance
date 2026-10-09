@@ -130,5 +130,62 @@ class GraphAuthenticationResilienceTests(unittest.TestCase):
         )
 
 
+
+    def test_repeated_next_link_stops_and_preserves_partial_evidence(self):
+        import io
+        import json
+
+        requested = []
+        first = "https://graph.microsoft.com/v1.0/users?page=2"
+
+        def response_for(request, timeout=None):
+            url = request.full_url
+            requested.append(url)
+            if "/users?" in url and "page=2" not in url:
+                payload = {"value": [{"id": "user-1", "displayName": "User 1", "userPrincipalName": "u1@example.invalid", "userType": "Member", "accountEnabled": True}], "@odata.nextLink": first}
+            elif url == first:
+                payload = {"value": [{"id": "user-2", "displayName": "User 2", "userPrincipalName": "u2@example.invalid", "userType": "Member", "accountEnabled": True}], "@odata.nextLink": first}
+            else:
+                payload = {"value": []}
+            return io.BytesIO(json.dumps(payload).encode("utf-8"))
+
+        with patch("azure.identity.AzureCliCredential") as credential_type, patch(
+            "urllib.request.urlopen", side_effect=response_for
+        ):
+            credential_type.return_value.get_token.return_value = SimpleNamespace(token="test-token")
+            result = collect()
+
+        identity = next(item for item in result["discovery"]["collection_log"] if item["module"] == "Identity")
+        self.assertEqual(identity["status"], "partial")
+        self.assertEqual(identity["records"], 2)
+        self.assertIn("repetiu o nextLink", identity["note"])
+        self.assertEqual(requested.count(first), 1)
+
+    def test_graph_next_link_host_is_validated_before_bearer_token_is_sent(self):
+        import io
+        import json
+
+        requested = []
+
+        def response_for(request, timeout=None):
+            url = request.full_url
+            requested.append(url)
+            if "/users?" in url:
+                payload = {"value": [], "@odata.nextLink": "https://unexpected.example/collect"}
+            else:
+                payload = {"value": []}
+            return io.BytesIO(json.dumps(payload).encode("utf-8"))
+
+        with patch("azure.identity.AzureCliCredential") as credential_type, patch(
+            "urllib.request.urlopen", side_effect=response_for
+        ):
+            credential_type.return_value.get_token.return_value = SimpleNamespace(token="test-token")
+            result = collect()
+
+        identity = next(item for item in result["discovery"]["collection_log"] if item["module"] == "Identity")
+        self.assertEqual(identity["status"], "partial")
+        self.assertIn("host Microsoft Graph esperado", identity["note"])
+        self.assertNotIn("https://unexpected.example/collect", requested)
+
 if __name__ == "__main__":
     unittest.main()
