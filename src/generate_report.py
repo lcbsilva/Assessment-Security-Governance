@@ -449,37 +449,48 @@ def render_decision_layer(data: dict) -> str:
 
 
 def render_executive_security_kpis(data: dict) -> str:
-    """Mostra os sinais prioritários na primeira tela, preservando o detalhe abaixo."""
-    discovery = data.get("discovery", {})
-    users = discovery.get("users", [])
-    user_summary = discovery.get("user_summary", {})
-    value = lambda label, fallback: user_summary.get(label, fallback)
+    """Mostra indicadores executivos somente quando a fonte correspondente concluiu."""
+    discovery = data.get("discovery", {}) or {}
+    users = discovery.get("users", []) or []
+    user_summary = discovery.get("user_summary", {}) or {}
+    logs = discovery.get("collection_log", []) or []
+
+    def source_succeeded(*names: str) -> bool:
+        expected = {name.casefold() for name in names}
+        return any(
+            str(row.get("module", "")).casefold() in expected
+            and row.get("status") == "success"
+            for row in logs
+        )
+
+    def value_when_complete(ready: bool, value: object) -> object:
+        return value if ready else None
+
     mfa_gap = sum(1 for item in users if item.get("mfa_status") == "Not registered")
     privileged_gap = sum(1 for item in users if item.get("privileged") and item.get("mfa_status") == "Not registered")
     public_resources = sum(1 for item in discovery.get("resources", []) if str(item.get("exposure", "")).lower().startswith("public"))
     policy_gap = sum(int(item.get("non_compliant", 0) or 0) for item in discovery.get("policy_compliance", []))
     high_rbac = sum(1 for item in discovery.get("rbac", []) if item.get("access_risk") in {"Crítico", "Alto"})
-    device_summary = discovery.get("device_summary", {})
+    device_summary = discovery.get("device_summary", {}) or {}
     endpoint_gap = int(device_summary.get("non_compliant", 0) or 0) + int(device_summary.get("unmanaged", 0) or 0)
-    logs = discovery.get("collection_log", [])
-    graph_log = next((row for row in logs if str(row.get("module", "")).lower() == "graph"), {})
-    graph_failed = graph_log.get("status") in {"error", "not_available"}
-    def source_success(*names: str) -> bool:
-        return not graph_failed and any(
-            str(row.get("module", "")).lower() in names and row.get("status") == "success"
-            for row in logs
-        )
-    users_ready = source_success("identity", "identity basic")
-    mfa_ready = users_ready and source_success("mfa")
-    devices_ready = source_success("intune managed devices")
-    identity_mfa = value("Usuários sem MFA", mfa_gap) if mfa_ready else None
-    identity_privileged = value("Privilegiados sem MFA", privileged_gap) if mfa_ready else None
-    identity_guests = value("Convidados externos", 0) if users_ready else None
-    endpoint_value = endpoint_gap if devices_ready else None
-    metrics = [("Sem MFA", identity_mfa, "Identidade"), ("Privilegiados sem MFA", identity_privileged, "Crítico"), ("Convidados externos", identity_guests, "Governança"), ("RBAC alto risco", high_rbac, "Acesso"), ("Recursos públicos", public_resources, "Exposição"), ("Policy: soma de não conformidades", policy_gap, "Soma por linha; pode diferir do total de registros Policy"), ("Endpoints em atenção", endpoint_value, "Endpoint")]
-    cards = "".join(f'<div class="exec-kpi"><span>{esc(label)}</span><b>{esc("Sem evidência" if amount is None else amount)}</b><small>{esc(context)}</small></div>' for label, amount, context in metrics)
-    return f'<section class="section exec-kpi-section"><div class="section-heading"><div><div class="eyebrow">Sinais prioritários</div><h2>Onde concentrar a atenção</h2></div><span class="section-intro">Indicadores derivados das evidências desta execução</span></div><div class="exec-kpis">{cards}</div></section>'
 
+    users_ready = source_succeeded("Identity", "Identity basic")
+    mfa_ready = users_ready and source_succeeded("MFA")
+    devices_ready = source_succeeded("Entra devices") and source_succeeded("Intune managed devices")
+    metrics = [
+        ("Sem MFA", value_when_complete(mfa_ready, user_summary.get("Usuários sem MFA", mfa_gap)), "Identidade"),
+        ("Privilegiados sem MFA", value_when_complete(mfa_ready, user_summary.get("Privilegiados sem MFA", privileged_gap)), "Crítico"),
+        ("Convidados externos", value_when_complete(users_ready, user_summary.get("Convidados externos", 0)), "Governança"),
+        ("RBAC alto risco", value_when_complete(source_succeeded("RBAC"), high_rbac), "Acesso"),
+        ("Recursos públicos", value_when_complete(source_succeeded("Azure inventory"), public_resources), "Exposição"),
+        ("Policy: soma de não conformidades", value_when_complete(source_succeeded("Azure Policy"), policy_gap), "Soma por linha; pode diferir do total de registros Policy"),
+        ("Endpoints em atenção", value_when_complete(devices_ready, endpoint_gap), "Endpoint"),
+    ]
+    cards = "".join(
+        f'<div class="exec-kpi"><span>{esc(label)}</span><b>{esc("Sem evidência" if amount is None else amount)}</b><small>{esc(context)}</small></div>'
+        for label, amount, context in metrics
+    )
+    return f'<section class="section exec-kpi-section"><div class="section-heading"><div><div class="eyebrow">Sinais prioritários</div><h2>Onde concentrar a atenção</h2></div><span class="section-intro">Indicadores derivados das evidências desta execução</span></div><div class="exec-kpis">{cards}</div></section>'
 
 
 def render_azure_intelligence(data: dict) -> str:
