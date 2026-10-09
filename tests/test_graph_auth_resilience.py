@@ -48,10 +48,17 @@ class GraphAuthenticationResilienceTests(unittest.TestCase):
                 "displayName": "Synthetic group",
                 "groupTypes": None,
             }]},
+            "/directoryRoles": {"value": [{
+                "id": "role-1",
+                "displayName": "Global Administrator",
+            }]},
         }
 
         def response_for(request, timeout=None):
             url = request.full_url
+            if "/directoryRoles/role-1/members" in url:
+                from urllib.error import HTTPError
+                raise HTTPError(url, 403, "Forbidden", {}, None)
             payload = next(
                 (value for marker, value in payloads.items() if marker in url),
                 {"value": []},
@@ -67,16 +74,18 @@ class GraphAuthenticationResilienceTests(unittest.TestCase):
             result = collect()
 
         discovery = result["discovery"]
-        self.assertEqual(result["metadata"]["modules"]["identity"], "success")
+        self.assertEqual(result["metadata"]["modules"]["identity"], "partial")
         self.assertEqual(result["metadata"]["modules"]["security"], "success")
         self.assertEqual(discovery["users"][0]["account_type"], "Unknown")
         self.assertEqual(discovery["users"][0]["mfa_methods"], "—")
         self.assertEqual(discovery["conditional_access"][0]["excluded"], 0)
         self.assertEqual(discovery["groups"][0]["group_type"], "Security/M365")
-        self.assertTrue(all(
-            item["status"] == "success"
-            for item in discovery["collection_log"]
-        ))
+        role_member_log = next(
+            item for item in discovery["collection_log"]
+            if item["module"] == "Role members: Global Administrator"
+        )
+        self.assertEqual(role_member_log["status"], "not_available")
+        self.assertIn("HTTP 403", role_member_log["note"])
 
     def test_graph_domain_status_uses_endpoint_states_not_record_counts(self):
         from collect_graph import aggregate_graph_status
