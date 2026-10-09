@@ -109,13 +109,14 @@ def query_arg_all_pages(
 QUERY = """
 Resources
 | project id, name, type, subscriptionId, resourceGroup, location, kind, sku, tags, properties
-| order by type asc, name asc
+| order by id asc
 """.strip()
 
 POLICY_QUERY = """
 PolicyResources
 | where type =~ 'Microsoft.PolicyInsights/PolicyStates'
 | extend complianceState=tostring(properties.complianceState), resourceId=tostring(properties.resourceId), policyAssignmentId=tostring(properties.policyAssignmentId), policyAssignmentName=tostring(properties.policyAssignmentName), policyDefinitionName=tostring(properties.policyDefinitionName), policyDefinitionId=tostring(properties.policyDefinitionId), policySetDefinitionId=tostring(properties.policySetDefinitionId), policyDefinitionAction=tostring(properties.policyDefinitionAction), resourceType=tostring(properties.resourceType), resourceLocation=tostring(properties.resourceLocation), timestamp=todatetime(properties.timestamp)
+| order by id asc
 | project subscriptionId, resourceId, resourceType, resourceLocation, policyAssignmentId, policyAssignmentName, policyDefinitionId, policyDefinitionName, policySetDefinitionId, policyDefinitionAction, complianceState, timestamp
 """.strip()
 
@@ -123,6 +124,7 @@ POLICY_ASSIGNMENTS_QUERY = """
 PolicyResources
 | where type =~ 'Microsoft.Authorization/PolicyAssignments'
 | extend displayName=tostring(properties.displayName), enforcementMode=tostring(properties.enforcementMode), definitionId=tostring(properties.policyDefinitionId), scope=tostring(properties.scope), notScopes=properties.notScopes, parameters=properties.parameters
+| order by id asc
 | project id, name, subscriptionId, resourceGroup, displayName, enforcementMode, definitionId, scope, notScopes, parameters
 """.strip()
 
@@ -130,6 +132,7 @@ POLICY_DEFINITIONS_QUERY = """
 PolicyResources
 | where type in~ ('Microsoft.Authorization/PolicyDefinitions','Microsoft.Authorization/PolicySetDefinitions')
 | extend displayName=tostring(properties.displayName), parameters=properties.parameters
+| order by id asc
 | project id, name, type, displayName, parameters
 """.strip()
 
@@ -140,17 +143,20 @@ Resources
 | project name, type, subscriptionId, resourceGroup, location, reason='Unattached disk', resourceId=id
 | union (Resources | where type =~ 'Microsoft.Network/publicIPAddresses' | where isempty(properties.ipConfiguration) | project name, type, subscriptionId, resourceGroup, location, reason='Unused public IP', resourceId=id)
 | union (Resources | where type =~ 'Microsoft.Network/networkInterfaces' | where isempty(properties.virtualMachine.id) and isempty(properties.privateEndpoint.id) | project name, type, subscriptionId, resourceGroup, location, reason='Unused NIC', resourceId=id)
+| order by resourceId asc
 """.strip()
 
 RESOURCE_GROUP_QUERY = """
 ResourceContainers
 | where type =~ 'microsoft.resources/subscriptions/resourcegroups'
+| order by id asc
 | project id, name, subscriptionId, location, tags
 """.strip()
 
 NETWORK_HEALTH_QUERY = """
 Resources
 | where type in~ ('microsoft.network/virtualnetworks','microsoft.network/connections','microsoft.network/virtualnetworkgateways','microsoft.network/expressroutecircuits')
+| order by id asc
 | project id, name, type, subscriptionId, resourceGroup, location, properties
 """.strip()
 
@@ -158,6 +164,7 @@ DEFENDER_SCORE_QUERY = """
 SecurityResources
 | where type =~ 'microsoft.security/securescores'
 | extend current=todouble(properties.score.current), max=todouble(properties.score.max), percentage=todouble(properties.score.percentage)
+| order by id asc
 | project subscriptionId, name, current, max, percentage
 """.strip()
 
@@ -165,12 +172,14 @@ DEFENDER_CONTROLS_QUERY = """
 SecurityResources
 | where type =~ 'microsoft.security/securescores/securescorecontrols'
 | extend displayName=tostring(properties.displayName), current=todouble(properties.score.current), max=todouble(properties.score.max), percentage=todouble(properties.score.percentage), unhealthy=tostring(properties.unhealthyResourceCount), healthy=tostring(properties.healthyResourceCount)
+| order by id asc
 | project subscriptionId, name, displayName, current, max, percentage, unhealthy, healthy
 """.strip()
 
 RETIREMENT_QUERY = """
 ServiceHealthResources
 | where type =~ 'microsoft.resourcehealth/events'
+| order by id asc
 | project name, subscriptionId, properties
 """.strip()
 
@@ -179,15 +188,15 @@ advisorresources
 | where type =~ 'microsoft.advisor/recommendations'
 | extend recommendationStatus=tostring(properties.recommendationStatus), category=tostring(properties.category), impact=tostring(properties.recommendationImpact), description=tostring(properties.label), resourceId=tostring(properties.resourceMetadata.resourceId), annualSavings=toreal(properties.extendedProperties.annualSavingsAmount), savingsCurrency=tostring(properties.extendedProperties.savingsCurrency), lastUpdated=todatetime(properties.lastUpdated), recommendationTypeId=tostring(properties.recommendationTypeId)
 | where recommendationStatus in~ ('New', 'InProgress') or isempty(recommendationStatus)
+| order by id asc
 | project id, name, subscriptionId, resourceGroup, category, impact, description, resourceId, annualSavings, savingsCurrency, lastUpdated, recommendationTypeId, recommendationStatus
-| order by impact asc, category asc
 """.strip()
 
 CONTAINERS_QUERY = """
 ResourceContainers
 | where type in~ ('microsoft.resources/subscriptions', 'microsoft.resources/resourcegroups', 'microsoft.management/managementgroups')
 | project id, name, type, subscriptionId, tenantId, properties
-| order by type asc, name asc
+| order by id asc
 """.strip()
 
 # A tabela é populada pelo inventário do Azure Resource Graph quando o
@@ -197,14 +206,14 @@ ResourceContainers
 POWER_PLATFORM_QUERY = """
 PowerPlatformResources
 | project id, name, type, subscriptionId, resourceGroup, location, properties
-| order by type asc, name asc
+| order by id asc
 """.strip()
 
 BENEFITS_QUERY = """
 Resources
 | where type has_any ('microsoft.capacity/reservation', 'microsoft.billingbenefits/reservation', 'microsoft.billingbenefits/savingsplan', 'microsoft.costmanagement/exports')
 | project id, name, type, subscriptionId, resourceGroup, location, properties, sku
-| order by type asc, name asc
+| order by id asc
 """.strip()
 
 
