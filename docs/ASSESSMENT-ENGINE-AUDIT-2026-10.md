@@ -22,13 +22,13 @@ Base revisada: branch `main`, repositório `lcbsilva/Assessment-Security-Governa
 
 ### P0 — estado da evidência nos relatórios (amostras da Julia)
 
-**Evidência revisada:** relatório executivo e briefing de uma página gerados em 2026-10-08. A execução informa erro do Graph e cobertura de 28%, porém PDF/PPTX exibem contagens de identidade como zero e alguns valores ausentes como `None`. No HTML executivo, as mesmas métricas são mostradas como “Sem evidência”. O relatório técnico anterior também possui 213 páginas, o que exige separar claramente a navegação executiva da consulta técnica detalhada.
+**Evidência revisada:** HTML, briefing, PDF executivo, PPTX e XLSX da execução de 2026-10-08. A execução informa erro do Graph e cobertura de 28%. PDF/PPTX exibem contagens de identidade como zero; o HTML mostra zero nos cartões de MFA, embora os scores por domínio indiquem “Sem evidência”. A economia realizável aparece como `None` no PDF/PPTX e célula vazia no Excel. O relatório indica 325 não conformidades no cartão/KPI e 345 registros Azure Policy no achado; a nota do HTML admite métodos diferentes, mas os rótulos atuais não deixam o cálculo suficientemente claro. A planilha contém controles Secure Score repetidos por nome, subscription e métricas; sem a dimensão/origem no relatório, é necessário confirmar se são registros distintos ou repetidos antes de agregá-los.
 
-**Risco:** o cliente pode interpretar uma falha de coleta como ausência de usuários sem MFA ou como valor financeiro igual a zero. Números iguais a zero só são defensáveis após consulta bem-sucedida e sem registros. A fonte do Excel da amostra não pôde ser inspecionada diretamente; o diagnóstico do XLSX aqui deriva do código gerador e dos testes estruturais.
+**Risco:** o cliente pode interpretar uma falha de coleta como ausência de usuários sem MFA ou como valor financeiro igual a zero. Números iguais a zero só são defensáveis após consulta bem-sucedida e sem registros. O XLSX foi inspecionado diretamente; ele contém a cobertura detalhada e confirma que Identity/MFA/CA/Intune estavam como `not_checked`, apesar de as métricas executivas correspondentes aparecerem como zero.
 
-**Correção neste PR:** o modelo marca contagens vazias como indisponíveis quando a fonte não teve sucesso; PDF/PPTX/XLSX exibem `N/D · fonte indisponível`, estado da fonte e evitam o literal `None`. Testes sintéticos validam falha Graph e coleta bem-sucedida sem registros em todos os exports tabulares/executivos.
+**Correção neste PR:** o modelo marca contagens vazias como indisponíveis quando a fonte não teve sucesso; PDF/PPTX/XLSX exibem `N/D · fonte indisponível`, estado da fonte e evitam o literal `None`. A lógica atual do HTML já guarda os cartões pelo estado do Graph; será incluído teste de regressão para impedir que futuros relatórios reproduzam os zeros do arquivo gerado pela Julia. Testes sintéticos validam falha Graph e coleta bem-sucedida sem registros nos exports.
 
-**Aceite:** falha ou fonte desconhecida nunca vira zero; sucesso confirmado sem registros pode virar zero; exportadores representam ausência sem literal técnico e sem divergência do HTML.
+**Aceite:** falha ou fonte desconhecida nunca vira zero; sucesso confirmado sem registros pode virar zero; HTML/PDF/PPTX/XLSX/JSON mantêm semântica compatível; diferenças de agregação (325 × 345) declaram método e unidade; recomendações repetidas expõem chave/dimensão ou são deduplicadas com regra verificável.
 
 ### P1 — estados por módulo
 

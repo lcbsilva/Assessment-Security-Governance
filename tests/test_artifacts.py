@@ -118,6 +118,12 @@ class ArtifactTests(unittest.TestCase):
         values = discovery["security_identity_intelligence"]["identity_posture"]
         self.assertIsNone(values["privileged_without_mfa"])
         self.assertEqual(values["evidence_status"], "error")
+        from generate_report import render_executive_security_kpis
+        discovery["collection_log"] = log
+        html_kpis = render_executive_security_kpis(source)
+        self.assertIn("Sem evidência", html_kpis)
+        self.assertNotIn("<span>Sem MFA</span><b>0</b>", html_kpis)
+        self.assertNotIn("<span>Privilegiados sem MFA</span><b>0</b>", html_kpis)
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary)
             from export_artifacts import write_pptx, write_pdf, write_xlsx
