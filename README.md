@@ -99,7 +99,7 @@ No PowerShell 7, use:
 
 ```powershell
 .\scripts\run-focused-pilot.ps1 -Subscriptions "<subscription-id>"
-.\scripts\run-assessment.ps1 -Subscriptions "<subscription-id>" -Profile full
+.\scripts\run-consultant-flow.ps1 -ExpectedTenantId "<tenant-id>" -Subscriptions "<subscription-id>" -Profile full
 ```
 
 Os principais resultados ficam em `dist/` e `runtime/`:
@@ -351,7 +351,7 @@ No Windows PowerShell:
 
 ```powershell
 az login
-.\scripts\run-assessment.ps1 -Subscriptions "<subscription-id-1>,<subscription-id-2>"
+.\scripts\run-consultant-flow.ps1 -ExpectedTenantId "<tenant-id>" -Subscriptions "<subscription-id-1>,<subscription-id-2>"
 ```
 
 Para o primeiro piloto focado, use o wrapper de Segurança. Ele executa com um
