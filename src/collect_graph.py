@@ -66,7 +66,10 @@ def user_posture(user: dict) -> tuple[str, str]:
     signals = []
     if user.get("privileged") and user.get("mfa_status") == "Not registered":
         signals.append("Privilegiado sem MFA")
-    if user.get("account_type", "").lower() == "guest":
+    # Graph can return userType as null. Preserve the user record and treat
+    # an unknown type as unknown instead of failing the entire collection.
+    account_type = str(user.get("account_type") or "").strip().lower()
+    if account_type == "guest":
         signals.append("Convidado externo")
     if user.get("account_enabled") is False:
         signals.append("Conta desabilitada")
@@ -213,9 +216,20 @@ def collect() -> dict:
     logs: list[dict] = []
     request_timeout = bounded_env_int("ASSESSMENT_GRAPH_REQUEST_TIMEOUT_SECONDS", 30, 5, 300)
     max_retries = bounded_env_int("ASSESSMENT_GRAPH_MAX_RETRIES", 3, 0, 5)
+    authentication_failed = False
 
     def get_all(path: str, module: str, permission_hint: str, max_pages: int | None = None) -> list[dict]:
+        nonlocal authentication_failed
         rows: list[dict] = []
+        if authentication_failed:
+            logs.append({
+                "module": module,
+                "source": "Microsoft Graph",
+                "status": "not_available",
+                "records": 0,
+                "note": "Consulta não executada: uma chamada anterior retornou HTTP 401; autenticação Graph indisponível nesta execução.",
+            })
+            return rows
         url = f"{GRAPH}{path}"
         pages = 0
         attempts = 0
@@ -250,6 +264,11 @@ def collect() -> dict:
             return rows
         except urllib.error.HTTPError as exc:
             note = graph_failure_note(exc.code, permission_hint)
+            if exc.code == 401:
+                # Authentication is tenant/session-wide for this bearer token.
+                # Stop issuing identical failed GETs, but keep evidence collected
+                # by earlier endpoints and make every skipped module explicit.
+                authentication_failed = True
             logs.append({"module": module, "source": "Microsoft Graph", "status": "partial" if rows else "not_available", "records": len(rows), "note": note})
             return rows
         except Exception as exc:
@@ -264,7 +283,7 @@ def collect() -> dict:
             return rows
 
     users = get_all("/users?$select=id,displayName,userPrincipalName,userType,accountEnabled,signInActivity", "Identity", "User.Read.All + AuditLog.Read.All")
-    if not users:
+    if not users and not authentication_failed:
         # signInActivity pode exigir licença/retenção/permissão adicional. A
         # indisponibilidade desse campo não deve eliminar o inventário básico.
         users = get_all("/users?$select=id,displayName,userPrincipalName,userType,accountEnabled", "Identity basic", "User.Read.All")
@@ -333,13 +352,14 @@ def collect() -> dict:
         upn = item.get("userPrincipalName", "")
         registration = registration_by_upn.get(str(upn).lower(), {})
         risk = risky_by_id.get(item.get("id"), {})
-        base_user = {"privileged": bool(privileged_by_id.get(item.get("id"))), "mfa_status": "Registered" if registration.get("isMfaRegistered") else ("Not registered" if registration else "Unknown"), "account_type": item.get("userType", "Member"), "account_enabled": item.get("accountEnabled", "—"), "last_sign_in": (item.get("signInActivity") or {}).get("lastSignInDateTime", "Never"), "risk": risk.get("riskLevel", "None")}
+        account_type = str(item.get("userType") or "Unknown")
+        base_user = {"privileged": bool(privileged_by_id.get(item.get("id"))), "mfa_status": "Registered" if registration.get("isMfaRegistered") else ("Not registered" if registration else "Unknown"), "account_type": account_type, "account_enabled": item.get("accountEnabled", "—"), "last_sign_in": (item.get("signInActivity") or {}).get("lastSignInDateTime", "Never"), "risk": risk.get("riskLevel", "None")}
         posture_level, posture_signal = user_posture(base_user)
         normalized_users.append({
             "id": item.get("id", "—"),
             "display_name": item.get("displayName", "—"),
             "user_principal_name": upn or "—",
-            "account_type": item.get("userType", "Member"),
+            "account_type": account_type,
             "account_enabled": item.get("accountEnabled", "—"),
             "mfa_status": "Registered" if registration.get("isMfaRegistered") else ("Not registered" if registration else "Unknown"),
             "mfa_methods": ", ".join(registration.get("methodsRegistered", [])) or "—",

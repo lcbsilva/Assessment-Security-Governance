@@ -7,6 +7,48 @@ from __future__ import annotations
 from collections import Counter
 
 
+_UNAVAILABLE = {"not_available", "error"}
+
+
+def _source_status(collection_log: list[dict], module_names: tuple[str, ...]) -> str:
+    """Retorna o estado da fonte; o erro global do Graph limita seus módulos."""
+    names = tuple(name.lower() for name in module_names)
+    matching = [
+        str(item.get("status", "unknown")).lower()
+        for item in collection_log
+        if any(name in str(item.get("module", "")).lower() for name in names)
+    ]
+    if any(status == "error" for status in matching):
+        return "error"
+    if any(status == "not_available" for status in matching):
+        return "not_available"
+    if any(status == "partial" for status in matching):
+        return "partial"
+    if any(status == "success" for status in matching):
+        return "success"
+
+    graph_statuses = [
+        str(item.get("status", "unknown")).lower()
+        for item in collection_log
+        if "graph" in str(item.get("module", "")).lower()
+    ]
+    if any(status in _UNAVAILABLE for status in graph_statuses):
+        return "error" if "error" in graph_statuses else "not_available"
+    if any(status == "partial" for status in graph_statuses):
+        return "partial"
+    if any(status == "success" for status in graph_statuses):
+        return "success"
+    return "unknown"
+
+
+def _observed_count(items: list, source_status: str) -> int | None:
+    # Contagem positiva é evidência observada mesmo em coleta parcial. Lista vazia
+    # só pode virar zero quando a fonte confirmou coleta bem-sucedida.
+    if items or source_status == "success":
+        return len(items)
+    return None
+
+
 def build(discovery: dict, collection_log: list[dict]) -> dict:
     rbac = discovery.get("rbac", []) or []
     pim = discovery.get("pim_assignments", []) or []
@@ -22,6 +64,10 @@ def build(discovery: dict, collection_log: list[dict]) -> dict:
         for item in collection_log
         if str(item.get("status")) in {"not_available", "partial", "error"}
     }
+
+    identity_status = _source_status(collection_log, ("identity", "mfa", "conditional access"))
+    defender_status = _source_status(collection_log, ("defender", "secure score"))
+    rbac_status = _source_status(collection_log, ("rbac", "privileged", "pim"))
 
     privileged = [
         item for item in rbac
@@ -46,35 +92,39 @@ def build(discovery: dict, collection_log: list[dict]) -> dict:
 
     return {
         "privileged_access": {
-            "high_or_critical_assignments": len(privileged),
-            "broad_scope_assignments": len(broad_scope),
-            "pim_active": len(active_pim),
-            "pim_eligible": len(eligible_pim),
+            "high_or_critical_assignments": _observed_count(privileged, rbac_status),
+            "broad_scope_assignments": _observed_count(broad_scope, rbac_status),
+            "pim_active": _observed_count(active_pim, rbac_status),
+            "pim_eligible": _observed_count(eligible_pim, rbac_status),
+            "evidence_status": rbac_status,
             "interpretation": "Inventário para revisão; não prova excesso de privilégio sem contexto de função, owner e necessidade.",
         },
         "identity_posture": {
-            "privileged_users": len(privileged_users),
-            "privileged_without_mfa": len(privileged_without_mfa),
-            "risky_users_high_or_medium": len(risky_users),
-            "conditional_access_enabled": len(ca_enabled),
-            "conditional_access_report_only": len(ca_report_only),
+            "privileged_users": _observed_count(privileged_users, identity_status),
+            "privileged_without_mfa": _observed_count(privileged_without_mfa, identity_status),
+            "risky_users_high_or_medium": _observed_count(risky_users, identity_status),
+            "conditional_access_enabled": _observed_count(ca_enabled, identity_status),
+            "conditional_access_report_only": _observed_count(ca_report_only, identity_status),
+            "evidence_status": identity_status,
             "interpretation": "Correlação consultiva sobre evidências coletadas; não presume incidente, comprometimento ou eficácia de política sem validação contextual.",
         },
         "defender": {
-            "alerts": len(alerts),
+            "alerts": _observed_count(alerts, defender_status),
             "alert_severity": dict(alert_severity),
-            "vulnerabilities": len(vulnerabilities),
+            "vulnerabilities": _observed_count(vulnerabilities, defender_status),
             "vulnerability_severity": dict(vuln_severity),
+            "evidence_status": defender_status,
             "interpretation": "Contagens refletem somente a cobertura efetivamente coletada; zero não implica ambiente sem alertas ou vulnerabilidades.",
         },
         "secure_score": {
-            "records": len(secure_scores),
+            "records": _observed_count(secure_scores, defender_status),
+            "evidence_status": defender_status,
             "interpretation": "Secure Score é sinal de postura e priorização, não certificação de conformidade.",
         },
         "coverage_limitations": [
             {"module": item.get("module"), "status": item.get("status"), "note": item.get("note")}
             for item in unavailable.values()
-            if any(token in str(item.get("module", "")).lower() for token in ("pim", "defender", "secure score", "rbac", "identity"))
+            if any(token in str(item.get("module", "")).lower() for token in ("pim", "defender", "secure score", "rbac", "identity", "graph", "mfa", "conditional access"))
         ],
         "guardrails": [
             "Não ampliar permissões apenas para eliminar uma lacuna de coleta; validar endpoint, licença e necessidade primeiro.",

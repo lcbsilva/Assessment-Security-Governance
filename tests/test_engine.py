@@ -162,7 +162,8 @@ class EngineContractTests(unittest.TestCase):
             {"defender_alerts": [], "defender_vulnerabilities": [], "rbac": [], "pim_assignments": []},
             [{"module": "Defender alerts", "status": "not_available", "note": "HTTP 403"}],
         )
-        self.assertEqual(result["defender"]["alerts"], 0)
+        self.assertIsNone(result["defender"]["alerts"])
+        self.assertEqual(result["defender"]["evidence_status"], "not_available")
         self.assertTrue(result["coverage_limitations"])
         self.assertIn("zero não implica", result["defender"]["interpretation"])
         self.assertTrue(any("Não interpretar zero registros" in item for item in result["guardrails"]))
@@ -974,6 +975,11 @@ class EngineContractTests(unittest.TestCase):
         level, signal = user_posture({"privileged": False, "mfa_status": "Registered", "account_type": "Guest", "account_enabled": True, "last_sign_in": "Never", "risk": "None"})
         self.assertEqual(level, "Atenção")
         self.assertIn("Convidado externo", signal)
+
+    def test_user_posture_handles_null_graph_account_type(self):
+        level, signal = user_posture({"account_type": None})
+        self.assertEqual(level, "Sem sinal básico")
+        self.assertEqual(signal, "Nenhum sinal básico")
 
     def test_graph_retry_policy_handles_throttling_and_transient_errors(self):
         self.assertTrue(retryable_graph_status(429))
