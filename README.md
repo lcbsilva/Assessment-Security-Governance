@@ -364,7 +364,7 @@ worker, habilita retomada por checkpoint e valida o Release Gate ao final:
 No PowerShell:
 
 ```powershell
-.\scripts\run-focused-pilot.ps1 -Subscriptions "<subscription-id-1>"
+.\scripts\run-focused-pilot.ps1 -ExpectedTenantId "<tenant-id>" -Subscriptions "<subscription-id-1>"
 ```
 
 No Linux ou macOS:
