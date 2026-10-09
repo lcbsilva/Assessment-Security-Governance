@@ -461,8 +461,23 @@ def render_executive_security_kpis(data: dict) -> str:
     high_rbac = sum(1 for item in discovery.get("rbac", []) if item.get("access_risk") in {"Crítico", "Alto"})
     device_summary = discovery.get("device_summary", {})
     endpoint_gap = int(device_summary.get("non_compliant", 0) or 0) + int(device_summary.get("unmanaged", 0) or 0)
-    metrics = [("Sem MFA", value("Usuários sem MFA", mfa_gap), "Identidade"), ("Privilegiados sem MFA", value("Privilegiados sem MFA", privileged_gap), "Crítico"), ("Convidados externos", value("Convidados externos", 0), "Governança"), ("RBAC alto risco", high_rbac, "Acesso"), ("Recursos públicos", public_resources, "Exposição"), ("Não conformidades", policy_gap, "Azure Policy"), ("Endpoints em atenção", endpoint_gap, "Endpoint")]
-    cards = "".join(f'<div class="exec-kpi"><span>{esc(label)}</span><b>{esc(amount)}</b><small>{esc(context)}</small></div>' for label, amount, context in metrics)
+    logs = discovery.get("collection_log", [])
+    graph_log = next((row for row in logs if str(row.get("module", "")).lower() == "graph"), {})
+    graph_failed = graph_log.get("status") in {"error", "not_available"}
+    def source_success(*names: str) -> bool:
+        return not graph_failed and any(
+            str(row.get("module", "")).lower() in names and row.get("status") == "success"
+            for row in logs
+        )
+    users_ready = source_success("identity", "identity basic")
+    mfa_ready = users_ready and source_success("mfa")
+    devices_ready = source_success("intune managed devices")
+    identity_mfa = value("Usuários sem MFA", mfa_gap) if mfa_ready else None
+    identity_privileged = value("Privilegiados sem MFA", privileged_gap) if mfa_ready else None
+    identity_guests = value("Convidados externos", 0) if users_ready else None
+    endpoint_value = endpoint_gap if devices_ready else None
+    metrics = [("Sem MFA", identity_mfa, "Identidade"), ("Privilegiados sem MFA", identity_privileged, "Crítico"), ("Convidados externos", identity_guests, "Governança"), ("RBAC alto risco", high_rbac, "Acesso"), ("Recursos públicos", public_resources, "Exposição"), ("Policy: soma de não conformidades", policy_gap, "Soma por linha; pode diferir do total de registros Policy"), ("Endpoints em atenção", endpoint_value, "Endpoint")]
+    cards = "".join(f'<div class="exec-kpi"><span>{esc(label)}</span><b>{esc("Sem evidência" if amount is None else amount)}</b><small>{esc(context)}</small></div>' for label, amount, context in metrics)
     return f'<section class="section exec-kpi-section"><div class="section-heading"><div><div class="eyebrow">Sinais prioritários</div><h2>Onde concentrar a atenção</h2></div><span class="section-intro">Indicadores derivados das evidências desta execução</span></div><div class="exec-kpis">{cards}</div></section>'
 
 
@@ -638,9 +653,9 @@ def render_scope_coverage(data: dict) -> str:
         ("Power Platform", "Ambientes, Power Apps, Power Automate, conectores e owners.", ("Power Platform",), "power_platform"),
         ("Copilot Studio / Agents", "Inventário e governança de agentes quando publicado no inventário Power Platform.", ("Power Platform",), None),
         ("Azure DevOps", "Projetos, repositórios, pipelines e políticas de branch.", ("Azure DevOps",), "azure_devops"),
-        ("Purview / Compliance", "Contas Purview e sinais de governança de dados; DLP, retenção e auditoria dependem de APIs/licenças adicionais.", ("Purview", "Compliance"), "analytics"),
-        ("Power BI", "Workspaces, datasets, gateways, compartilhamento e refresh.", ("Power BI",), None),
-        ("Fabric / Synapse / Databricks", "Analytics, workspaces, lakehouse e governança de dados via metadados read-only.", ("Fabric", "Synapse", "Databricks"), "analytics"),
+        ("Purview / Compliance", "Inventário de contas e metadados Azure; políticas DLP, rótulos, retenção e auditoria não são comprovados por esse inventário.", ("Purview", "Compliance"), "analytics"),
+        ("Power BI", "Inventário e metadados disponíveis; datasets, gateways, compartilhamentos e refresh não são necessariamente avaliados.", ("Power BI",), None),
+        ("Fabric / Synapse / Databricks", "Inventário de recursos e metadados Azure; conteúdo de workspaces, lakehouses e governança interna exigem integrações adicionais.", ("Fabric", "Synapse", "Databricks"), "analytics"),
     ]
     labels = {"success": "Coletado", "partial": "Parcial", "not_available": "Indisponível", "error": "Erro controlado", "not_run": "Não executado", "roadmap": "Próxima integração"}
     cards = []
@@ -663,7 +678,7 @@ def render_inventory_overview(data: dict) -> str:
     counts = {
         "Recursos Azure": len(resources),
         "Usuários avaliados": len(users),
-        "Não conformidades Policy": sum(1 for row in policies if str(row.get("compliance_state", "")).lower() != "compliant"),
+        "Não conformidades Policy": sum(1 for row in policies if str(row.get("classification", "")).lower() == "non_compliant" or int(row.get("non_compliant", 0) or 0) > 0),
         "Recursos públicos": sum(1 for row in resources if str(row.get("exposure", "")).lower().startswith("public")),
         "RBAC alto risco": sum(1 for row in rbac if row.get("access_risk") in {"Crítico", "Alto"}),
         "Credenciais expiradas": sum(int(row.get("expired_credentials", 0) or 0) for row in registrations),
@@ -998,7 +1013,7 @@ th{{background:#eef7fb;color:#075985}}
 {coverage_notice}
 {execution_context_html}
 <nav class="nav"><div class="nav-row"><div class="view-switcher" role="group" aria-label="Modo de leitura"><button class="view-button active" type="button" data-view-target="executive">Executivo</button><button class="view-button" type="button" data-view-target="technical">Técnico</button><button class="view-button" type="button" data-view-target="full">Completo</button></div><span class="nav-divider"></span><a href="#executive-summary">Resumo</a><a href="#coverage">Domínios</a><a href="#risks">Riscos</a>{zero_trust_nav}</div><div class="nav-row"><details class="nav-group"><summary>Plano de ação</summary><div><a href="#priority-matrix">Matriz de prioridade</a><a href="#decision-layer">Decisões</a><a href="#analysis">Plano 30/60/90</a><a href="#azure-intelligence">Azure Intelligence</a><a href="#lifecycle">FinOps e ciclo de vida</a></div></details><details class="nav-group"><summary>Evidências</summary><div><a href="#discovery">Discovery técnico</a><a href="#controls">Controles do engine</a><a href="#runbooks">Runbooks</a><a href="#transparency">Limitações</a></div></details><details class="nav-group"><summary>Execução</summary><div>{readiness_nav}<a href="#inventory-overview">Números do escopo</a></div></details></div></nav>
-<section class="section summary-grid" id="executive-summary"><div class="executive"><div class="eyebrow">Leitura executiva</div><h2>O que este resultado significa</h2><p>A postura atual apresenta <b>{score_text.lower()}</b>, com maior necessidade de atenção em <b>{esc(priority_domain)}</b>. O assessment identificou <b>{len(findings)} riscos priorizados</b> e <b>{len(quick_wins)} ações de baixo esforço</b> que podem iniciar a evolução imediatamente.</p><p><b>Ponto forte:</b> {esc(strengths_text)}.</p><div class="notice"><b>Mensagem para liderança:</b> o maior risco deve ser interpretado junto com a cobertura, as limitações e a qualidade da evidência desta execução.</div></div><div class="score-panel"><div class="score-ring"><div><b>{score_display}</b><span>{"/ 100" if overall is not None else "sem score"}</span></div></div><div class="score-copy"><h3>{score_text}</h3><p>{esc(score_methodology.get("name", "Score ponderado pelos controles disponíveis"))}. Cobertura geral: <b>{coverage:.0f}%</b>. {esc(score_methodology.get("coverage_rule", "A interpretação deve considerar licenças e limitações."))}</p></div></div></section>
+<section class="section summary-grid" id="executive-summary"><div class="executive"><div class="eyebrow">Leitura executiva</div><h2>O que este resultado significa</h2><p>A postura atual apresenta <b>{score_text.lower()}</b>, com maior necessidade de atenção em <b>{esc(priority_domain)}</b>. O assessment identificou <b>{len(findings)} riscos priorizados</b> e <b>{len(quick_wins)} {"ação" if len(quick_wins) == 1 else "ações"} de baixo esforço</b> que podem iniciar a evolução imediatamente.</p><p><b>{"Pontos fortes" if strengths else "Limite da leitura"}:</b> {esc(strengths_text)}.</p><div class="notice"><b>Mensagem para liderança:</b> o maior risco deve ser interpretado junto com a cobertura, as limitações e a qualidade da evidência desta execução.</div></div><div class="score-panel"><div class="score-ring"><div><b>{score_display}</b><span>{"/ 100" if overall is not None else "sem score"}</span></div></div><div class="score-copy"><h3>{score_text}</h3><p>{esc(score_methodology.get("name", "Score ponderado pelos controles disponíveis"))}. Cobertura geral: <b>{coverage:.0f}%</b>. {esc(score_methodology.get("coverage_rule", "A interpretação deve considerar licenças e limitações."))}</p></div></div></section>
 {executive_security_kpis}
 {preflight_html}
 {execution_health_html}

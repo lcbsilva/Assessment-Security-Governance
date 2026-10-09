@@ -34,10 +34,7 @@ Anote o `tenantId` e a subscription que você realmente está autorizada a testa
 Use o fluxo guiado abaixo substituindo apenas os dois IDs pelos valores autorizados que você acabou de conferir:
 
 ```powershell
-.\scripts\run-consultant-flow.ps1 \
-  -Subscriptions "<subscription-id>" \
-  -ExpectedTenantId "<tenant-id>" \
-  -Profile full
+.\scripts\run-consultant-flow.ps1 -Subscriptions "<subscription-id>" -ExpectedTenantId "<tenant-id>" -Profile full
 ```
 
 O runner bloqueia a execução se o tenant não for o esperado ou se a subscription informada não estiver visível naquele tenant. Depois executa readiness, coleta read-only, geração/validação dos artefatos, Delivery Gate e Release Gate.
