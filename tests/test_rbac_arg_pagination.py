@@ -24,6 +24,7 @@ class Response:
     def __init__(self, data, skip_token=None):
         self.data = data
         self.skip_token = skip_token
+        self.result_truncated = False
 
 
 class FakeClient:
@@ -168,6 +169,28 @@ class RbacArgPaginationTests(unittest.TestCase):
 
         self.assertIn("| order by id asc", rbac_collector.ASSIGNMENTS_QUERY.lower())
         self.assertIn("| order by id asc", rbac_collector.ROLES_QUERY.lower())
+
+
+    def test_truncated_assignment_response_without_skip_token_is_partial(self):
+        class TruncatedClient:
+            def resources(self, request):
+                if "roleassignments" in request.query.lower():
+                    response = Response([{
+                        "principalId": "user-1",
+                        "principalType": "User",
+                        "roleDefinitionId": "owner-id",
+                        "assignmentScope": "/subscriptions/sub-1",
+                        "subscriptionId": "sub-1",
+                    }])
+                    response.result_truncated = True
+                    return response
+                return Response([{"roleDefinitionId": "owner-id", "roleName": "Owner"}])
+
+        with patch.dict(sys.modules, fake_azure_modules(TruncatedClient())):
+            result = collect(["sub-1"])
+        self.assertEqual(result["discovery"]["collection_log"][0]["status"], "partial")
+        self.assertIn("truncado sem skip_token", result["discovery"]["collection_log"][0]["note"])
+        self.assertEqual(len(result["discovery"]["rbac"]), 1)
 
 if __name__ == "__main__":
     unittest.main()
