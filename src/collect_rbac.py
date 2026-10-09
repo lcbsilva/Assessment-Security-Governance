@@ -102,7 +102,7 @@ def query_all_pages(client: object, query: str, subscription_ids: list[str], Que
     skip_token: str | None = None
     seen_tokens: set[str] = set()
     while True:
-        options = QueryRequestOptions(result_format="objectArray", top=5000, skip_token=skip_token)
+        options = QueryRequestOptions(result_format="objectArray", top=1000, skip_token=skip_token)
         request = QueryRequest(subscriptions=subscription_ids, query=query, options=options)
         try:
             response = query_arg_with_retry(client, request)
