@@ -33,6 +33,46 @@ class ReportEvidenceRegressionTests(unittest.TestCase):
         html = render_executive_security_kpis(data)
         self.assertIn("Sem evidência", html)
 
+    def test_unavailable_sources_do_not_render_executive_kpis_as_zero(self):
+        data = {"discovery": {
+            "users": [], "resources": [], "rbac": [], "policy_compliance": [],
+            "device_summary": {"non_compliant": 0, "unmanaged": 0},
+            "collection_log": [
+                {"module": "Identity", "status": "error"},
+                {"module": "MFA", "status": "not_available"},
+                {"module": "RBAC", "status": "partial"},
+                {"module": "Azure inventory", "status": "not_available"},
+                {"module": "Azure Policy", "status": "error"},
+                {"module": "Entra devices", "status": "success"},
+                {"module": "Intune managed devices", "status": "not_available"},
+            ],
+        }}
+        html = render_executive_security_kpis(data)
+        for label in ("Sem MFA", "Privilegiados sem MFA", "Convidados externos",
+                      "RBAC alto risco", "Recursos públicos",
+                      "Policy: soma de não conformidades", "Endpoints em atenção"):
+            self.assertIn(f"<span>{label}</span><b>Sem evidência</b>", html)
+
+    def test_successful_empty_sources_may_render_verified_zeroes(self):
+        data = {"discovery": {
+            "users": [], "resources": [], "rbac": [], "policy_compliance": [],
+            "device_summary": {"non_compliant": 0, "unmanaged": 0},
+            "collection_log": [
+                {"module": "Identity basic", "status": "success"},
+                {"module": "MFA", "status": "success"},
+                {"module": "RBAC", "status": "success"},
+                {"module": "Azure inventory", "status": "success"},
+                {"module": "Azure Policy", "status": "success"},
+                {"module": "Entra devices", "status": "success"},
+                {"module": "Intune managed devices", "status": "success"},
+            ],
+        }}
+        html = render_executive_security_kpis(data)
+        for label in ("Sem MFA", "Privilegiados sem MFA", "Convidados externos",
+                      "RBAC alto risco", "Recursos públicos",
+                      "Policy: soma de não conformidades", "Endpoints em atenção"):
+            self.assertIn(f"<span>{label}</span><b>0</b>", html)
+
     def test_policy_exempt_and_unknown_not_counted_as_noncompliant(self):
         data = {
             "discovery": {
