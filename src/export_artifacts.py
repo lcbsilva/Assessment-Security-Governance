@@ -15,6 +15,7 @@ from insight_engine import prioritize_findings
 from executive_intelligence import build as build_executive_intelligence
 from local_privacy import protect_output_directory
 from report_context import build as build_report_context
+from report_metrics import build_executive_metrics
 from quality_audit import audit
 
 
@@ -149,6 +150,20 @@ def write_xlsx(data: dict, path: Path) -> None:
     for column in exec_sheet.columns:
         exec_sheet.column_dimensions[column[0].column_letter].width = min(max(len(str(cell.value or "")) for cell in column) + 2, 64)
     exec_sheet.freeze_panes = "A2"
+
+    kpi_sheet = book.create_sheet("Indicadores executivos", 3)
+    kpi_sheet.append(["Indicador", "Valor exibido", "Status da fonte", "Fontes", "Interpretação"])
+    for cell in kpi_sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="5B2C83")
+    for metric in build_executive_metrics(data):
+        kpi_sheet.append([
+            metric["label"], metric["display_value"], metric["source_status"],
+            ", ".join(metric["source_modules"]), metric["interpretation"],
+        ])
+    for column in kpi_sheet.columns:
+        kpi_sheet.column_dimensions[column[0].column_letter].width = min(max(len(str(cell.value or "")) for cell in column) + 2, 64)
+    kpi_sheet.freeze_panes = "A2"
 
     coverage_sheet = book.create_sheet("Cobertura e limitações", 3)
     coverage_headers = ["Módulo", "Domínio", "Escopo esperado", "Status", "Registros", "Confiança", "Classificação", "Causa provável", "Próximo passo", "Observação técnica"]
@@ -394,6 +409,18 @@ def write_pptx(data: dict, path: Path) -> None:
         "Relações ausentes e defaults não retornados permanecem como evidência insuficiente; nenhuma remediação é executada."
     )
     body.text_frame.paragraphs[0].font.size = Pt(14)
+    metrics = build_executive_metrics(data)
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    title = slide.shapes.add_textbox(Inches(0.7), Inches(0.5), Inches(11.5), Inches(0.7))
+    title.text_frame.text = "Indicadores executivos — cobertura e evidência"
+    title.text_frame.paragraphs[0].font.size = Pt(22)
+    body = slide.shapes.add_textbox(Inches(0.9), Inches(1.4), Inches(11.2), Inches(5.2))
+    body.text_frame.text = "\n".join(
+        f"{metric['label']}: {metric['display_value']} · fonte {metric['source_status']} ({', '.join(metric['source_modules'])})"
+        for metric in metrics
+    ) + "\n\nSem evidência significa fonte incompleta ou indisponível; não representa zero nem conformidade."
+    body.text_frame.paragraphs[0].font.size = Pt(13)
+
     presentation.save(path)
 
 
@@ -476,6 +503,12 @@ def write_pdf(data: dict, path: Path) -> None:
     story.append(Paragraph(f"Resource Map: {graph.get('node_count', 0)} recursos e {graph.get('edge_count', 0)} relações demonstradas. Higiene: {hygiene.get('empty_resource_group_count', 0)} resource groups vazios, {hygiene.get('orphan_count', 0)} recursos órfãos/não associados e {hygiene.get('network_attention_count', 0)} sinais de rede em atenção.", styles["BodyText"]))
     for item in secure.get("top_improvements", [])[:5]:
         story.append(Paragraph(f"Secure Score — {item.get('control')}: ganho potencial {item.get('potential_score_increase')} ponto(s), {item.get('unhealthy_resources')} recursos não saudáveis.", styles["BodyText"]))
+    story.append(Paragraph("Indicadores executivos — cobertura e evidência", styles["Heading2"]))
+    for metric in build_executive_metrics(data):
+        story.append(Paragraph(
+            f"{metric['label']}: {metric['display_value']} · fonte {metric['source_status']} ({', '.join(metric['source_modules'])}). {metric['interpretation']}",
+            styles["BodyText"],
+        ))
     document.build(story)
 
 
