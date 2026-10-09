@@ -12,6 +12,7 @@ ASSIGNMENTS_QUERY = """
 AuthorizationResources
 | where type =~ 'microsoft.authorization/roleassignments'
 | extend principalId=tostring(properties.principalId), principalType=tostring(properties.principalType), roleDefinitionId=tostring(properties.roleDefinitionId), assignmentScope=tostring(properties.scope)
+| order by id asc
 | project id, subscriptionId, principalId, principalType, roleDefinitionId, assignmentScope
 """.strip()
 
@@ -19,6 +20,7 @@ ROLES_QUERY = """
 AuthorizationResources
 | where type =~ 'microsoft.authorization/roledefinitions'
 | extend roleDefinitionId=tostring(properties.name), roleName=tostring(properties.roleName)
+| order by id asc
 | project roleDefinitionId, roleName
 """.strip()
 
