@@ -20,6 +20,16 @@ Base revisada: branch `main`, repositório `lcbsilva/Assessment-Security-Governa
 
 **Aceite:** teste com 401 no primeiro endpoint comprova uma única chamada HTTP e logs explícitos para as consultas seguintes. Um 403 continua isolado por endpoint, pois pode refletir permissões específicas.
 
+### P0 — estado da evidência nos relatórios (amostras da Julia)
+
+**Evidência revisada:** relatório executivo e briefing de uma página gerados em 2026-10-08. A execução informa erro do Graph e cobertura de 28%, porém PDF/PPTX exibem contagens de identidade como zero e alguns valores ausentes como `None`. No HTML executivo, as mesmas métricas são mostradas como “Sem evidência”. O relatório técnico anterior também possui 213 páginas, o que exige separar claramente a navegação executiva da consulta técnica detalhada.
+
+**Risco:** o cliente pode interpretar uma falha de coleta como ausência de usuários sem MFA ou como valor financeiro igual a zero. Números iguais a zero só são defensáveis após consulta bem-sucedida e sem registros. A fonte do Excel da amostra não pôde ser inspecionada diretamente; o diagnóstico do XLSX aqui deriva do código gerador e dos testes estruturais.
+
+**Correção neste PR:** o modelo marca contagens vazias como indisponíveis quando a fonte não teve sucesso; PDF/PPTX/XLSX exibem `N/D · fonte indisponível`, estado da fonte e evitam o literal `None`. Testes sintéticos validam falha Graph e coleta bem-sucedida sem registros em todos os exports tabulares/executivos.
+
+**Aceite:** falha ou fonte desconhecida nunca vira zero; sucesso confirmado sem registros pode virar zero; exportadores representam ausência sem literal técnico e sem divergência do HTML.
+
 ### P1 — estados por módulo
 
 A metadata do coletor Graph declara apenas estados agregados de identidade e Secure Score. Outras áreas dependem de `collection_log` por endpoint, e consumidores que olham somente `metadata.modules` não conseguem distinguir cobertura de Conditional Access, Intune, PIM, aplicações, auditoria e Defender.
@@ -53,7 +63,7 @@ O repositório já inclui dashboards, cenários sintéticos, análise cruzada e 
 | P1 | Estado agregado por área Graph | Cada área tem `success`, `partial`, `not_available`, `error` ou `not_run` derivado de evidências |
 | P1 | Cobertura defensável de Graph, Azure e M365 | Não há conclusão positiva com fonte indisponível ou evidência insuficiente |
 | P1 | Reconciliação em laboratório autorizado | Amostras do relatório conferidas no serviço de origem, com limitações registradas |
-| P1 | Consistência semântica dos exports | Métricas essenciais equivalentes entre HTML/PDF/PPTX/XLSX/JSON em fixtures |
+| P0 | Semântica de evidência em todos os exports | Fonte indisponível não vira zero/None; sucesso vazio continua zero em fixture |\n| P1 | Consistência semântica dos exports | Métricas essenciais equivalentes entre HTML/PDF/PPTX/XLSX/JSON em fixtures |
 | P2 | Priorização cruzada e recomendações | Cada recomendação vinculada a evidência, impacto, prioridade e horizonte 30/60/90 |
 | P2 | Avaliação de novas fontes | Power Platform, Purview, Fabric e Azure DevOps têm decisão documentada sobre valor, acesso e limitações |
 
