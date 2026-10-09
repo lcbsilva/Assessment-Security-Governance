@@ -476,7 +476,7 @@ def render_executive_security_kpis(data: dict) -> str:
     identity_privileged = value("Privilegiados sem MFA", privileged_gap) if mfa_ready else None
     identity_guests = value("Convidados externos", 0) if users_ready else None
     endpoint_value = endpoint_gap if devices_ready else None
-    metrics = [("Sem MFA", identity_mfa, "Identidade"), ("Privilegiados sem MFA", identity_privileged, "Crítico"), ("Convidados externos", identity_guests, "Governança"), ("RBAC alto risco", high_rbac, "Acesso"), ("Recursos públicos", public_resources, "Exposição"), ("Não conformidades", policy_gap, "Azure Policy"), ("Endpoints em atenção", endpoint_value, "Endpoint")]
+    metrics = [("Sem MFA", identity_mfa, "Identidade"), ("Privilegiados sem MFA", identity_privileged, "Crítico"), ("Convidados externos", identity_guests, "Governança"), ("RBAC alto risco", high_rbac, "Acesso"), ("Recursos públicos", public_resources, "Exposição"), ("Policy: soma de não conformidades", policy_gap, "Soma por linha; pode diferir do total de registros Policy"), ("Endpoints em atenção", endpoint_value, "Endpoint")]
     cards = "".join(f'<div class="exec-kpi"><span>{esc(label)}</span><b>{esc("Sem evidência" if amount is None else amount)}</b><small>{esc(context)}</small></div>' for label, amount, context in metrics)
     return f'<section class="section exec-kpi-section"><div class="section-heading"><div><div class="eyebrow">Sinais prioritários</div><h2>Onde concentrar a atenção</h2></div><span class="section-intro">Indicadores derivados das evidências desta execução</span></div><div class="exec-kpis">{cards}</div></section>'
 
