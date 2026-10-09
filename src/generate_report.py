@@ -461,12 +461,21 @@ def render_executive_security_kpis(data: dict) -> str:
     high_rbac = sum(1 for item in discovery.get("rbac", []) if item.get("access_risk") in {"Crítico", "Alto"})
     device_summary = discovery.get("device_summary", {})
     endpoint_gap = int(device_summary.get("non_compliant", 0) or 0) + int(device_summary.get("unmanaged", 0) or 0)
-    graph_log = next((row for row in discovery.get("collection_log", []) if str(row.get("module", "")).lower() == "graph"), {})
-    graph_ready = graph_log.get("status") == "success"
-    identity_mfa = value("Usuários sem MFA", mfa_gap) if graph_ready else None
-    identity_privileged = value("Privilegiados sem MFA", privileged_gap) if graph_ready else None
-    identity_guests = value("Convidados externos", 0) if graph_ready else None
-    endpoint_value = endpoint_gap if graph_ready else None
+    logs = discovery.get("collection_log", [])
+    graph_log = next((row for row in logs if str(row.get("module", "")).lower() == "graph"), {})
+    graph_failed = graph_log.get("status") in {"error", "not_available"}
+    def source_success(*names: str) -> bool:
+        return not graph_failed and any(
+            str(row.get("module", "")).lower() in names and row.get("status") == "success"
+            for row in logs
+        )
+    users_ready = source_success("identity", "identity basic")
+    mfa_ready = users_ready and source_success("mfa")
+    devices_ready = source_success("intune managed devices")
+    identity_mfa = value("Usuários sem MFA", mfa_gap) if mfa_ready else None
+    identity_privileged = value("Privilegiados sem MFA", privileged_gap) if mfa_ready else None
+    identity_guests = value("Convidados externos", 0) if users_ready else None
+    endpoint_value = endpoint_gap if devices_ready else None
     metrics = [("Sem MFA", identity_mfa, "Identidade"), ("Privilegiados sem MFA", identity_privileged, "Crítico"), ("Convidados externos", identity_guests, "Governança"), ("RBAC alto risco", high_rbac, "Acesso"), ("Recursos públicos", public_resources, "Exposição"), ("Não conformidades", policy_gap, "Azure Policy"), ("Endpoints em atenção", endpoint_value, "Endpoint")]
     cards = "".join(f'<div class="exec-kpi"><span>{esc(label)}</span><b>{esc("Sem evidência" if amount is None else amount)}</b><small>{esc(context)}</small></div>' for label, amount, context in metrics)
     return f'<section class="section exec-kpi-section"><div class="section-heading"><div><div class="eyebrow">Sinais prioritários</div><h2>Onde concentrar a atenção</h2></div><span class="section-intro">Indicadores derivados das evidências desta execução</span></div><div class="exec-kpis">{cards}</div></section>'
