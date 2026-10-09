@@ -171,6 +171,8 @@ def collect(subscription_ids: list[str]) -> dict:
         role_id = str(item.get("roleDefinitionId", ""))
         scope_kind, scope_level, inheritance = scope_details(item.get("assignmentScope", ""))
         resolved_role = role_map.get(role_id.lower(), role_map.get(role_id.rsplit("/", 1)[-1].lower()))
+        if str(resolved_role or "").strip().lower() == "unknown":
+            resolved_role = None
         role_name = resolved_role or role_id.rsplit("/", 1)[-1] or "Unknown"
         if resolved_role:
             risk_level, review_reason = access_risk(role_name, scope_kind)
