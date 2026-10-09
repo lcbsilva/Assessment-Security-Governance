@@ -253,6 +253,8 @@ def collect() -> dict:
             })
             return rows
         url = f"{GRAPH}{path}"
+        requested_urls = {url}
+        graph_host = urllib.parse.urlparse(GRAPH).netloc.lower()
         pages = 0
         attempts = 0
         try:
@@ -275,13 +277,35 @@ def collect() -> dict:
                 attempts = 0
                 rows.extend(payload.get("value", []))
                 pages += 1
+                next_url = payload.get("@odata.nextLink")
+                if next_url:
+                    parsed_next = urllib.parse.urlparse(str(next_url))
+                    if parsed_next.scheme != "https" or parsed_next.netloc.lower() != graph_host:
+                        logs.append({
+                            "module": module,
+                            "source": "Microsoft Graph",
+                            "status": "partial",
+                            "records": len(rows),
+                            "note": "Paginação interrompida: o nextLink não pertence ao host Microsoft Graph esperado.",
+                        })
+                        return rows
+                    if next_url in requested_urls:
+                        logs.append({
+                            "module": module,
+                            "source": "Microsoft Graph",
+                            "status": "partial",
+                            "records": len(rows),
+                            "note": "Paginação interrompida: Microsoft Graph repetiu o nextLink; a evidência já recebida foi preservada.",
+                        })
+                        return rows
+                    requested_urls.add(next_url)
                 if max_pages and pages >= max_pages:
-                    if payload.get("@odata.nextLink"):
+                    if next_url:
                         logs.append({"module": module, "source": "Microsoft Graph", "status": "partial", "records": len(rows), "note": f"Limite de {max_pages} páginas aplicada para proteger duração e carga da coleta."})
                     else:
                         logs.append({"module": module, "source": "Microsoft Graph", "status": "success", "records": len(rows), "note": permission_hint})
                     return rows
-                url = payload.get("@odata.nextLink")
+                url = next_url
             logs.append({"module": module, "source": "Microsoft Graph", "status": "success", "records": len(rows), "note": permission_hint})
             return rows
         except urllib.error.HTTPError as exc:
