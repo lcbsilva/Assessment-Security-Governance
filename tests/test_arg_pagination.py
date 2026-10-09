@@ -113,7 +113,7 @@ class ArgPaginationTests(unittest.TestCase):
             query = getattr(arg_collector, name)
             self.assertRegex(
                 query.lower(),
-                r"\\|\\s*order by\\s+(?:id|resourceid)\\s+asc",
+                r"\|\s*order by\s+(?:id|resourceid)\s+asc",
                 msg=f"{name} must sort pages by a stable unique ID",
             )
 
