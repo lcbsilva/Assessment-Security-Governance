@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+import collect_arg as arg_collector
 from collect_arg import arg_result_status, query_arg_all_pages
 
 
@@ -98,6 +99,23 @@ class ArgPaginationTests(unittest.TestCase):
         self.assertFalse(result.complete)
         self.assertEqual(arg_result_status(result), "partial")
         self.assertIn("truncado sem skip_token", result.error)
+
+
+    def test_paginated_queries_use_a_unique_ordering_key(self):
+        query_names = (
+            "QUERY", "POLICY_QUERY", "POLICY_ASSIGNMENTS_QUERY",
+            "POLICY_DEFINITIONS_QUERY", "ORPHAN_QUERY", "RESOURCE_GROUP_QUERY",
+            "NETWORK_HEALTH_QUERY", "DEFENDER_SCORE_QUERY",
+            "DEFENDER_CONTROLS_QUERY", "RETIREMENT_QUERY", "ADVISOR_QUERY",
+            "CONTAINERS_QUERY", "POWER_PLATFORM_QUERY", "BENEFITS_QUERY",
+        )
+        for name in query_names:
+            query = getattr(arg_collector, name)
+            self.assertRegex(
+                query.lower(),
+                r"\\|\\s*order by\\s+(?:id|resourceid)\\s+asc",
+                msg=f"{name} must sort pages by a stable unique ID",
+            )
 
 if __name__ == "__main__":
     unittest.main()
