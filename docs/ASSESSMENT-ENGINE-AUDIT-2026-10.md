@@ -54,6 +54,14 @@ CI e cenários sintéticos verificam comportamento offline, mas não validam con
 
 **Aceite operacional:** executar em tenant de laboratório autorizado, registrar endpoint/escopo/contagem/estado e reconciliar amostras com Graph Explorer ou portal. Não conceder permissões automaticamente. Token emitido pelo CLI é apenas prontidão de sessão, nunca evidência de autorização por endpoint.
 
+### P0 — pacote de entrega omitia formatos executivos
+
+**Achado:** o builder permitia apenas `assessment.pdf`, `assessment.pptx` e `assessment.xlsx`, enquanto o exportador e as amostras da Julia usam `assessment-executive-summary.pdf`, `assessment-executive-summary.pptx` e `assessment-action-plan.xlsx`. Como a rotina aceitava qualquer arquivo disponível, o gate podia aprovar uma pasta de entrega sem PDF executivo, PowerPoint ou planilha.
+
+**Correção proposta neste PR:** alinhar a allowlist aos cinco nomes realmente exportados e bloquear o pacote se qualquer um estiver ausente; testes verificam os cinco formatos e o bloqueio por pacote incompleto.
+
+**Aceite:** pacote autorizado contém HTML, PDF executivo, PPTX, XLSX e briefing de uma página; manifesto lista os nomes e hashes; runtime bruto permanece excluído.
+
 ### P1 — rastreabilidade entre artefatos
 
 A pipeline valida a geração e integridade de HTML/PDF/PPTX/XLSX, mas validação de conteúdo equivalente entre formatos é uma etapa distinta da existência dos arquivos.
