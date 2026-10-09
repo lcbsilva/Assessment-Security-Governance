@@ -79,6 +79,30 @@ class ArtifactTests(unittest.TestCase):
         self.assertTrue(brief.exists())
         self.assertEqual(len(PdfReader(str(brief)).pages), 1)
 
+    def test_executive_kpis_are_consistent_across_html_pdf_pptx_and_xlsx(self):
+        from report_metrics import build_executive_metrics
+        metrics = build_executive_metrics(json.loads((ROOT / "mock/assessment.json").read_text(encoding="utf-8")))
+        html = (self.artifact_dir / "assessment.html").read_text(encoding="utf-8")
+        deck = Presentation(self.artifact_dir / "assessment-executive-summary.pptx")
+        pptx_text = " ".join(shape.text for slide in deck.slides for shape in slide.shapes if shape.has_text_frame)
+        pdf_text = " ".join((page.extract_text() or "") for page in PdfReader(self.artifact_dir / "assessment-executive-summary.pdf").pages)
+        workbook = load_workbook(self.artifact_dir / "assessment-action-plan.xlsx", read_only=True)
+        kpi_rows = {row[0]: row[1:] for row in workbook["Indicadores executivos"].iter_rows(min_row=2, values_only=True)}
+        workbook.close()
+
+        def normalized(value):
+            return " ".join(str(value).split()).casefold()
+
+        for metric in metrics:
+            self.assertIn(f'data-kpi-id="{metric["id"]}" data-source-status="{metric["source_status"]}"', html)
+            self.assertIn(f'<b>{metric["display_value"]}</b>', html)
+            needle = normalized(f'{metric["label"]}: {metric["display_value"]} · fonte {metric["source_status"]}')
+            self.assertIn(needle, normalized(pdf_text), metric["id"])
+            self.assertIn(needle, normalized(pptx_text), metric["id"])
+            self.assertEqual(kpi_rows[metric["label"]][0], metric["display_value"])
+            self.assertEqual(kpi_rows[metric["label"]][1], metric["source_status"])
+            self.assertEqual(kpi_rows[metric["label"]][2], ", ".join(metric["source_modules"]))
+
     def test_action_plan_contains_cross_domain_insight_rows(self):
         source = json.loads((ROOT / "mock/assessment.json").read_text(encoding="utf-8"))
         source.setdefault("discovery", {})["cross_domain_insights"] = [{"id": "I-TEST", "title": "Insight de governança", "severity": "high", "risk": 80, "priority": "P2", "suggested_owner": "Cloud Governance", "effort_band": "Médio"}]
