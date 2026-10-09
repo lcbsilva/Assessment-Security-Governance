@@ -155,6 +155,11 @@ def control_evidence(data: dict, catalog: dict) -> list[dict]:
         # with/without signInActivity). A successful fallback is usable unless
         # a separate required source group is incomplete.
         statuses = [str(log.get("status", "unknown")).casefold() for log in candidates]
+        if len(tokens) == 1 and tokens[0].endswith(":"):
+            for state in status_precedence:
+                if state in statuses:
+                    return state, candidates
+            return "unknown", candidates
         if "success" in statuses:
             return "success", candidates
         for state in status_precedence:
