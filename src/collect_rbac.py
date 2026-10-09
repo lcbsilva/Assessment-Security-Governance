@@ -98,11 +98,17 @@ def query_arg_with_retry(client: object, request: object, attempts: int | None =
     raise RuntimeError("Azure Resource Graph did not return a response")
 
 
-def query_all_pages(client: object, query: str, subscription_ids: list[str], QueryRequest: object, QueryRequestOptions: object) -> tuple[list[dict], str | None]:
+def query_all_pages(client: object, query: str, subscription_ids: list[str], QueryRequest: object, QueryRequestOptions: object, max_pages: int | None = None) -> tuple[list[dict], str | None]:
     """Fetch every ARG page; return rows and an error note when coverage is incomplete."""
     rows: list[dict] = []
+    if max_pages is None:
+        try:
+            max_pages = min(10000, max(1, int(os.getenv("ASSESSMENT_ARG_MAX_PAGES", "1000"))))
+        except ValueError:
+            max_pages = 1000
     skip_token: str | None = None
     seen_tokens: set[str] = set()
+    pages = 0
     while True:
         options = QueryRequestOptions(result_format="objectArray", top=1000, skip_token=skip_token)
         request = QueryRequest(subscriptions=subscription_ids, query=query, options=options)
@@ -112,12 +118,15 @@ def query_all_pages(client: object, query: str, subscription_ids: list[str], Que
             note = f"{type(exc).__name__}: {exc}"
             return rows, note
         rows.extend(response.data or [])
+        pages += 1
         next_token = getattr(response, "skip_token", None)
         if not next_token:
             truncated = getattr(response, "result_truncated", False)
             if str(truncated).strip().casefold() in {"true", "1", "yes"}:
                 return rows, "Azure Resource Graph informou resultado truncado sem skip_token; a coleta RBAC não pode ser declarada completa."
             return rows, None
+        if pages >= max_pages:
+            return rows, f"Limite de {max_pages} páginas do Azure Resource Graph atingido; a evidência RBAC recebida foi preservada, mas a coleta é parcial."
         next_token = str(next_token)
         if next_token in seen_tokens:
             return rows, "Azure Resource Graph repetiu o skip_token; a paginação foi interrompida para evitar loop."

@@ -71,11 +71,18 @@ def query_arg_all_pages(
     query: str,
     QueryRequest: object,
     QueryRequestOptions: object,
+    max_pages: int | None = None,
 ) -> ArgQueryResult:
     """Fetch every ARG page and preserve first pages if a later page fails."""
     rows = ArgQueryResult()
+    if max_pages is None:
+        try:
+            max_pages = min(10000, max(1, int(os.getenv("ASSESSMENT_ARG_MAX_PAGES", "1000"))))
+        except ValueError:
+            max_pages = 1000
     skip_token: str | None = None
     seen_tokens: set[str] = set()
+    pages = 0
     while True:
         options = QueryRequestOptions(
             result_format="objectArray",
@@ -90,12 +97,17 @@ def query_arg_all_pages(
             rows.error = f"{type(exc).__name__}: {exc}"
             return rows
         rows.extend(response.data or [])
+        pages += 1
         next_token = getattr(response, "skip_token", None)
         if not next_token:
             truncated = getattr(response, "result_truncated", False)
             if str(truncated).strip().casefold() in {"true", "1", "yes"}:
                 rows.complete = False
                 rows.error = "Azure Resource Graph informou resultado truncado sem skip_token; a coleta não pode ser declarada completa."
+            return rows
+        if pages >= max_pages:
+            rows.complete = False
+            rows.error = f"Limite de {max_pages} páginas do Azure Resource Graph atingido; a evidência recebida foi preservada."
             return rows
         next_token = str(next_token)
         if next_token in seen_tokens:
